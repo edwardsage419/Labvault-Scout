@@ -209,3 +209,26 @@ def test_priority_penalizes_signature_mismatch():
     mismatch = {"risk": "WATCH", "open_copy": "", "signature_status": "mismatch: expected PDF, detected ZIP", "confidence": "LOW"}
 
     assert assign_priority(mismatch)[0] > assign_priority(normal)[0]
+
+
+def test_migration_plan_is_actionable_and_sorted(tmp_path: Path):
+    import csv
+
+    source = tmp_path / "migration_source"
+    source.mkdir()
+    (source / "urgent.jnb").write_bytes(b"urgent")
+    (source / "protected.jnb").write_bytes(b"protected")
+    (source / "protected.csv").write_text("protected")
+    (source / "safe.csv").write_text("safe")
+
+    output = tmp_path / "migration_report"
+    scan(source, output)
+
+    with (output / "migration_plan.csv").open(encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+
+    assert rows
+    scores = [int(row["priority_score"]) for row in rows]
+    assert scores == sorted(scores, reverse=True)
+    assert rows[0]["path"] == "urgent.jnb"
+    assert "safe.csv" not in {row["path"] for row in rows}
