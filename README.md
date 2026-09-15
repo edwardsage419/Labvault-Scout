@@ -31,6 +31,7 @@ By default the scanner creates `labvault-report/` containing:
 * `files.csv` for spreadsheet analysis
 * `scan.json` for programmatic use
 * `duplicates.csv` for exact SHA-256 duplicate groups
+* `migration_plan.csv` for prioritized preservation actions
 
 ## Risk levels
 
@@ -47,7 +48,7 @@ Risk labels are triage signals. They are not guarantees of future readability an
 
 The initial rules include common research and scientific formats such as CSV, TSV, TIFF, HDF5, NetCDF, MATLAB, SigmaPlot JNB, Origin OPJ and OPJU, GraphPad Prism PZF, SPSS SAV, Stata DTA, Igor IBW, SPC spectroscopy, FCS, NIfTI and DICOM.
 
-Identification in v0.1.0 is extension based. File signatures and container inspection are planned.
+Identification combines extension rules with bounded, read-only signature checks for ZIP, OLE, HDF5, and PDF. ZIP OOXML structures and basic OLE headers are inspected without extracting or executing file content.
 
 ## Development
 
@@ -61,7 +62,7 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 
 ## Roadmap
 
-v0.1 focuses on read-only inventory, hashing, format triage, and reports. The scanner also performs conservative open-copy detection: a WATCH or RESCUE file is linked only when an open text/data file with the same stem exists in the same directory. Later releases will add file signatures, ZIP and OLE container inspection, and stronger evidence-backed format rules.
+v0.1 focuses on read-only inventory, hashing, evidence-backed format triage, duplicate detection, conservative open-copy detection, transparent preservation priority scoring, and an actionable migration plan. Later releases will expand format evidence and project-level relationship analysis.
 
 ## License
 
