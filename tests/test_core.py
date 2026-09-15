@@ -404,3 +404,26 @@ def test_scan_reports_hdf5_superblock(tmp_path: Path):
     assert row["signature_status"] == "verified"
     assert row["container_type"] == "HDF5 superblock v2"
     assert row["confidence"] == "HIGH"
+
+
+def test_zip_container_identifies_ro_crate(tmp_path: Path):
+    import zipfile
+    from labvault_scout.identifier import inspect_zip_container
+
+    path = tmp_path / "research.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("ro-crate-metadata.json", "{}")
+        archive.writestr("data/results.csv", "x,y\n1,2\n")
+    assert inspect_zip_container(path) == "RO-Crate Research Object"
+
+
+def test_zip_container_identifies_bagit_package(tmp_path: Path):
+    import zipfile
+    from labvault_scout.identifier import inspect_zip_container
+
+    path = tmp_path / "archive.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("bagit.txt", "BagIt-Version: 1.0\nTag-File-Character-Encoding: UTF-8\n")
+        archive.writestr("bag-info.txt", "Source-Organization: Lab\n")
+        archive.writestr("data/results.csv", "x,y\n1,2\n")
+    assert inspect_zip_container(path) == "BagIt Research Package"
