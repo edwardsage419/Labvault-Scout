@@ -615,3 +615,86 @@ def test_output_inside_source_is_excluded(tmp_path: Path):
 
     assert scan(source, output) == 1
     assert (output / "files.csv").exists()
+
+
+def test_corrupt_zip_is_reported_without_crashing(tmp_path: Path):
+    import csv
+
+    source = tmp_path / "bad_zip_source"
+    source.mkdir()
+    (source / "broken.zip").write_bytes(bytes.fromhex("504B0304") + b"not-a-valid-zip")
+    output = tmp_path / "bad_zip_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        row = next(csv.DictReader(f))
+    assert row["signature"] == "ZIP"
+    assert row["signature_status"] == "verified"
+    assert row["container_type"] == "Invalid ZIP container"
+
+
+def test_disguised_extension_reports_signature_mismatch(tmp_path: Path):
+    import csv
+
+    source = tmp_path / "mismatch_source"
+    source.mkdir()
+    (source / "fake.pdf").write_bytes(bytes.fromhex("504B0304") + b"not-a-valid-zip")
+    output = tmp_path / "mismatch_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        row = next(csv.DictReader(f))
+    assert row["signature"] == "ZIP"
+    assert row["signature_status"] == "mismatch: expected PDF, detected ZIP"
+    assert row["confidence"] == "LOW"
+
+
+def test_duplicate_grouping_uses_content_hash(tmp_path: Path):
+    import csv
+
+    source = tmp_path / "duplicates_source"
+    source.mkdir()
+    content = b"x,y\n1,2\n"
+    (source / "first.csv").write_bytes(content)
+    (source / "second.txt").write_bytes(content)
+    (source / "different.csv").write_bytes(b"x,y\n3,4\n")
+    output = tmp_path / "duplicates_report"
+
+    assert scan(source, output) == 3
+    with (output / "duplicates.csv").open(encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+    assert len(rows) == 2
+    assert {row["path"] for row in rows} == {"first.csv", "second.txt"}
+    assert len({row["group"] for row in rows}) == 1
+    assert len({row["sha256"] for row in rows}) == 1
+
+
+def test_similar_names_do_not_create_derivative_relationship():
+    from labvault_scout.relationships import detect_open_copies
+
+    rows = [
+        {"path": "run/experiment.jnb", "risk": "RESCUE"},
+        {"path": "run/experiment_notes.csv", "risk": "SAFE"},
+        {"path": "run/experiment_export_notes.csv", "risk": "SAFE"},
+    ]
+    detect_open_copies(rows)
+    assert rows[0]["open_copy"] == ""
+    assert rows[0]["relationship_strength"] == ""
+
+
+def test_csv_and_json_share_core_scan_values(tmp_path: Path):
+    import csv
+    import json
+
+    source = tmp_path / "consistency_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x,y\n1,2\n", encoding="utf-8")
+    output = tmp_path / "consistency_report"
+    scan(source, output)
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        csv_row = next(csv.DictReader(f))
+    json_row = json.loads((output / "scan.json").read_text(encoding="utf-8"))["files"][0]
+
+    for key in ("path", "sha256", "format", "risk", "confidence", "priority", "priority_reason", "recommended_action"):
+        assert csv_row[key] == str(json_row[key])
