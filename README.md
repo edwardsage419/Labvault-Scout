@@ -61,7 +61,7 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 
 ## Roadmap
 
-v0.1 focuses on read-only inventory, hashing, format triage, and reports. Later releases will add duplicate grouping, open-copy relationship detection, file signatures, ZIP and OLE container inspection, and stronger evidence-backed format rules.
+v0.1 focuses on read-only inventory, hashing, format triage, and reports. The scanner also performs conservative open-copy detection: a WATCH or RESCUE file is linked only when an open text/data file with the same stem exists in the same directory. Later releases will add file signatures, ZIP and OLE container inspection, and stronger evidence-backed format rules.
 
 ## License
 
