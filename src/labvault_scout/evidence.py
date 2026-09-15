@@ -31,7 +31,7 @@ def build_evidence(row: dict) -> tuple[str, str]:
 
     relationship = row.get("relationship_evidence", "")
     if relationship:
-        parts.append(f"Relationship: {relationship}")
+        items.append(f"relationship: {relationship}")
 
     open_copy = row.get("open_copy", "")
     if open_copy:
