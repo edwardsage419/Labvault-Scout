@@ -76,12 +76,12 @@ def test_open_copy_requires_same_directory():
 def test_signature_detection(tmp_path: Path):
     from labvault_scout.identifier import extension_signature_status, inspect_signature
     z = tmp_path / "book.xlsx"
-    z.write_bytes(b"PK\\x03\\x04" + b"x" * 8)
+    z.write_bytes(bytes.fromhex("504B0304") + b"x" * 8)
     assert inspect_signature(z) == "ZIP"
     assert extension_signature_status(z, "ZIP") == "verified"
 
     bad = tmp_path / "fake.pdf"
-    bad.write_bytes(b"PK\\x03\\x04" + b"x" * 8)
+    bad.write_bytes(bytes.fromhex("504B0304") + b"x" * 8)
     assert inspect_signature(bad) == "ZIP"
     assert "mismatch" in extension_signature_status(bad, "ZIP")
 
