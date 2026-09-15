@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from .hashing import sha256_file
+from .relationships import detect_open_copies
 from .report import write_reports
 from .risk import classify, load_rules
 from .scanner import iter_files
@@ -28,6 +29,7 @@ def scan(root: Path, output: Path) -> int:
             })
         except (OSError, PermissionError) as exc:
             errors.append({"path": str(path), "error": type(exc).__name__})
+    detect_open_copies(rows)
     write_reports(rows, output, errors)
     return len(rows)
 
