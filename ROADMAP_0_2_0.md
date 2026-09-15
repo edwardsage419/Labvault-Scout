@@ -11,6 +11,8 @@ v0.1.0 保持冻结。v0.2.0 在 `develop-v0.2.0` 分支开发，直到下一发
    - 在严格证据约束下识别源文件、开放导出文件和衍生文件家族。
 
 2. Stronger format evidence / 更强格式证据
+   - Implemented: OpenDocument ZIP evidence, bounded HDF5 superblock evidence, RO-Crate and BagIt package evidence.
+   - 已实现：OpenDocument ZIP 证据、受限 HDF5 Superblock 证据、RO-Crate 与 BagIt 保存包证据。
    - Expand bounded, read-only structural checks where standard-library parsing is safe.
    - 在标准库能够安全处理的范围内增加只读结构检查。
 
