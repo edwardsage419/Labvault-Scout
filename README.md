@@ -30,6 +30,7 @@ By default the scanner creates `labvault-report/` containing:
 * `report.html` for human review
 * `files.csv` for spreadsheet analysis
 * `scan.json` for programmatic use
+* `duplicates.csv` for exact SHA-256 duplicate groups
 
 ## Risk levels
 
