@@ -67,6 +67,10 @@ def inspect_zip_container(path: Path) -> str:
                 }
                 if media_type in odf_types:
                     return odf_types[media_type]
+            if "ro-crate-metadata.json" in names:
+                return "RO-Crate Research Object"
+            if "bagit.txt" in names and "bag-info.txt" in names:
+                return "BagIt Research Package"
             if "META-INF/MANIFEST.MF" in names:
                 return "JAR compatible ZIP"
             return "ZIP archive"
