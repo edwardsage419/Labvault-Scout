@@ -6,8 +6,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-
-FIELDS = ["path", "size", "sha256", "format", "risk", "reason"]
+FIELDS = ["path", "size", "sha256", "format", "risk", "open_copy", "reason"]
 
 
 def duplicate_groups(rows: list[dict]) -> list[dict]:
@@ -21,27 +20,19 @@ def duplicate_groups(rows: list[dict]) -> list[dict]:
             continue
         group_id += 1
         for member in members:
-            output.append({
-                "group": group_id,
-                "sha256": digest,
-                "path": member["path"],
-                "size": member["size"],
-            })
+            output.append({"group": group_id, "sha256": digest, "path": member["path"], "size": member["size"]})
     return output
 
 
 def write_reports(rows: list[dict], output_dir: Path, errors: list[dict] | None = None) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-
     with (output_dir / "files.csv").open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         writer.writeheader()
         writer.writerows(rows)
 
     payload = {"files": rows, "errors": errors or []}
-    (output_dir / "scan.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    (output_dir / "scan.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     duplicates = duplicate_groups(rows)
     with (output_dir / "duplicates.csv").open("w", newline="", encoding="utf-8-sig") as f:
@@ -52,17 +43,11 @@ def write_reports(rows: list[dict], output_dir: Path, errors: list[dict] | None 
     counts: dict[str, int] = {}
     for row in rows:
         counts[row["risk"]] = counts.get(row["risk"], 0) + 1
-
-    table_rows = "".join(
-        "<tr>" + "".join(f"<td>{html.escape(str(row[k]))}</td>" for k in FIELDS) + "</tr>"
-        for row in rows
-    )
+    open_copy_count = sum(bool(row["open_copy"]) for row in rows)
+    table_rows = "".join("<tr>" + "".join(f"<td>{html.escape(str(row[k]))}</td>" for k in FIELDS) + "</tr>" for row in rows)
     summary = " | ".join(f"{html.escape(k)}: {v}" for k, v in sorted(counts.items()))
-    page = f"""<!doctype html>
-<html lang="en"><meta charset="utf-8"><title>LabVault Scout Report</title>
+    page = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>LabVault Scout Report</title>
 <style>body{{font-family:system-ui;max-width:1200px;margin:40px auto;padding:0 20px}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ddd;padding:7px;text-align:left}}th{{background:#f5f5f5}}</style>
-<h1>LabVault Scout Report</h1>
-<p>Files: {len(rows)} | Duplicate entries: {len(duplicates)} | Scan errors: {len(errors or [])}</p>
-<p>{summary}</p>
+<h1>LabVault Scout Report</h1><p>Files: {len(rows)} | Open copies detected: {open_copy_count} | Duplicate entries: {len(duplicates)} | Scan errors: {len(errors or [])}</p><p>{summary}</p>
 <table><thead><tr>{''.join(f"<th>{k}</th>" for k in FIELDS)}</tr></thead><tbody>{table_rows}</tbody></table></html>"""
     (output_dir / "report.html").write_text(page, encoding="utf-8")
