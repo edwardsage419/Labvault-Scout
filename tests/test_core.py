@@ -232,3 +232,39 @@ def test_migration_plan_is_actionable_and_sorted(tmp_path: Path):
     assert scores == sorted(scores, reverse=True)
     assert rows[0]["path"] == "urgent.jnb"
     assert "safe.csv" not in {row["path"] for row in rows}
+
+
+def test_output_directory_inside_source_is_excluded(tmp_path: Path):
+    source = tmp_path / "research"
+    source.mkdir()
+    (source / "data.csv").write_text("x")
+    output = source / "labvault-report"
+
+    assert scan(source, output) == 1
+    assert (output / "files.csv").exists()
+
+    assert scan(source, output) == 1
+
+
+def test_empty_directory_scan(tmp_path: Path):
+    source = tmp_path / "empty"
+    source.mkdir()
+    output = tmp_path / "empty-report"
+    assert scan(source, output) == 0
+    assert (output / "report.html").exists()
+    assert (output / "migration_plan.csv").exists()
+
+
+def test_scanner_skips_symlinked_files(tmp_path: Path):
+    source = tmp_path / "links"
+    source.mkdir()
+    target = source / "target.csv"
+    target.write_text("x")
+    link = source / "link.csv"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        return
+    files = list(iter_files(source))
+    assert target in files
+    assert link not in files
