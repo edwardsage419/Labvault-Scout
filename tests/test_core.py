@@ -523,3 +523,54 @@ def test_sha256_file_compatibility_after_one_pass_refactor(tmp_path: Path):
     path = tmp_path / "compat.bin"
     path.write_bytes(content)
     assert sha256_file(path) == hashlib.sha256(content).hexdigest()
+
+
+def test_scan_zero_byte_file_is_reported(tmp_path: Path):
+    import csv
+
+    source = tmp_path / "zero_source"
+    source.mkdir()
+    (source / "empty.bin").write_bytes(b"")
+    output = tmp_path / "zero_report"
+
+    scan(source, output)
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        row = next(csv.DictReader(f))
+
+    assert row["size"] == "0"
+    assert row["sha256"] == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    assert row["signature"] == ""
+
+
+def test_scan_truncated_hdf5_reports_container_problem(tmp_path: Path):
+    import csv
+
+    source = tmp_path / "truncated_source"
+    source.mkdir()
+    (source / "broken.h5").write_bytes(bytes.fromhex("894844460D0A1A0A"))
+    output = tmp_path / "truncated_report"
+
+    scan(source, output)
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        row = next(csv.DictReader(f))
+
+    assert row["signature"] == "HDF5"
+    assert row["signature_status"] == "verified"
+    assert row["container_type"] == "Truncated HDF5 container"
+
+
+def test_scan_invalid_zip_is_nonfatal_and_evidenced(tmp_path: Path):
+    import csv
+
+    source = tmp_path / "zip_source"
+    source.mkdir()
+    (source / "broken.zip").write_bytes(bytes.fromhex("504B0304") + b"not-a-real-zip")
+    output = tmp_path / "zip_report"
+
+    scan(source, output)
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        row = next(csv.DictReader(f))
+
+    assert row["signature"] == "ZIP"
+    assert row["signature_status"] == "verified"
+    assert row["container_type"] == "Invalid ZIP container"
