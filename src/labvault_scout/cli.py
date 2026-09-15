@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from .evidence import build_evidence
-from .hashing import sha256_file
+from .hashing import sha256_with_head
 from .identifier import extension_signature_status, hdf5_container_from_header, inspect_zip_container, ole_container_from_header, signature_from_head
 from .actions import recommended_action
 from .priority import assign_priority, priority_reason
@@ -24,8 +24,7 @@ def scan(root: Path, output: Path) -> int:
         try:
             stat = path.stat()
             rule = classify(path, rules)
-            with path.open("rb") as handle:
-                header = handle.read(512)
+            digest, header = sha256_with_head(path)
             signature = signature_from_head(header)
             signature_status = extension_signature_status(path, signature)
             if signature == "ZIP":
@@ -39,7 +38,7 @@ def scan(root: Path, output: Path) -> int:
             rows.append({
                 "path": str(path.relative_to(root)),
                 "size": stat.st_size,
-                "sha256": sha256_file(path),
+                "sha256": digest,
                 "format": rule["name"],
                 "signature": signature,
                 "signature_status": signature_status,
