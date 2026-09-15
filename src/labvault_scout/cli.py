@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from .hashing import sha256_file
-from .identifier import extension_signature_status, inspect_signature, inspect_zip_container
+from .identifier import extension_signature_status, inspect_ole_container, inspect_signature, inspect_zip_container
 from .relationships import detect_open_copies
 from .report import write_reports
 from .risk import classify, load_rules
@@ -22,7 +22,12 @@ def scan(root: Path, output: Path) -> int:
             rule = classify(path, rules)
             signature = inspect_signature(path)
             signature_status = extension_signature_status(path, signature)
-            container_type = inspect_zip_container(path) if signature == "ZIP" else ""
+            if signature == "ZIP":
+                container_type = inspect_zip_container(path)
+            elif signature == "OLE":
+                container_type = inspect_ole_container(path)
+            else:
+                container_type = ""
             rows.append({
                 "path": str(path.relative_to(root)),
                 "size": stat.st_size,
