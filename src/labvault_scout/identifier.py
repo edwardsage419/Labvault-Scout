@@ -65,3 +65,26 @@ def extension_signature_status(path: Path, signature: str) -> str:
     if expected == signature:
         return "verified"
     return ""
+
+
+def inspect_ole_container(path: Path) -> str:
+    """Perform bounded, read-only OLE evidence inspection without parsing streams."""
+    if inspect_signature(path) != "OLE":
+        return ""
+    try:
+        size = path.stat().st_size
+        if size < 512:
+            return "Truncated OLE container"
+        with path.open("rb") as handle:
+            header = handle.read(512)
+        if len(header) < 512:
+            return "Truncated OLE container"
+        byte_order = int.from_bytes(header[28:30], "little")
+        sector_shift = int.from_bytes(header[30:32], "little")
+        if byte_order != 0xFFFE:
+            return "Invalid OLE byte order"
+        if sector_shift not in (9, 12):
+            return "Invalid OLE sector size"
+        return f"OLE Compound File ({1 << sector_shift}-byte sectors)"
+    except OSError:
+        return "Unreadable OLE container"
