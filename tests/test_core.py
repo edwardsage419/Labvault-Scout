@@ -71,3 +71,23 @@ def test_open_copy_requires_same_directory():
     ]
     detect_open_copies(rows)
     assert rows[0]["open_copy"] == ""
+
+
+def test_signature_detection(tmp_path: Path):
+    from labvault_scout.identifier import extension_signature_status, inspect_signature
+    z = tmp_path / "book.xlsx"
+    z.write_bytes(b"PK\\x03\\x04" + b"x" * 8)
+    assert inspect_signature(z) == "ZIP"
+    assert extension_signature_status(z, "ZIP") == "verified"
+
+    bad = tmp_path / "fake.pdf"
+    bad.write_bytes(b"PK\\x03\\x04" + b"x" * 8)
+    assert inspect_signature(bad) == "ZIP"
+    assert "mismatch" in extension_signature_status(bad, "ZIP")
+
+
+def test_hdf5_signature(tmp_path: Path):
+    from labvault_scout.identifier import inspect_signature
+    f = tmp_path / "data.h5"
+    f.write_bytes(bytes.fromhex("894844460D0A1A0A") + b"x")
+    assert inspect_signature(f) == "HDF5"
