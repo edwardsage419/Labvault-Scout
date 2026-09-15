@@ -125,3 +125,18 @@ def test_end_to_end_container_report(tmp_path: Path):
     assert row["signature"] == "ZIP"
     assert row["signature_status"] == "verified"
     assert row["container_type"] == "OOXML Excel"
+
+
+def test_ole_container_header_validation(tmp_path: Path):
+    from labvault_scout.identifier import inspect_ole_container
+    ole = tmp_path / "legacy.xls"
+    header = bytearray(512)
+    header[:8] = bytes.fromhex("D0CF11E0A1B11AE1")
+    header[28:30] = (0xFFFE).to_bytes(2, "little")
+    header[30:32] = (9).to_bytes(2, "little")
+    ole.write_bytes(header)
+    assert inspect_ole_container(ole) == "OLE Compound File (512-byte sectors)"
+
+    short = tmp_path / "short.xls"
+    short.write_bytes(bytes.fromhex("D0CF11E0A1B11AE1"))
+    assert inspect_ole_container(short) == "Truncated OLE container"
