@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
-ZIP_MAGIC = b"PK\x03\x04"
+ZIP_MAGIC = bytes.fromhex("504B0304")
 OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
 HDF5_MAGIC = bytes.fromhex("894844460D0A1A0A")
 PDF_MAGIC = b"%PDF-"
@@ -23,12 +24,35 @@ def inspect_signature(path: Path) -> str:
     return ""
 
 
+def inspect_zip_container(path: Path) -> str:
+    """Identify selected ZIP based formats from member names without extraction."""
+    if inspect_signature(path) != "ZIP":
+        return ""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = set(archive.namelist())
+            if "[Content_Types].xml" in names:
+                if any(name.startswith("xl/") for name in names):
+                    return "OOXML Excel"
+                if any(name.startswith("word/") for name in names):
+                    return "OOXML Word"
+                if any(name.startswith("ppt/") for name in names):
+                    return "OOXML PowerPoint"
+            if "META-INF/MANIFEST.MF" in names:
+                return "JAR compatible ZIP"
+            return "ZIP archive"
+    except (OSError, zipfile.BadZipFile, RuntimeError):
+        return "Invalid ZIP container"
+
+
 def extension_signature_status(path: Path, signature: str) -> str:
-    """Flag only strong contradictions for formats whose container is predictable."""
+    """Flag strong contradictions for formats whose outer container is predictable."""
     ext = path.suffix.lower()
     expected = {
         ".zip": "ZIP",
         ".xlsx": "ZIP",
+        ".docx": "ZIP",
+        ".pptx": "ZIP",
         ".h5": "HDF5",
         ".hdf5": "HDF5",
         ".pdf": "PDF",
