@@ -347,3 +347,13 @@ def test_priority_reason_is_machine_readable():
     }
     reason = priority_reason(row)
     assert reason == "base=80;open_copy=-15:DERIVATIVE;signature=+10;low_confidence=+5"
+
+
+def test_recommended_actions_are_conservative():
+    from labvault_scout.actions import recommended_action
+
+    assert recommended_action({"risk": "RESCUE", "priority": "HIGH", "open_copy": "", "relationship_strength": ""}) == "EXPORT_OPEN_FORMAT"
+    assert recommended_action({"risk": "RESCUE", "priority": "MEDIUM", "open_copy": "x.csv", "relationship_strength": "EXACT"}) == "VERIFY_OPEN_COPY"
+    assert recommended_action({"risk": "RESCUE", "priority": "MEDIUM", "open_copy": "x_export.csv", "relationship_strength": "DERIVATIVE"}) == "VERIFY_DERIVATIVE_EXPORT"
+    assert recommended_action({"risk": "WATCH", "priority": "MEDIUM", "open_copy": "", "relationship_strength": ""}) == "REVIEW_FORMAT"
+    assert recommended_action({"risk": "SAFE", "priority": "LOW", "open_copy": "", "relationship_strength": ""}) == "KEEP"
