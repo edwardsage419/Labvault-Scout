@@ -6,7 +6,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-FIELDS = ["path", "size", "sha256", "format", "signature", "signature_status", "container_type", "risk", "confidence", "priority_score", "priority", "open_copy", "relationship_strength", "relationship_evidence", "evidence", "reason"]
+FIELDS = ["path", "size", "sha256", "format", "signature", "signature_status", "container_type", "risk", "confidence", "priority_score", "priority", "priority_reason", "open_copy", "relationship_strength", "relationship_evidence", "evidence", "reason"]
 
 
 def duplicate_groups(rows: list[dict]) -> list[dict]:
