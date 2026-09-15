@@ -34,6 +34,7 @@ def detect_open_copies(rows: list[dict]) -> None:
     for row in rows:
         row["open_copy"] = ""
         row["relationship_evidence"] = ""
+        row["relationship_strength"] = ""
         if row["risk"] not in SOURCE_RISKS:
             continue
 
@@ -48,6 +49,7 @@ def detect_open_copies(rows: list[dict]) -> None:
         if exact_matches:
             row["open_copy"] = "; ".join(sorted(exact_matches))
             row["relationship_evidence"] = "same-directory same-stem open copy"
+            row["relationship_strength"] = "EXACT"
             continue
 
         family, source_derivative = _family_stem(path)
@@ -63,3 +65,4 @@ def detect_open_copies(rows: list[dict]) -> None:
         if family_matches:
             row["open_copy"] = "; ".join(sorted(family_matches))
             row["relationship_evidence"] = "same-directory derivative-suffix open copy"
+            row["relationship_strength"] = "DERIVATIVE"
