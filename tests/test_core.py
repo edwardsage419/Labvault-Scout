@@ -307,3 +307,29 @@ def test_exact_open_copy_has_stronger_relationship():
     detect_open_copies(rows)
     assert rows[0]["relationship_strength"] == "EXACT"
     assert rows[0]["relationship_evidence"] == "same-directory same-stem open copy"
+
+
+def test_priority_distinguishes_relationship_strength():
+    from labvault_scout.priority import assign_priority
+
+    exact = {
+        "risk": "RESCUE", "open_copy": "experiment.csv",
+        "relationship_strength": "EXACT", "signature_status": "", "confidence": "MEDIUM",
+    }
+    derivative = {
+        "risk": "RESCUE", "open_copy": "experiment_export.csv",
+        "relationship_strength": "DERIVATIVE", "signature_status": "", "confidence": "MEDIUM",
+    }
+    none = {
+        "risk": "RESCUE", "open_copy": "",
+        "relationship_strength": "", "signature_status": "", "confidence": "MEDIUM",
+    }
+
+    exact_score = assign_priority(exact)[0]
+    derivative_score = assign_priority(derivative)[0]
+    none_score = assign_priority(none)[0]
+
+    assert exact_score < derivative_score < none_score
+    assert exact_score == 55
+    assert derivative_score == 65
+    assert none_score == 80
