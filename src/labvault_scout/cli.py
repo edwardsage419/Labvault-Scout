@@ -18,7 +18,8 @@ def scan(root: Path, output: Path) -> int:
     rules = load_rules()
     rows: list[dict] = []
     errors: list[dict] = []
-    for path in iter_files(root):
+    output = output.expanduser().resolve()
+    for path in iter_files(root, excluded=output):
         try:
             stat = path.stat()
             rule = classify(path, rules)
