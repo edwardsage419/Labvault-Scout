@@ -268,3 +268,28 @@ def test_scanner_skips_symlinked_files(tmp_path: Path):
     files = list(iter_files(source))
     assert target in files
     assert link not in files
+
+
+def test_derivative_suffix_open_copy_family():
+    from labvault_scout.relationships import detect_open_copies
+
+    rows = [
+        {"path": "run/experiment.jnb", "risk": "RESCUE"},
+        {"path": "run/experiment_export.csv", "risk": "SAFE"},
+        {"path": "run/experiment_notes.csv", "risk": "SAFE"},
+    ]
+    detect_open_copies(rows)
+    assert rows[0]["open_copy"] == "run/experiment_export.csv"
+    assert rows[0]["relationship_evidence"] == "same-directory derivative-suffix open copy"
+
+
+def test_family_detection_remains_same_directory_only():
+    from labvault_scout.relationships import detect_open_copies
+
+    rows = [
+        {"path": "a/experiment.jnb", "risk": "RESCUE"},
+        {"path": "b/experiment_export.csv", "risk": "SAFE"},
+    ]
+    detect_open_copies(rows)
+    assert rows[0]["open_copy"] == ""
+    assert rows[0]["relationship_evidence"] == ""
