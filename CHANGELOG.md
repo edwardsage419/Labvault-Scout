@@ -2,7 +2,7 @@
 
 ## 0.1.0
 
-Initial MVP under development.
+Initial MVP release candidate.
 
 ### Added
 
@@ -11,6 +11,11 @@ Initial MVP under development.
 * Exact duplicate grouping and `duplicates.csv` export
 * Non-fatal scan error recording
 * Conservative same-directory, same-stem open-copy detection
+* ZIP, OLE, HDF5, and PDF signature evidence
+* Safe ZIP OOXML and bounded OLE container inspection
+* Evidence summaries and confidence labels
+* Transparent preservation priority scoring
+* Prioritized `migration_plan.csv` export
 * Extension-based scientific format rules
 * SAFE, WATCH, RESCUE, and UNKNOWN triage levels
 * HTML, CSV, and JSON report generation
