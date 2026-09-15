@@ -385,3 +385,22 @@ def test_hdf5_unknown_superblock_version(tmp_path: Path):
     path = tmp_path / "odd.h5"
     path.write_bytes(bytes.fromhex("894844460D0A1A0A") + bytes([9]) + b"\x00" * 7)
     assert inspect_hdf5_container(path) == "Unknown HDF5 superblock version 9"
+
+
+def test_scan_reports_hdf5_superblock(tmp_path: Path):
+    import csv
+
+    source = tmp_path / "hdf5_source"
+    source.mkdir()
+    path = source / "data.h5"
+    path.write_bytes(bytes.fromhex("894844460D0A1A0A") + bytes([2]) + b"\x00" * 7)
+
+    output = tmp_path / "hdf5_report"
+    scan(source, output)
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        row = next(csv.DictReader(f))
+
+    assert row["signature"] == "HDF5"
+    assert row["signature_status"] == "verified"
+    assert row["container_type"] == "HDF5 superblock v2"
+    assert row["confidence"] == "HIGH"
