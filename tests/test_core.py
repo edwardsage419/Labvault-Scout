@@ -427,3 +427,16 @@ def test_zip_container_identifies_bagit_package(tmp_path: Path):
         archive.writestr("bag-info.txt", "Source-Organization: Lab\n")
         archive.writestr("data/results.csv", "x,y\n1,2\n")
     assert inspect_zip_container(path) == "BagIt Research Package"
+
+
+def test_preservation_package_is_positive_but_bounded_evidence():
+    from labvault_scout.priority import assign_priority, priority_reason
+
+    plain = {"risk": "UNKNOWN", "open_copy": "", "container_type": "", "signature_status": "", "confidence": "MEDIUM"}
+    crate = {"risk": "UNKNOWN", "open_copy": "", "container_type": "RO-Crate Research Object", "signature_status": "", "confidence": "MEDIUM"}
+    bag = {"risk": "UNKNOWN", "open_copy": "", "container_type": "BagIt Research Package", "signature_status": "", "confidence": "MEDIUM"}
+
+    assert assign_priority(plain)[0] == 50
+    assert assign_priority(crate)[0] == 40
+    assert assign_priority(bag)[0] == 40
+    assert priority_reason(crate) == "base=50;preservation_package=-10"
