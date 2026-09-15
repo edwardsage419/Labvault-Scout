@@ -1,0 +1,30 @@
+name: Scientific format request
+description: Propose a scientific file format for the rule database
+title: "[Format] "
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Format name
+    validations:
+      required: true
+  - type: input
+    id: extension
+    attributes:
+      label: Extension
+      placeholder: ".example"
+    validations:
+      required: true
+  - type: textarea
+    id: software
+    attributes:
+      label: Creating software or instrument
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Public references
+      description: Prefer authoritative specifications or vendor documentation.
+  - type: textarea
+    id: preservation
+    attributes:
+      label: Preservation considerations
