@@ -20,7 +20,9 @@ LabVault Scout 是一个完全本地、只读、开源的科研数据保存风�
 需要 Python 3.10 或更高版本。
 
 ```bash
-python -m pip install -e .
+git clone https://github.com/edwardsage419/Labvault-Scout.git
+cd Labvault-Scout
+python -m pip install .
 labvault-scout scan /path/to/research
 ```
 
@@ -38,6 +40,10 @@ labvault-scout scan /path/to/research
 ## 当前状态
 
 v0.1.0 是早期 MVP。当前识别结合扩展名规则，以及对 ZIP、OLE、HDF5、PDF 的受限只读文件签名检查。程序可以检查 OOXML ZIP 结构和基础 OLE 文件头，不解压或执行被扫描内容。当前版本还支持精确重复文件检测、保守的开放副本检测、证据与置信度记录、透明的保存优先级评分，以及迁移行动清单。
+
+## 发布说明
+
+参见 [v0.1.0 中英双语发布说明](RELEASE_NOTES_0_1_0.md)。
 
 ## 许可证
 
