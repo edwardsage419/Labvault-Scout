@@ -38,7 +38,7 @@ def write_reports(rows: list[dict], output_dir: Path, errors: list[dict] | None 
         (row for row in rows if row["priority"] in {"HIGH", "MEDIUM"}),
         key=lambda row: (-int(row["priority_score"]), row["path"].lower()),
     )
-    migration_fields = ["priority_score", "priority", "path", "format", "risk", "confidence", "open_copy", "relationship_strength", "relationship_evidence", "evidence", "reason"]
+    migration_fields = ["priority_score", "priority", "path", "format", "risk", "confidence", "priority_reason", "open_copy", "relationship_strength", "relationship_evidence", "evidence", "reason"]
     with (output_dir / "migration_plan.csv").open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=migration_fields, extrasaction="ignore")
         writer.writeheader()
