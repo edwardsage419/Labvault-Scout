@@ -10,23 +10,25 @@ from .scanner import iter_files
 
 
 def scan(root: Path, output: Path) -> int:
+    root = root.expanduser().resolve()
     rules = load_rules()
-    rows = []
+    rows: list[dict] = []
+    errors: list[dict] = []
     for path in iter_files(root):
         try:
             stat = path.stat()
             rule = classify(path, rules)
             rows.append({
-                "path": str(path.relative_to(root.resolve())),
+                "path": str(path.relative_to(root)),
                 "size": stat.st_size,
                 "sha256": sha256_file(path),
                 "format": rule["name"],
                 "risk": rule["risk"],
                 "reason": rule["reason"],
             })
-        except (OSError, PermissionError):
-            continue
-    write_reports(rows, output)
+        except (OSError, PermissionError) as exc:
+            errors.append({"path": str(path), "error": type(exc).__name__})
+    write_reports(rows, output, errors)
     return len(rows)
 
 
