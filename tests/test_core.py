@@ -107,3 +107,21 @@ def test_zip_container_inspection(tmp_path: Path):
     with zipfile.ZipFile(generic, "w") as z:
         z.writestr("data.txt", "x")
     assert inspect_zip_container(generic) == "ZIP archive"
+
+
+def test_end_to_end_container_report(tmp_path: Path):
+    import csv
+    import zipfile
+    source = tmp_path / "source_container"
+    source.mkdir()
+    xlsx = source / "book.xlsx"
+    with zipfile.ZipFile(xlsx, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("xl/workbook.xml", "<workbook/>")
+    output = tmp_path / "container_report"
+    scan(source, output)
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        row = next(csv.DictReader(f))
+    assert row["signature"] == "ZIP"
+    assert row["signature_status"] == "verified"
+    assert row["container_type"] == "OOXML Excel"
