@@ -513,3 +513,13 @@ def test_hash_and_header_handles_small_files(tmp_path: Path):
     digest, head = sha256_with_head(path)
     assert digest == hashlib.sha256(content).hexdigest()
     assert head == content
+
+
+def test_sha256_file_compatibility_after_one_pass_refactor(tmp_path: Path):
+    import hashlib
+    from labvault_scout.hashing import sha256_file
+
+    content = b"compatibility" * 1000
+    path = tmp_path / "compat.bin"
+    path.write_bytes(content)
+    assert sha256_file(path) == hashlib.sha256(content).hexdigest()
