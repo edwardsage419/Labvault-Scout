@@ -62,11 +62,11 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 
 ## Roadmap
 
-v0.1 focuses on read-only inventory, hashing, evidence-backed format triage, duplicate detection, conservative open-copy detection, transparent preservation priority scoring, and an actionable migration plan. Later releases will expand format evidence and project-level relationship analysis.
+v0.2.0-rc1 adds conservative derivative file families, relationship strength, machine-readable priority reasons, preservation actions, stronger structural evidence, and reduced repeated file reads.
 
 ## Release notes
 
-See [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
+See [v0.2.0-rc1 release notes](RELEASE_NOTES_0_2_0_RC1.md) and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
 
 ## License
 
