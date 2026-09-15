@@ -21,8 +21,12 @@ v0.1.0 保持冻结。v0.2.0 在 `develop-v0.2.0` 分支开发，直到下一发
    - 明确解释文件为什么需要优先处理，以及哪些证据影响了优先级。
 
 4. Performance and scale / 性能与规模
-   - Add bounded tests for larger directory trees and avoid unnecessary repeated reads.
-   - 增加大目录树测试，减少不必要的重复读取。
+   - Implemented: 1,000-file traversal coverage and shared header evidence for signature, HDF5, and OLE checks.
+   - Implemented: SHA-256 and the bounded identification header are collected in one sequential read.
+   - 已实现：1000 文件目录遍历覆盖，以及签名、HDF5、OLE 共用文件头证据。
+   - 已实现：SHA-256 与受限识别文件头在一次顺序读取中同时获取。
+   - Continue measuring scale without brittle wall-clock CI thresholds.
+   - 继续验证规模能力，不使用容易受 CI 机器波动影响的固定耗时阈值。
 
 ## Constraints / 约束
 
