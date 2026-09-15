@@ -28,19 +28,26 @@ def inspect_signature(path: Path) -> str:
         return signature_from_head(handle.read(8))
 
 
-def inspect_hdf5_container(path: Path) -> str:
-    """Validate bounded HDF5 superblock evidence without parsing datasets."""
-    if inspect_signature(path) != "HDF5":
+def hdf5_container_from_header(header: bytes) -> str:
+    """Validate HDF5 superblock evidence from already-read header bytes."""
+    if signature_from_head(header) != "HDF5":
         return ""
     try:
-        with path.open("rb") as handle:
-            header = handle.read(16)
         if len(header) < 9:
             return "Truncated HDF5 container"
         version = header[8]
         if version not in (0, 1, 2, 3):
             return f"Unknown HDF5 superblock version {version}"
         return f"HDF5 superblock v{version}"
+    except (IndexError, ValueError):
+        return "Invalid HDF5 container"
+
+
+def inspect_hdf5_container(path: Path) -> str:
+    """Validate bounded HDF5 superblock evidence without parsing datasets."""
+    try:
+        with path.open("rb") as handle:
+            return hdf5_container_from_header(handle.read(16))
     except OSError:
         return "Unreadable HDF5 container"
 
@@ -104,16 +111,13 @@ def extension_signature_status(path: Path, signature: str) -> str:
     return ""
 
 
-def inspect_ole_container(path: Path) -> str:
-    """Perform bounded, read-only OLE evidence inspection without parsing streams."""
-    if inspect_signature(path) != "OLE":
+def ole_container_from_header(header: bytes, size: int) -> str:
+    """Validate bounded OLE header evidence from already-read bytes."""
+    if signature_from_head(header) != "OLE":
         return ""
     try:
-        size = path.stat().st_size
         if size < 512:
             return "Truncated OLE container"
-        with path.open("rb") as handle:
-            header = handle.read(512)
         if len(header) < 512:
             return "Truncated OLE container"
         byte_order = int.from_bytes(header[28:30], "little")
@@ -123,5 +127,15 @@ def inspect_ole_container(path: Path) -> str:
         if sector_shift not in (9, 12):
             return "Invalid OLE sector size"
         return f"OLE Compound File ({1 << sector_shift}-byte sectors)"
+    except (IndexError, ValueError):
+        return "Invalid OLE container"
+
+
+def inspect_ole_container(path: Path) -> str:
+    """Perform bounded, read-only OLE evidence inspection without parsing streams."""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            return ole_container_from_header(handle.read(512), size)
     except OSError:
         return "Unreadable OLE container"
