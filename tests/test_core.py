@@ -440,3 +440,30 @@ def test_preservation_package_is_positive_but_bounded_evidence():
     assert assign_priority(crate)[0] == 40
     assert assign_priority(bag)[0] == 40
     assert priority_reason(crate) == "base=50;preservation_package=-10"
+
+
+def test_signature_from_head_matches_file_inspection(tmp_path: Path):
+    from labvault_scout.identifier import inspect_signature, signature_from_head
+
+    samples = [
+        ("a.zip", bytes.fromhex("504B0304") + b"1234"),
+        ("a.h5", bytes.fromhex("894844460D0A1A0A")),
+        ("a.pdf", b"%PDF-1.7"),
+    ]
+    for name, content in samples:
+        path = tmp_path / name
+        path.write_bytes(content)
+        assert signature_from_head(content[:8]) == inspect_signature(path)
+
+
+def test_scanner_handles_large_flat_directory(tmp_path: Path):
+    from labvault_scout.scanner import iter_files
+
+    source = tmp_path / "large"
+    source.mkdir()
+    for index in range(1000):
+        (source / f"sample_{index:04d}.csv").write_text("x,y\n1,2\n", encoding="utf-8")
+
+    paths = list(iter_files(source))
+    assert len(paths) == 1000
+    assert len({p.name for p in paths}) == 1000
