@@ -48,3 +48,26 @@ def test_end_to_end_reports(tmp_path: Path):
     assert len(payload["files"]) == 3
     with (output / "duplicates.csv").open(encoding="utf-8-sig") as f:
         assert len(list(csv.DictReader(f))) == 2
+
+
+def test_open_copy_detection(tmp_path: Path):
+    from labvault_scout.relationships import detect_open_copies
+    rows = [
+        {"path": "experiment.jnb", "risk": "RESCUE"},
+        {"path": "experiment.csv", "risk": "SAFE"},
+        {"path": "other.jnb", "risk": "RESCUE"},
+    ]
+    detect_open_copies(rows)
+    assert rows[0]["open_copy"] == "experiment.csv"
+    assert rows[1]["open_copy"] == ""
+    assert rows[2]["open_copy"] == ""
+
+
+def test_open_copy_requires_same_directory():
+    from labvault_scout.relationships import detect_open_copies
+    rows = [
+        {"path": "a/experiment.jnb", "risk": "RESCUE"},
+        {"path": "b/experiment.csv", "risk": "SAFE"},
+    ]
+    detect_open_copies(rows)
+    assert rows[0]["open_copy"] == ""
