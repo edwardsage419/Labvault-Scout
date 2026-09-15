@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .evidence import build_evidence
 from .hashing import sha256_file
-from .identifier import extension_signature_status, inspect_ole_container, inspect_signature, inspect_zip_container
+from .identifier import extension_signature_status, inspect_hdf5_container, inspect_ole_container, inspect_signature, inspect_zip_container
 from .actions import recommended_action
 from .priority import assign_priority, priority_reason
 from .relationships import detect_open_copies
@@ -30,6 +30,8 @@ def scan(root: Path, output: Path) -> int:
                 container_type = inspect_zip_container(path)
             elif signature == "OLE":
                 container_type = inspect_ole_container(path)
+            elif signature == "HDF5":
+                container_type = inspect_hdf5_container(path)
             else:
                 container_type = ""
             rows.append({
