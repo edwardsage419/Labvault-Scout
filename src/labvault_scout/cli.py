@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from .hashing import sha256_file
+from .identifier import extension_signature_status, inspect_signature
 from .relationships import detect_open_copies
 from .report import write_reports
 from .risk import classify, load_rules
@@ -19,11 +20,15 @@ def scan(root: Path, output: Path) -> int:
         try:
             stat = path.stat()
             rule = classify(path, rules)
+            signature = inspect_signature(path)
+            signature_status = extension_signature_status(path, signature)
             rows.append({
                 "path": str(path.relative_to(root)),
                 "size": stat.st_size,
                 "sha256": sha256_file(path),
                 "format": rule["name"],
+                "signature": signature,
+                "signature_status": signature_status,
                 "risk": rule["risk"],
                 "reason": rule["reason"],
             })
