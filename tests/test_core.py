@@ -574,3 +574,44 @@ def test_scan_invalid_zip_is_nonfatal_and_evidenced(tmp_path: Path):
     assert row["signature"] == "ZIP"
     assert row["signature_status"] == "verified"
     assert row["container_type"] == "Invalid ZIP container"
+
+
+def test_scan_zero_byte_file_is_reported(tmp_path: Path):
+    import csv
+
+    source = tmp_path / "empty_source"
+    source.mkdir()
+    (source / "empty.bin").write_bytes(b"")
+    output = tmp_path / "empty_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        row = next(csv.DictReader(f))
+    assert row["size"] == "0"
+    assert row["signature"] == ""
+    assert len(row["sha256"]) == 64
+
+
+def test_scan_truncated_hdf5_is_nonfatal(tmp_path: Path):
+    import csv
+
+    source = tmp_path / "truncated_source"
+    source.mkdir()
+    (source / "broken.h5").write_bytes(bytes.fromhex("894844460D0A1A0A"))
+    output = tmp_path / "truncated_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        row = next(csv.DictReader(f))
+    assert row["signature"] == "HDF5"
+    assert row["container_type"] == "Truncated HDF5 container"
+
+
+def test_output_inside_source_is_excluded(tmp_path: Path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = source / "labvault-report"
+
+    assert scan(source, output) == 1
+    assert (output / "files.csv").exists()
