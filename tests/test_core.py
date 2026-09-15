@@ -487,3 +487,29 @@ def test_header_helpers_match_file_helpers(tmp_path: Path):
     ole_header[30:32] = (9).to_bytes(2, "little")
     ole.write_bytes(ole_header)
     assert ole_container_from_header(bytes(ole_header), 512) == inspect_ole_container(ole)
+
+
+def test_hash_and_header_are_collected_in_one_pass(tmp_path: Path):
+    import hashlib
+    from labvault_scout.hashing import sha256_with_head
+
+    content = bytes(range(256)) * 5000
+    path = tmp_path / "large.bin"
+    path.write_bytes(content)
+
+    digest, head = sha256_with_head(path)
+    assert digest == hashlib.sha256(content).hexdigest()
+    assert head == content[:512]
+
+
+def test_hash_and_header_handles_small_files(tmp_path: Path):
+    import hashlib
+    from labvault_scout.hashing import sha256_with_head
+
+    content = b"small"
+    path = tmp_path / "small.bin"
+    path.write_bytes(content)
+
+    digest, head = sha256_with_head(path)
+    assert digest == hashlib.sha256(content).hexdigest()
+    assert head == content
