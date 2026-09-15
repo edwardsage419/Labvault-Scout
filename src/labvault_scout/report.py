@@ -6,7 +6,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-FIELDS = ["path", "size", "sha256", "format", "signature", "signature_status", "container_type", "risk", "confidence", "priority_score", "priority", "open_copy", "evidence", "reason"]
+FIELDS = ["path", "size", "sha256", "format", "signature", "signature_status", "container_type", "risk", "confidence", "priority_score", "priority", "open_copy", "relationship_evidence", "evidence", "reason"]
 
 
 def duplicate_groups(rows: list[dict]) -> list[dict]:
@@ -38,7 +38,7 @@ def write_reports(rows: list[dict], output_dir: Path, errors: list[dict] | None 
         (row for row in rows if row["priority"] in {"HIGH", "MEDIUM"}),
         key=lambda row: (-int(row["priority_score"]), row["path"].lower()),
     )
-    migration_fields = ["priority_score", "priority", "path", "format", "risk", "confidence", "open_copy", "evidence", "reason"]
+    migration_fields = ["priority_score", "priority", "path", "format", "risk", "confidence", "open_copy", "relationship_evidence", "evidence", "reason"]
     with (output_dir / "migration_plan.csv").open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=migration_fields, extrasaction="ignore")
         writer.writeheader()
