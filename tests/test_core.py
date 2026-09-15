@@ -333,3 +333,17 @@ def test_priority_distinguishes_relationship_strength():
     assert exact_score == 55
     assert derivative_score == 65
     assert none_score == 80
+
+
+def test_priority_reason_is_machine_readable():
+    from labvault_scout.priority import priority_reason
+
+    row = {
+        "risk": "RESCUE",
+        "open_copy": "experiment_export.csv",
+        "relationship_strength": "DERIVATIVE",
+        "signature_status": "unverified: expected ZIP",
+        "confidence": "LOW",
+    }
+    reason = priority_reason(row)
+    assert reason == "base=80;open_copy=-15:DERIVATIVE;signature=+10;low_confidence=+5"
