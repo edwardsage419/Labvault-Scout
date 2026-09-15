@@ -24,7 +24,7 @@ python -m pip install -e .
 labvault-scout scan /path/to/research
 ```
 
-报告默认写入 `labvault-report/`。
+报告默认写入 `labvault-report/`，包括可直接打开的 HTML 报告、文件清单 CSV、机器可读 JSON，以及按 SHA-256 聚合的精确重复文件清单 `duplicates.csv`。
 
 ## 风险等级
 
