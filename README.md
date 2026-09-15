@@ -21,7 +21,7 @@ Python 3.10 or newer is required.
 ```bash
 git clone https://github.com/edwardsage419/Labvault-Scout.git
 cd Labvault-Scout
-python -m pip install -e .
+python -m pip install .
 labvault-scout scan /path/to/research
 ```
 
@@ -63,6 +63,10 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 ## Roadmap
 
 v0.1 focuses on read-only inventory, hashing, evidence-backed format triage, duplicate detection, conservative open-copy detection, transparent preservation priority scoring, and an actionable migration plan. Later releases will expand format evidence and project-level relationship analysis.
+
+## Release notes
+
+See [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
 
 ## License
 
