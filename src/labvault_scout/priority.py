@@ -2,6 +2,10 @@ from __future__ import annotations
 
 RISK_SCORE = {"SAFE": 0, "WATCH": 40, "RESCUE": 80, "UNKNOWN": 50}
 OPEN_COPY_CREDIT = {"EXACT": 25, "DERIVATIVE": 15}
+PRESERVATION_PACKAGE_CREDIT = {
+    "RO-Crate Research Object": 10,
+    "BagIt Research Package": 10,
+}
 
 
 def priority_reason(row: dict) -> str:
@@ -10,6 +14,9 @@ def priority_reason(row: dict) -> str:
     if row.get("open_copy"):
         strength = row.get("relationship_strength", "")
         reasons.append(f"open_copy=-{OPEN_COPY_CREDIT.get(strength, 10)}:{strength or 'UNCLASSIFIED'}")
+    package_credit = PRESERVATION_PACKAGE_CREDIT.get(row.get("container_type", ""), 0)
+    if package_credit:
+        reasons.append(f"preservation_package=-{package_credit}")
     status = row.get("signature_status", "")
     if status.startswith("mismatch") or status.startswith("unverified"):
         reasons.append("signature=+10")
@@ -25,6 +32,9 @@ def assign_priority(row: dict) -> tuple[int, str]:
     if row.get("open_copy"):
         strength = row.get("relationship_strength", "")
         score -= OPEN_COPY_CREDIT.get(strength, 10)
+
+    package_credit = PRESERVATION_PACKAGE_CREDIT.get(row.get("container_type", ""), 0)
+    score -= package_credit
 
     status = row.get("signature_status", "")
     if status.startswith("mismatch") or status.startswith("unverified"):
