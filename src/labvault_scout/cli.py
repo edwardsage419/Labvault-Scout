@@ -46,7 +46,7 @@ def scan(root: Path, output: Path) -> int:
                 "risk": rule["risk"],
                 "reason": rule["reason"],
             })
-        except (OSError, PermissionError) as exc:
+        except OSError as exc:
             errors.append({"path": str(path), "error": type(exc).__name__})
     detect_open_copies(rows)
     for row in rows:
