@@ -186,3 +186,26 @@ def test_scan_evidence_end_to_end(tmp_path: Path):
     assert "extension rule: Excel Workbook" in row["evidence"]
     assert "signature: ZIP" in row["evidence"]
     assert "container: OOXML Excel" in row["evidence"]
+
+
+def test_priority_prefers_rescue_without_open_copy():
+    from labvault_scout.priority import assign_priority
+
+    exposed = {"risk": "RESCUE", "open_copy": "", "signature_status": "", "confidence": "MEDIUM"}
+    protected = {"risk": "RESCUE", "open_copy": "data.csv", "signature_status": "", "confidence": "MEDIUM"}
+
+    exposed_score, exposed_label = assign_priority(exposed)
+    protected_score, protected_label = assign_priority(protected)
+
+    assert exposed_score > protected_score
+    assert exposed_label == "HIGH"
+    assert protected_label == "MEDIUM"
+
+
+def test_priority_penalizes_signature_mismatch():
+    from labvault_scout.priority import assign_priority
+
+    normal = {"risk": "WATCH", "open_copy": "", "signature_status": "verified", "confidence": "HIGH"}
+    mismatch = {"risk": "WATCH", "open_copy": "", "signature_status": "mismatch: expected PDF, detected ZIP", "confidence": "LOW"}
+
+    assert assign_priority(mismatch)[0] > assign_priority(normal)[0]
