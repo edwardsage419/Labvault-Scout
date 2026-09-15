@@ -369,3 +369,19 @@ def test_zip_container_identifies_open_document_spreadsheet(tmp_path: Path):
         archive.writestr("content.xml", "<office:document-content/>")
 
     assert inspect_zip_container(path) == "OpenDocument Spreadsheet"
+
+
+def test_hdf5_superblock_evidence(tmp_path: Path):
+    from labvault_scout.identifier import inspect_hdf5_container
+
+    path = tmp_path / "data.h5"
+    path.write_bytes(bytes.fromhex("894844460D0A1A0A") + bytes([2]) + b"\x00" * 7)
+    assert inspect_hdf5_container(path) == "HDF5 superblock v2"
+
+
+def test_hdf5_unknown_superblock_version(tmp_path: Path):
+    from labvault_scout.identifier import inspect_hdf5_container
+
+    path = tmp_path / "odd.h5"
+    path.write_bytes(bytes.fromhex("894844460D0A1A0A") + bytes([9]) + b"\x00" * 7)
+    assert inspect_hdf5_container(path) == "Unknown HDF5 superblock version 9"
