@@ -8,14 +8,22 @@ version = "0.1.0"
 description = "Local, read-only scientific data preservation risk scanner."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 authors = [{name = "LabVault Scout contributors"}]
 keywords = ["scientific-data", "data-preservation", "open-science", "research-software"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent"
+  "Operating System :: OS Independent",
+  "Development Status :: 3 - Alpha",
+  "Topic :: Scientific/Engineering",
+  "Topic :: System :: Archiving"
 ]
+
+[project.urls]
+Homepage = "https://github.com/edwardsage419/Labvault-Scout"
+Repository = "https://github.com/edwardsage419/Labvault-Scout"
+Issues = "https://github.com/edwardsage419/Labvault-Scout/issues"
 
 [project.scripts]
 labvault-scout = "labvault_scout.cli:main"
