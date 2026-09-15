@@ -24,6 +24,23 @@ def inspect_signature(path: Path) -> str:
     return ""
 
 
+def inspect_hdf5_container(path: Path) -> str:
+    """Validate bounded HDF5 superblock evidence without parsing datasets."""
+    if inspect_signature(path) != "HDF5":
+        return ""
+    try:
+        with path.open("rb") as handle:
+            header = handle.read(16)
+        if len(header) < 9:
+            return "Truncated HDF5 container"
+        version = header[8]
+        if version not in (0, 1, 2, 3):
+            return f"Unknown HDF5 superblock version {version}"
+        return f"HDF5 superblock v{version}"
+    except OSError:
+        return "Unreadable HDF5 container"
+
+
 def inspect_zip_container(path: Path) -> str:
     """Identify selected ZIP based formats from member names without extraction."""
     if inspect_signature(path) != "ZIP":
