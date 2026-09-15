@@ -24,7 +24,7 @@ python -m pip install -e .
 labvault-scout scan /path/to/research
 ```
 
-报告默认写入 `labvault-report/`，包括可直接打开的 HTML 报告、文件清单 CSV、机器可读 JSON，以及按 SHA-256 聚合的精确重复文件清单 `duplicates.csv`。
+报告默认写入 `labvault-report/`，包括 `report.html`、`files.csv`、`scan.json`、精确重复文件清单 `duplicates.csv`，以及按保存优先级排序的 `migration_plan.csv`。
 
 ## 风险等级
 
@@ -37,7 +37,7 @@ labvault-scout scan /path/to/research
 
 ## 当前状态
 
-v0.1.0 是早期 MVP。目前主要根据扩展名识别格式。当前版本还会进行保守的开放副本检测：只有当 WATCH 或 RESCUE 文件在同一目录中存在同名的 CSV、TSV、TXT、JSON 或 XML 文件时，才标记为可能的开放副本。后续版本将增加文件签名和容器检查以及证据更充分的规则体系。
+v0.1.0 是早期 MVP。当前识别结合扩展名规则，以及对 ZIP、OLE、HDF5、PDF 的受限只读文件签名检查。程序可以检查 OOXML ZIP 结构和基础 OLE 文件头，不解压或执行被扫描内容。当前版本还支持精确重复文件检测、保守的开放副本检测、证据与置信度记录、透明的保存优先级评分，以及迁移行动清单。
 
 ## 许可证
 
