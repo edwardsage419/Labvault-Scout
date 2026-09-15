@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased 0.2.0
+
+Development continues on `develop-v0.2.0`. See `ROADMAP_0_2_0.md`.
+
 ## 0.1.0
 
 Initial MVP release candidate.
