@@ -29,6 +29,10 @@ def build_evidence(row: dict) -> tuple[str, str]:
     elif status.startswith("mismatch") or status.startswith("unverified"):
         confidence = "LOW"
 
+    relationship = row.get("relationship_evidence", "")
+    if relationship:
+        parts.append(f"Relationship: {relationship}")
+
     open_copy = row.get("open_copy", "")
     if open_copy:
         items.append(f"possible open copy: {open_copy}")
