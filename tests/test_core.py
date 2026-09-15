@@ -467,3 +467,23 @@ def test_scanner_handles_large_flat_directory(tmp_path: Path):
     paths = list(iter_files(source))
     assert len(paths) == 1000
     assert len({p.name for p in paths}) == 1000
+
+
+def test_header_helpers_match_file_helpers(tmp_path: Path):
+    from labvault_scout.identifier import (
+        hdf5_container_from_header, inspect_hdf5_container,
+        inspect_ole_container, ole_container_from_header,
+    )
+
+    hdf = tmp_path / "data.h5"
+    hdf.write_bytes(bytes.fromhex("894844460D0A1A0A") + bytes([2]) + b"\x00" * 503)
+    header = hdf.read_bytes()[:512]
+    assert hdf5_container_from_header(header) == inspect_hdf5_container(hdf)
+
+    ole = tmp_path / "data.xls"
+    ole_header = bytearray(512)
+    ole_header[:8] = bytes.fromhex("D0CF11E0A1B11AE1")
+    ole_header[28:30] = (0xFFFE).to_bytes(2, "little")
+    ole_header[30:32] = (9).to_bytes(2, "little")
+    ole.write_bytes(ole_header)
+    assert ole_container_from_header(bytes(ole_header), 512) == inspect_ole_container(ole)
