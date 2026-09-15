@@ -91,3 +91,19 @@ def test_hdf5_signature(tmp_path: Path):
     f = tmp_path / "data.h5"
     f.write_bytes(bytes.fromhex("894844460D0A1A0A") + b"x")
     assert inspect_signature(f) == "HDF5"
+
+
+def test_zip_container_inspection(tmp_path: Path):
+    import zipfile
+    from labvault_scout.identifier import inspect_zip_container
+
+    xlsx = tmp_path / "book.xlsx"
+    with zipfile.ZipFile(xlsx, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("xl/workbook.xml", "<workbook/>")
+    assert inspect_zip_container(xlsx) == "OOXML Excel"
+
+    generic = tmp_path / "archive.zip"
+    with zipfile.ZipFile(generic, "w") as z:
+        z.writestr("data.txt", "x")
+    assert inspect_zip_container(generic) == "ZIP archive"
