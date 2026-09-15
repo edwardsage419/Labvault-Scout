@@ -17,7 +17,14 @@ jobs:
       - run: python -m pip install pytest
       - run: pytest -q
       - run: labvault-scout --help
-      - run: labvault-scout scan tests/fixtures -o smoke-report
+      - name: CLI smoke scan
+        shell: bash
+        run: |
+          mkdir -p smoke-input
+          printf "a,b\\n1,2\\n" > smoke-input/sample.csv
+          labvault-scout scan smoke-input -o smoke-report
+          test -f smoke-report/report.html
+          test -f smoke-report/migration_plan.csv
       - name: Verify installed package resources
         shell: python
         run: |
