@@ -38,6 +38,18 @@ def inspect_zip_container(path: Path) -> str:
                     return "OOXML Word"
                 if any(name.startswith("ppt/") for name in names):
                     return "OOXML PowerPoint"
+            if "mimetype" in names:
+                try:
+                    media_type = archive.read("mimetype").decode("ascii", errors="strict").strip()
+                except (KeyError, UnicodeDecodeError, RuntimeError, OSError):
+                    media_type = ""
+                odf_types = {
+                    "application/vnd.oasis.opendocument.spreadsheet": "OpenDocument Spreadsheet",
+                    "application/vnd.oasis.opendocument.text": "OpenDocument Text",
+                    "application/vnd.oasis.opendocument.presentation": "OpenDocument Presentation",
+                }
+                if media_type in odf_types:
+                    return odf_types[media_type]
             if "META-INF/MANIFEST.MF" in names:
                 return "JAR compatible ZIP"
             return "ZIP archive"
