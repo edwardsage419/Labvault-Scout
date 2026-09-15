@@ -6,7 +6,7 @@ from pathlib import Path
 from .evidence import build_evidence
 from .hashing import sha256_file
 from .identifier import extension_signature_status, inspect_ole_container, inspect_signature, inspect_zip_container
-from .priority import assign_priority
+from .priority import assign_priority, priority_reason
 from .relationships import detect_open_copies
 from .report import write_reports
 from .risk import classify, load_rules
@@ -48,6 +48,7 @@ def scan(root: Path, output: Path) -> int:
     for row in rows:
         row["evidence"], row["confidence"] = build_evidence(row)
         row["priority_score"], row["priority"] = assign_priority(row)
+        row["priority_reason"] = priority_reason(row)
     write_reports(rows, output, errors)
     return len(rows)
 
