@@ -357,3 +357,15 @@ def test_recommended_actions_are_conservative():
     assert recommended_action({"risk": "RESCUE", "priority": "MEDIUM", "open_copy": "x_export.csv", "relationship_strength": "DERIVATIVE"}) == "VERIFY_DERIVATIVE_EXPORT"
     assert recommended_action({"risk": "WATCH", "priority": "MEDIUM", "open_copy": "", "relationship_strength": ""}) == "REVIEW_FORMAT"
     assert recommended_action({"risk": "SAFE", "priority": "LOW", "open_copy": "", "relationship_strength": ""}) == "KEEP"
+
+
+def test_zip_container_identifies_open_document_spreadsheet(tmp_path: Path):
+    import zipfile
+    from labvault_scout.identifier import inspect_zip_container
+
+    path = tmp_path / "data.ods"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("mimetype", "application/vnd.oasis.opendocument.spreadsheet")
+        archive.writestr("content.xml", "<office:document-content/>")
+
+    assert inspect_zip_container(path) == "OpenDocument Spreadsheet"
