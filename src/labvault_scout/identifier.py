@@ -9,10 +9,8 @@ HDF5_MAGIC = bytes.fromhex("894844460D0A1A0A")
 PDF_MAGIC = b"%PDF-"
 
 
-def inspect_signature(path: Path) -> str:
-    """Return a coarse container/signature label without executing file content."""
-    with path.open("rb") as handle:
-        head = handle.read(8)
+def signature_from_head(head: bytes) -> str:
+    """Return a coarse signature label from already-read header bytes."""
     if head.startswith(ZIP_MAGIC):
         return "ZIP"
     if head.startswith(OLE_MAGIC):
@@ -22,6 +20,12 @@ def inspect_signature(path: Path) -> str:
     if head.startswith(PDF_MAGIC):
         return "PDF"
     return ""
+
+
+def inspect_signature(path: Path) -> str:
+    """Return a coarse container/signature label without executing file content."""
+    with path.open("rb") as handle:
+        return signature_from_head(handle.read(8))
 
 
 def inspect_hdf5_container(path: Path) -> str:
