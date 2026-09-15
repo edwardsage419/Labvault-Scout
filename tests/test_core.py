@@ -140,3 +140,27 @@ def test_ole_container_header_validation(tmp_path: Path):
     short = tmp_path / "short.xls"
     short.write_bytes(bytes.fromhex("D0CF11E0A1B11AE1"))
     assert inspect_ole_container(short) == "Truncated OLE container"
+
+
+def test_evidence_confidence():
+    from labvault_scout.evidence import build_evidence
+
+    evidence, confidence = build_evidence({
+        "format": "Excel Workbook",
+        "signature": "ZIP",
+        "signature_status": "verified",
+        "container_type": "OOXML Excel",
+        "open_copy": "",
+    })
+    assert confidence == "HIGH"
+    assert "OOXML Excel" in evidence
+
+    evidence, confidence = build_evidence({
+        "format": "PDF",
+        "signature": "ZIP",
+        "signature_status": "mismatch: expected PDF, detected ZIP",
+        "container_type": "ZIP archive",
+        "open_copy": "",
+    })
+    assert confidence == "LOW"
+    assert "mismatch" in evidence
