@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 RISK_SCORE = {"SAFE": 0, "WATCH": 40, "RESCUE": 80, "UNKNOWN": 50}
+OPEN_COPY_CREDIT = {"EXACT": 25, "DERIVATIVE": 15}
 
 
 def assign_priority(row: dict) -> tuple[int, str]:
@@ -8,7 +9,8 @@ def assign_priority(row: dict) -> tuple[int, str]:
     score = RISK_SCORE.get(row.get("risk", "UNKNOWN"), 50)
 
     if row.get("open_copy"):
-        score -= 25
+        strength = row.get("relationship_strength", "")
+        score -= OPEN_COPY_CREDIT.get(strength, 10)
 
     status = row.get("signature_status", "")
     if status.startswith("mismatch") or status.startswith("unverified"):
