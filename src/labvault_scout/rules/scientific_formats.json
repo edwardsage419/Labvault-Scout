@@ -1,0 +1,262 @@
+[
+  {
+    "extension": ".csv",
+    "name": "CSV",
+    "category": "open_data",
+    "risk": "SAFE",
+    "reason": "Open, widely supported tabular text format.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".tsv",
+    "name": "TSV",
+    "category": "open_data",
+    "risk": "SAFE",
+    "reason": "Open, widely supported tabular text format.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".txt",
+    "name": "Plain Text",
+    "category": "open_data",
+    "risk": "SAFE",
+    "reason": "Plain text has broad long-term readability.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".json",
+    "name": "JSON",
+    "category": "open_data",
+    "risk": "SAFE",
+    "reason": "Open structured text format.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".xml",
+    "name": "XML",
+    "category": "open_data",
+    "risk": "SAFE",
+    "reason": "Open structured text format.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".tif",
+    "name": "TIFF",
+    "category": "image",
+    "risk": "SAFE",
+    "reason": "Widely supported archival image format.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".tiff",
+    "name": "TIFF",
+    "category": "image",
+    "risk": "SAFE",
+    "reason": "Widely supported archival image format.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".png",
+    "name": "PNG",
+    "category": "image",
+    "risk": "SAFE",
+    "reason": "Open, widely supported image format.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".jpg",
+    "name": "JPEG",
+    "category": "image",
+    "risk": "SAFE",
+    "reason": "Widely supported image format.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".jpeg",
+    "name": "JPEG",
+    "category": "image",
+    "risk": "SAFE",
+    "reason": "Widely supported image format.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".xlsx",
+    "name": "Excel Workbook",
+    "category": "office_data",
+    "risk": "WATCH",
+    "reason": "Complex workbook features can reduce portability.",
+    "preferred_exports": [
+      "csv"
+    ]
+  },
+  {
+    "extension": ".xls",
+    "name": "Legacy Excel Workbook",
+    "category": "office_data",
+    "risk": "WATCH",
+    "reason": "Legacy binary spreadsheet format.",
+    "preferred_exports": [
+      "csv",
+      "xlsx"
+    ]
+  },
+  {
+    "extension": ".mat",
+    "name": "MATLAB Data",
+    "category": "scientific_data",
+    "risk": "WATCH",
+    "reason": "Scientific binary format with version-dependent structures.",
+    "preferred_exports": [
+      "hdf5",
+      "csv"
+    ]
+  },
+  {
+    "extension": ".h5",
+    "name": "HDF5",
+    "category": "scientific_data",
+    "risk": "WATCH",
+    "reason": "Open specification, but interpretation may depend on application schema.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".hdf5",
+    "name": "HDF5",
+    "category": "scientific_data",
+    "risk": "WATCH",
+    "reason": "Open specification, but interpretation may depend on application schema.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".nc",
+    "name": "NetCDF",
+    "category": "scientific_data",
+    "risk": "WATCH",
+    "reason": "Portable scientific format whose semantics may depend on metadata conventions.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".jnb",
+    "name": "SigmaPlot Notebook",
+    "category": "scientific_project",
+    "risk": "RESCUE",
+    "reason": "Proprietary scientific project format.",
+    "preferred_exports": [
+      "csv",
+      "json"
+    ]
+  },
+  {
+    "extension": ".opj",
+    "name": "Origin Project",
+    "category": "scientific_project",
+    "risk": "RESCUE",
+    "reason": "Proprietary scientific project format.",
+    "preferred_exports": [
+      "csv"
+    ]
+  },
+  {
+    "extension": ".opju",
+    "name": "Origin Project Unicode",
+    "category": "scientific_project",
+    "risk": "RESCUE",
+    "reason": "Proprietary scientific project format.",
+    "preferred_exports": [
+      "csv"
+    ]
+  },
+  {
+    "extension": ".pzf",
+    "name": "GraphPad Prism",
+    "category": "scientific_project",
+    "risk": "RESCUE",
+    "reason": "Application-specific scientific project format.",
+    "preferred_exports": [
+      "csv"
+    ]
+  },
+  {
+    "extension": ".sav",
+    "name": "SPSS Data",
+    "category": "statistical_data",
+    "risk": "RESCUE",
+    "reason": "Application-specific statistical data format.",
+    "preferred_exports": [
+      "csv"
+    ]
+  },
+  {
+    "extension": ".dta",
+    "name": "Stata Data",
+    "category": "statistical_data",
+    "risk": "WATCH",
+    "reason": "Application-specific statistical data format with broad third-party support.",
+    "preferred_exports": [
+      "csv"
+    ]
+  },
+  {
+    "extension": ".ibw",
+    "name": "Igor Binary Wave",
+    "category": "scientific_data",
+    "risk": "RESCUE",
+    "reason": "Application-specific scientific binary format.",
+    "preferred_exports": [
+      "csv"
+    ]
+  },
+  {
+    "extension": ".spc",
+    "name": "SPC Spectroscopy",
+    "category": "scientific_data",
+    "risk": "RESCUE",
+    "reason": "Specialized spectroscopy binary format.",
+    "preferred_exports": [
+      "csv",
+      "txt"
+    ]
+  },
+  {
+    "extension": ".fcs",
+    "name": "Flow Cytometry Standard",
+    "category": "scientific_data",
+    "risk": "WATCH",
+    "reason": "Domain standard requiring specialized interpretation.",
+    "preferred_exports": [
+      "csv"
+    ]
+  },
+  {
+    "extension": ".nii",
+    "name": "NIfTI",
+    "category": "scientific_data",
+    "risk": "WATCH",
+    "reason": "Domain scientific format requiring specialized viewers.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".dcm",
+    "name": "DICOM",
+    "category": "scientific_data",
+    "risk": "WATCH",
+    "reason": "Domain standard with structured metadata and specialized interpretation.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".pdf",
+    "name": "PDF",
+    "category": "document",
+    "risk": "WATCH",
+    "reason": "Portable document format may preserve presentation without underlying source data.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".zip",
+    "name": "ZIP Archive",
+    "category": "archive",
+    "risk": "WATCH",
+    "reason": "Archive contents require separate inspection.",
+    "preferred_exports": []
+  }
+]
