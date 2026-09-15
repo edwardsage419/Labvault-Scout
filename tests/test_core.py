@@ -281,6 +281,7 @@ def test_derivative_suffix_open_copy_family():
     detect_open_copies(rows)
     assert rows[0]["open_copy"] == "run/experiment_export.csv"
     assert rows[0]["relationship_evidence"] == "same-directory derivative-suffix open copy"
+    assert rows[0]["relationship_strength"] == "DERIVATIVE"
 
 
 def test_family_detection_remains_same_directory_only():
@@ -293,3 +294,16 @@ def test_family_detection_remains_same_directory_only():
     detect_open_copies(rows)
     assert rows[0]["open_copy"] == ""
     assert rows[0]["relationship_evidence"] == ""
+    assert rows[0]["relationship_strength"] == ""
+
+
+def test_exact_open_copy_has_stronger_relationship():
+    from labvault_scout.relationships import detect_open_copies
+
+    rows = [
+        {"path": "run/experiment.jnb", "risk": "RESCUE"},
+        {"path": "run/experiment.csv", "risk": "SAFE"},
+    ]
+    detect_open_copies(rows)
+    assert rows[0]["relationship_strength"] == "EXACT"
+    assert rows[0]["relationship_evidence"] == "same-directory same-stem open copy"
