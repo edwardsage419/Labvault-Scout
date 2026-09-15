@@ -164,3 +164,25 @@ def test_evidence_confidence():
     })
     assert confidence == "LOW"
     assert "mismatch" in evidence
+
+
+def test_scan_evidence_end_to_end(tmp_path: Path):
+    import csv
+    import zipfile
+
+    source = tmp_path / "evidence_source"
+    source.mkdir()
+    xlsx = source / "book.xlsx"
+    with zipfile.ZipFile(xlsx, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("xl/workbook.xml", "<workbook/>")
+
+    output = tmp_path / "evidence_report"
+    scan(source, output)
+    with (output / "files.csv").open(encoding="utf-8-sig") as f:
+        row = next(csv.DictReader(f))
+
+    assert row["confidence"] == "HIGH"
+    assert "extension rule: Excel Workbook" in row["evidence"]
+    assert "signature: ZIP" in row["evidence"]
+    assert "container: OOXML Excel" in row["evidence"]
