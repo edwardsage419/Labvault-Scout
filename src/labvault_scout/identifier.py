@@ -9,10 +9,8 @@ HDF5_MAGIC = bytes.fromhex("894844460D0A1A0A")
 PDF_MAGIC = b"%PDF-"
 
 
-def inspect_signature(path: Path) -> str:
-    """Return a coarse container/signature label without executing file content."""
-    with path.open("rb") as handle:
-        head = handle.read(8)
+def signature_from_head(head: bytes) -> str:
+    """Return a coarse signature label from already-read header bytes."""
     if head.startswith(ZIP_MAGIC):
         return "ZIP"
     if head.startswith(OLE_MAGIC):
@@ -22,6 +20,36 @@ def inspect_signature(path: Path) -> str:
     if head.startswith(PDF_MAGIC):
         return "PDF"
     return ""
+
+
+def inspect_signature(path: Path) -> str:
+    """Return a coarse container/signature label without executing file content."""
+    with path.open("rb") as handle:
+        return signature_from_head(handle.read(8))
+
+
+def hdf5_container_from_header(header: bytes) -> str:
+    """Validate HDF5 superblock evidence from already-read header bytes."""
+    if signature_from_head(header) != "HDF5":
+        return ""
+    try:
+        if len(header) < 9:
+            return "Truncated HDF5 container"
+        version = header[8]
+        if version not in (0, 1, 2, 3):
+            return f"Unknown HDF5 superblock version {version}"
+        return f"HDF5 superblock v{version}"
+    except (IndexError, ValueError):
+        return "Invalid HDF5 container"
+
+
+def inspect_hdf5_container(path: Path) -> str:
+    """Validate bounded HDF5 superblock evidence without parsing datasets."""
+    try:
+        with path.open("rb") as handle:
+            return hdf5_container_from_header(handle.read(16))
+    except OSError:
+        return "Unreadable HDF5 container"
 
 
 def inspect_zip_container(path: Path) -> str:
@@ -38,6 +66,22 @@ def inspect_zip_container(path: Path) -> str:
                     return "OOXML Word"
                 if any(name.startswith("ppt/") for name in names):
                     return "OOXML PowerPoint"
+            if "mimetype" in names:
+                try:
+                    media_type = archive.read("mimetype").decode("ascii", errors="strict").strip()
+                except (KeyError, UnicodeDecodeError, RuntimeError, OSError):
+                    media_type = ""
+                odf_types = {
+                    "application/vnd.oasis.opendocument.spreadsheet": "OpenDocument Spreadsheet",
+                    "application/vnd.oasis.opendocument.text": "OpenDocument Text",
+                    "application/vnd.oasis.opendocument.presentation": "OpenDocument Presentation",
+                }
+                if media_type in odf_types:
+                    return odf_types[media_type]
+            if "ro-crate-metadata.json" in names:
+                return "RO-Crate Research Object"
+            if "bagit.txt" in names and "bag-info.txt" in names:
+                return "BagIt Research Package"
             if "META-INF/MANIFEST.MF" in names:
                 return "JAR compatible ZIP"
             return "ZIP archive"
@@ -67,16 +111,13 @@ def extension_signature_status(path: Path, signature: str) -> str:
     return ""
 
 
-def inspect_ole_container(path: Path) -> str:
-    """Perform bounded, read-only OLE evidence inspection without parsing streams."""
-    if inspect_signature(path) != "OLE":
+def ole_container_from_header(header: bytes, size: int) -> str:
+    """Validate bounded OLE header evidence from already-read bytes."""
+    if signature_from_head(header) != "OLE":
         return ""
     try:
-        size = path.stat().st_size
         if size < 512:
             return "Truncated OLE container"
-        with path.open("rb") as handle:
-            header = handle.read(512)
         if len(header) < 512:
             return "Truncated OLE container"
         byte_order = int.from_bytes(header[28:30], "little")
@@ -86,5 +127,15 @@ def inspect_ole_container(path: Path) -> str:
         if sector_shift not in (9, 12):
             return "Invalid OLE sector size"
         return f"OLE Compound File ({1 << sector_shift}-byte sectors)"
+    except (IndexError, ValueError):
+        return "Invalid OLE container"
+
+
+def inspect_ole_container(path: Path) -> str:
+    """Perform bounded, read-only OLE evidence inspection without parsing streams."""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            return ole_container_from_header(handle.read(512), size)
     except OSError:
         return "Unreadable OLE container"

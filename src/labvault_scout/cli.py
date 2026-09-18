@@ -4,9 +4,10 @@ import argparse
 from pathlib import Path
 
 from .evidence import build_evidence
-from .hashing import sha256_file
-from .identifier import extension_signature_status, inspect_ole_container, inspect_signature, inspect_zip_container
-from .priority import assign_priority
+from .hashing import sha256_with_head
+from .identifier import extension_signature_status, hdf5_container_from_header, inspect_zip_container, ole_container_from_header, signature_from_head
+from .actions import recommended_action
+from .priority import assign_priority, priority_reason
 from .relationships import detect_open_copies
 from .report import write_reports
 from .risk import classify, load_rules
@@ -23,18 +24,21 @@ def scan(root: Path, output: Path) -> int:
         try:
             stat = path.stat()
             rule = classify(path, rules)
-            signature = inspect_signature(path)
+            digest, header = sha256_with_head(path)
+            signature = signature_from_head(header)
             signature_status = extension_signature_status(path, signature)
             if signature == "ZIP":
                 container_type = inspect_zip_container(path)
             elif signature == "OLE":
-                container_type = inspect_ole_container(path)
+                container_type = ole_container_from_header(header, stat.st_size)
+            elif signature == "HDF5":
+                container_type = hdf5_container_from_header(header)
             else:
                 container_type = ""
             rows.append({
                 "path": str(path.relative_to(root)),
                 "size": stat.st_size,
-                "sha256": sha256_file(path),
+                "sha256": digest,
                 "format": rule["name"],
                 "signature": signature,
                 "signature_status": signature_status,
@@ -42,12 +46,14 @@ def scan(root: Path, output: Path) -> int:
                 "risk": rule["risk"],
                 "reason": rule["reason"],
             })
-        except (OSError, PermissionError) as exc:
+        except OSError as exc:
             errors.append({"path": str(path), "error": type(exc).__name__})
     detect_open_copies(rows)
     for row in rows:
         row["evidence"], row["confidence"] = build_evidence(row)
         row["priority_score"], row["priority"] = assign_priority(row)
+        row["priority_reason"] = priority_reason(row)
+        row["recommended_action"] = recommended_action(row)
     write_reports(rows, output, errors)
     return len(rows)
 

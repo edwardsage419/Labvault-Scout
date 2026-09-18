@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased 0.2.0
+
+Development continues on `develop-v0.2.0`. See `ROADMAP_0_2_0.md`.
+
+### Added
+
+* Conservative derivative file-family relationships with EXACT and DERIVATIVE strength
+* Machine-readable priority reasons and recommended preservation actions
+* OpenDocument, HDF5 superblock, RO-Crate, and BagIt structural evidence
+* Bounded positive priority credit for recognized preservation packages
+* Thousand-file directory scale coverage
+
+### Changed
+
+* SHA-256 hashing and the 512-byte identification header are collected in one sequential file read
+* HDF5 and OLE structural checks reuse the shared bounded header
+
 ## 0.1.0
 
 Initial MVP release candidate.

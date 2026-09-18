@@ -39,11 +39,11 @@ labvault-scout scan /path/to/research
 
 ## 当前状态
 
-v0.1.0 是早期 MVP。当前识别结合扩展名规则，以及对 ZIP、OLE、HDF5、PDF 的受限只读文件签名检查。程序可以检查 OOXML ZIP 结构和基础 OLE 文件头，不解压或执行被扫描内容。当前版本还支持精确重复文件检测、保守的开放副本检测、证据与置信度记录、透明的保存优先级评分，以及迁移行动清单。
+v0.2.0-rc1 是第二个开发周期的首个发布候选版本。在 v0.1.0 基础上增加衍生文件家族关系、EXACT / DERIVATIVE 关系强度、机器可读优先级原因、保存建议行动、OpenDocument / HDF5 / RO-Crate / BagIt 结构证据，以及减少重复文件读取的扫描优化。
 
 ## 发布说明
 
-参见 [v0.1.0 中英双语发布说明](RELEASE_NOTES_0_1_0.md)。
+参见 [v0.2.0-rc1 中英双语发布说明](RELEASE_NOTES_0_2_0_RC1.md) 和 [v0.1.0 发布说明](RELEASE_NOTES_0_1_0.md)。
 
 ## 许可证
 
