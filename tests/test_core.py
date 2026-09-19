@@ -2419,3 +2419,78 @@ def test_truncated_matlab5_header_is_reviewed(tmp_path: Path):
     assert row["signature_status"] == "unverified: expected MATLAB Level 5 structure"
     assert row["confidence"] == "LOW"
     assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def _dicom_part10_bytes() -> bytes:
+    return b"\x00" * 128 + b"DICM" + b"\x00" * 64
+
+
+def test_dicom_part10_header_evidence():
+    from labvault_scout.identifier import dicom_container_from_header, signature_from_head
+
+    data = _dicom_part10_bytes()
+    assert signature_from_head(data) == "DICOM"
+    assert dicom_container_from_header(data) == "DICOM Part 10 file"
+
+
+def test_dicom_part10_scan_is_verified(tmp_path: Path):
+    source = tmp_path / "dicom_source"
+    source.mkdir()
+    (source / "image.dcm").write_bytes(_dicom_part10_bytes())
+    output = tmp_path / "dicom_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "DICOM"
+    assert row["signature"] == "DICOM"
+    assert row["container_type"] == "DICOM Part 10 file"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_dicom_without_part10_marker_is_unverified_not_claimed_valid(tmp_path: Path):
+    source = tmp_path / "dicom_no_marker_source"
+    source.mkdir()
+    (source / "legacy.dcm").write_bytes(b"\x00" * 256)
+    output = tmp_path / "dicom_no_marker_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == ""
+    assert row["container_type"] == "DICOM Part 10 marker not found"
+    assert row["signature_status"] == "unverified: expected DICOM Part 10"
+    assert row["confidence"] == "LOW"
+
+
+def test_dicom_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "bad_dicom_source"
+    source.mkdir()
+    (source / "fake.dcm").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "bad_dicom_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["signature_status"] == "mismatch: expected DICOM Part 10, detected PDF"
+    assert row["confidence"] == "LOW"
+
+
+def test_truncated_dicom_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_dicom_source"
+    source.mkdir()
+    (source / "short.dcm").write_bytes(b"\x00" * 64)
+    output = tmp_path / "truncated_dicom_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["container_type"] == "Truncated DICOM Part 10 header"
+    assert row["signature_status"] == "unverified: expected DICOM Part 10"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"

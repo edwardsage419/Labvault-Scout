@@ -34,6 +34,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Bounded classic TIFF and BigTIFF header evidence for `.tif` / `.tiff`
 * Bounded FITS primary-header evidence with mandatory keyword order and 2880-byte block checks
 * Bounded MATLAB Level 5 MAT-file header evidence with endian-marker validation
+* Bounded DICOM Part 10 preamble/`DICM` marker evidence without parsing patient metadata
 
 ### Changed
 

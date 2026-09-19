@@ -23,6 +23,8 @@ TIFF_BIG_MAGICS = (bytes.fromhex("49492B00"), bytes.fromhex("4D4D002B"))
 TIFF_MAGICS = TIFF_CLASSIC_MAGICS + TIFF_BIG_MAGICS
 FITS_SIMPLE_PREFIX = b"SIMPLE  ="
 MATLAB5_PREFIX = b"MATLAB 5.0 MAT-file"
+DICOM_MARKER = b"DICM"
+DICOM_MARKER_OFFSET = 128
 
 
 def signature_from_head(head: bytes) -> str:
@@ -45,6 +47,8 @@ def signature_from_head(head: bytes) -> str:
         return "FITS"
     if head.startswith(MATLAB5_PREFIX):
         return "MAT5"
+    if len(head) >= DICOM_MARKER_OFFSET + len(DICOM_MARKER) and head[DICOM_MARKER_OFFSET:DICOM_MARKER_OFFSET + len(DICOM_MARKER)] == DICOM_MARKER:
+        return "DICOM"
     return ""
 
 
@@ -107,6 +111,15 @@ def fits_container_from_header(header: bytes, size: int) -> str:
     if second[:8] != b"BITPIX  " or third[:8] != b"NAXIS   ":
         return "Invalid FITS mandatory header order"
     return "FITS primary HDU (SIMPLE=T)"
+
+
+def dicom_container_from_header(header: bytes) -> str:
+    """Validate bounded DICOM Part 10 preamble and marker evidence."""
+    if len(header) < DICOM_MARKER_OFFSET + len(DICOM_MARKER):
+        return "Truncated DICOM Part 10 header"
+    if header[DICOM_MARKER_OFFSET:DICOM_MARKER_OFFSET + len(DICOM_MARKER)] == DICOM_MARKER:
+        return "DICOM Part 10 file"
+    return "DICOM Part 10 marker not found"
 
 
 def matlab5_container_from_header(header: bytes) -> str:
@@ -272,6 +285,13 @@ def extension_signature_status(path: Path, signature: str, container_type: str =
         if signature:
             return f"mismatch: expected FITS, detected {signature}"
         return "unverified: expected FITS"
+
+    if ext == ".dcm":
+        if signature == "DICOM":
+            return "verified" if container_type == "DICOM Part 10 file" else "unverified: expected DICOM Part 10 structure"
+        if signature:
+            return f"mismatch: expected DICOM Part 10, detected {signature}"
+        return "unverified: expected DICOM Part 10"
 
     if ext == ".mat":
         if signature == "MAT5":
