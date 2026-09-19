@@ -10,7 +10,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Project-level JSON summary for file bytes, scan errors, risk/priority counts, open copies, and duplicate groups
 * CLI `--version`
 * Compound-extension matching with `.nii.gz` NIfTI coverage
-* Bounded gzip NIfTI-1 header evidence using the standard 348-byte header and magic field
+* Bounded NIfTI-1 header evidence for both `.nii` and `.nii.gz` using the standard 348-byte header and magic field
 
 ### Changed
 

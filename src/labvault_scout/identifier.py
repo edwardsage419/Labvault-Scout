@@ -163,12 +163,17 @@ def extension_signature_status(path: Path, signature: str, container_type: str =
         ".pdf": "PDF",
         ".xls": "OLE",
         ".nii.gz": "GZIP",
+        ".nii": "NIFTI1",
     }.get(ext)
     if expected and signature and signature != expected:
         return f"mismatch: expected {expected}, detected {signature}"
     if expected and not signature:
         return f"unverified: expected {expected}"
     if expected == signature:
+        if ext == ".nii":
+            if not container_type.startswith("NIfTI-1 "):
+                return "unverified: expected NIfTI-1 structure"
+            return "verified"
         if ext == ".nii.gz":
             if not container_type.startswith("NIfTI-1 "):
                 return "unverified: expected NIfTI-1 structure"

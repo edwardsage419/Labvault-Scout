@@ -1150,3 +1150,41 @@ def test_gzip_nifti_with_invalid_header_is_not_verified(tmp_path: Path):
     assert row["signature_status"] == "unverified: expected NIfTI-1 structure"
     assert row["confidence"] == "LOW"
     assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_uncompressed_nifti_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "nii_source"
+    source.mkdir()
+    header = bytearray(348)
+    header[:4] = (348).to_bytes(4, "little")
+    header[344:348] = b"n+1\x00"
+    (source / "brain.nii").write_bytes(header + b"\x00" * 64)
+
+    output = tmp_path / "nii_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "NIfTI"
+    assert row["signature"] == "NIFTI1"
+    assert row["container_type"] == "NIfTI-1 single-file"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_uncompressed_nifti_invalid_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "bad_nii_source"
+    source.mkdir()
+    (source / "broken.nii").write_bytes(b"not-nifti")
+
+    output = tmp_path / "bad_nii_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["container_type"] == "Truncated NIfTI-1 header"
+    assert row["signature_status"] == "unverified: expected NIFTI1"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"

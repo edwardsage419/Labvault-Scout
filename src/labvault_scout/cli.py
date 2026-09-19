@@ -6,7 +6,7 @@ from pathlib import Path
 from . import __version__
 from .evidence import build_evidence
 from .hashing import sha256_with_head
-from .identifier import extension_signature_status, hdf5_container_from_header, inspect_gzip_nifti, inspect_hdf5_container, inspect_signature, inspect_zip_container, ole_container_from_header, signature_from_head
+from .identifier import extension_signature_status, hdf5_container_from_header, inspect_gzip_nifti, inspect_hdf5_container, inspect_signature, inspect_zip_container, nifti1_container_from_header, ole_container_from_header, signature_from_head
 from .actions import recommended_action
 from .priority import assign_priority, priority_reason
 from .relationships import detect_open_copies
@@ -53,6 +53,10 @@ def scan(root: Path, output: Path) -> int:
                 container_type = hdf5_container_from_header(header) or inspect_hdf5_container(path)
             elif signature == "GZIP" and path.name.lower().endswith(".nii.gz"):
                 container_type = inspect_gzip_nifti(path)
+            elif path.suffix.lower() == ".nii":
+                container_type = nifti1_container_from_header(header)
+                if container_type.startswith("NIfTI-1 "):
+                    signature = "NIFTI1"
             else:
                 container_type = ""
             signature_status = extension_signature_status(path, signature, container_type)
