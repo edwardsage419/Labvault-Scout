@@ -72,7 +72,9 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 
 ## Roadmap
 
-v0.2.0 adds conservative derivative file families, relationship strength, machine-readable priority reasons, preservation actions, stronger structural evidence, and reduced repeated file reads.
+v0.2.0 is the current frozen stable release. The v0.3.0 development line adds self-describing reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, and bounded NIfTI-1 evidence.
+
+See [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) for the bilingual development plan.
 
 ## Release notes
 

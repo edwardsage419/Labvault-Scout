@@ -49,7 +49,9 @@ labvault-scout compare old-report/scan.json new-report/scan.json -o labvault-com
 
 ## 当前状态
 
-v0.2.0 是第二个正式版本。在 v0.1.0 基础上增加衍生文件家族关系、EXACT / DERIVATIVE 关系强度、机器可读优先级原因、保存建议行动、OpenDocument / HDF5 / RO-Crate / BagIt 结构证据，以及减少重复文件读取的扫描优化。
+v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理，以及有界 NIfTI-1 结构证据。
+
+参见 [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) 中英双语开发计划。
 
 ## 发布说明
 
