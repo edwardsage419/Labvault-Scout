@@ -2614,3 +2614,71 @@ def test_bundle_schema_is_packaged():
     schema = json.loads(load_schema_text("bundle"))
     assert schema["title"] == "LabVault Scout bundle manifest schema 1"
     assert schema["properties"]["schema_version"]["const"] == "1"
+
+
+def test_bundle_manifest_rejects_extra_top_level_fields(tmp_path: Path):
+    import pytest
+    from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+
+    source = tmp_path / "bundle_extra_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_extra_report"
+    scan(source, output)
+
+    path = output / "bundle_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["unexpected"] = True
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid top-level fields"):
+        load_bundle_manifest(output)
+
+
+def test_bundle_manifest_rejects_empty_tool_version(tmp_path: Path):
+    import pytest
+    from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+
+    source = tmp_path / "bundle_tool_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_tool_report"
+    scan(source, output)
+
+    path = output / "bundle_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["tool"]["version"] = ""
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest tool metadata"):
+        load_bundle_manifest(output)
+
+
+def test_verify_bundle_rejects_symlinked_core_artifact_when_supported(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.bundle import verify_bundle
+
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are not supported")
+
+    source = tmp_path / "bundle_symlink_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_symlink_report"
+    scan(source, output)
+
+    report = output / "report.html"
+    outside = tmp_path / "outside.html"
+    outside.write_text(report.read_text(encoding="utf-8"), encoding="utf-8")
+    report.unlink()
+    try:
+        os.symlink(outside, report)
+    except OSError:
+        pytest.skip("symlink creation is unavailable in this environment")
+
+    result = verify_bundle(output)
+    assert {"path": "report.html", "issue": "SYMLINK"} in result["problems"]
+    assert result["status"] == "FAILED"

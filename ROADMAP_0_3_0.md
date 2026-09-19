@@ -17,8 +17,8 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 独立 `verify` 命令可以直接检查单份 `scan.json`，无需第二份报告。
    - Schema 1 inputs use strict version-aware structural validation while legacy v0.2 stays compatible and unknown future schemas are not forced into current rules.
    - schema 1 输入采用严格的版本感知结构校验；v0.2 旧报告继续兼容，未知未来 schema 不会被强套当前规则。
-   - Draft 2020-12 JSON Schemas for scan/comparison/verification outputs are packaged with the tool and available through the CLI.
-   - scan/comparison/verification 输出的 Draft 2020-12 JSON Schema 随工具一起分发，并可通过 CLI 获取。
+   - Draft 2020-12 JSON Schemas for scan/comparison/verification outputs and the bundle manifest are packaged with the tool and available through the CLI.
+   - scan/comparison/verification 输出与 bundle manifest 的 Draft 2020-12 JSON Schema 随工具一起分发，并可通过 CLI 获取。
 
 2. Compound and compressed scientific formats / 复合扩展名与压缩科研格式
    - Prefer the longest configured extension so formats such as `.nii.gz` are not reduced to generic `.gz`.

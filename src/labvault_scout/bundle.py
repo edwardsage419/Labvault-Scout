@@ -89,15 +89,25 @@ def load_bundle_manifest(output_dir: Path) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("Bundle manifest must be a JSON object")
     required = {"schema_version", "tool", "algorithm", "files", "manifest_sha256"}
-    missing = sorted(required - set(payload))
+    actual_fields = set(payload)
+    missing = sorted(required - actual_fields)
+    extra = sorted(actual_fields - required)
     if missing:
         raise ValueError(f"Bundle manifest is missing fields: {', '.join(missing)}")
+    if extra:
+        raise ValueError(f"Bundle manifest has invalid top-level fields: {', '.join(extra)}")
     if payload["schema_version"] != BUNDLE_SCHEMA_VERSION:
         raise ValueError(f"Unsupported bundle manifest schema: {payload['schema_version']}")
     if payload["algorithm"] != "sha256":
         raise ValueError("Unsupported bundle manifest algorithm")
     tool = payload["tool"]
-    if not isinstance(tool, dict) or tool.get("name") != "LabVault Scout" or not isinstance(tool.get("version"), str):
+    if (
+        not isinstance(tool, dict)
+        or set(tool) != {"name", "version"}
+        or tool.get("name") != "LabVault Scout"
+        or not isinstance(tool.get("version"), str)
+        or not tool["version"]
+    ):
         raise ValueError("Invalid bundle manifest tool metadata")
     if not isinstance(payload["files"], list):
         raise ValueError("Bundle manifest files must be a list")
