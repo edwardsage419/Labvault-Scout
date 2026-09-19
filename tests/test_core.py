@@ -773,3 +773,33 @@ def test_hdf5_user_block_is_detected_end_to_end(tmp_path: Path):
     assert row["signature"] == "HDF5"
     assert row["signature_status"] == "verified"
     assert row["container_type"] == "HDF5 superblock v2"
+
+
+def test_case_distinct_directories_do_not_form_relationship():
+    from labvault_scout.relationships import detect_open_copies
+
+    rows = [
+        {"path": "Run/experiment.jnb", "risk": "RESCUE"},
+        {"path": "run/experiment_export.csv", "risk": "SAFE"},
+    ]
+    detect_open_copies(rows)
+    assert rows[0]["open_copy"] == ""
+    assert rows[0]["relationship_strength"] == ""
+
+
+def test_scanner_skips_fifo_entries_when_supported(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.scanner import iter_files
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("FIFO creation is not supported on this platform")
+
+    source = tmp_path / "special_entries"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    fifo = source / "named_pipe"
+    os.mkfifo(fifo)
+
+    paths = list(iter_files(source))
+    assert [path.name for path in paths] == ["data.csv"]
