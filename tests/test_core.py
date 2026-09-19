@@ -1068,3 +1068,24 @@ def test_scanner_orders_files_deterministically(tmp_path: Path):
 
     names = [path.name for path in iter_files(source)]
     assert names == sorted(names)
+
+
+def test_scan_json_summary_is_deterministic_and_actionable(tmp_path: Path):
+    source = tmp_path / "summary_source"
+    source.mkdir()
+    (source / "a.csv").write_text("x\n1\n", encoding="utf-8")
+    (source / "b.csv").write_text("x\n1\n", encoding="utf-8")
+    (source / "project.jnb").write_bytes(b"project")
+    output = tmp_path / "summary_report"
+
+    assert scan(source, output) == 3
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    summary = payload["summary"]
+
+    assert summary["file_count"] == 3
+    assert summary["total_bytes"] > 0
+    assert summary["error_count"] == 0
+    assert summary["risk_counts"] == {"RESCUE": 1, "SAFE": 2}
+    assert sum(summary["priority_counts"].values()) == 3
+    assert summary["open_copy_count"] == 0
+    assert summary["duplicate_group_count"] == 1

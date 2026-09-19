@@ -7,12 +7,14 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 ### Added
 
 * Self-describing `scan.json` metadata with report schema and tool version
+* Project-level JSON summary for file bytes, scan errors, risk/priority counts, open copies, and duplicate groups
 * CLI `--version`
 * Compound-extension matching with initial `.nii.gz` NIfTI coverage
 
 ### Changed
 
 * Development package version advances to `0.3.0.dev0`
+* Directory and file traversal order is deterministic for more stable report diffs
 
 ## 0.2.0 — 2026-09-19
 
