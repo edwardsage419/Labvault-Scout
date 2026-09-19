@@ -871,3 +871,49 @@ def test_xlsx_with_excel_ooxml_structure_is_verified(tmp_path: Path):
     assert row["container_type"] == "OOXML Excel"
     assert row["signature_status"] == "verified"
     assert row["confidence"] == "HIGH"
+
+
+def test_empty_zip_archive_is_recognized(tmp_path: Path):
+    import csv
+    import zipfile
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "empty_zip_source"
+    source.mkdir()
+    archive_path = source / "empty.zip"
+    with zipfile.ZipFile(archive_path, "w"):
+        pass
+
+    output = tmp_path / "empty_zip_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "ZIP"
+    assert row["signature_status"] == "verified"
+    assert row["container_type"] == "ZIP archive"
+
+
+def test_xls_generic_ole_container_does_not_claim_high_confidence(tmp_path: Path):
+    import csv
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "ole_confidence_source"
+    source.mkdir()
+    header = bytearray(512)
+    header[:8] = bytes.fromhex("D0CF11E0A1B11AE1")
+    header[28:30] = (0xFFFE).to_bytes(2, "little")
+    header[30:32] = (9).to_bytes(2, "little")
+    (source / "generic.xls").write_bytes(header)
+
+    output = tmp_path / "ole_confidence_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "OLE"
+    assert row["container_type"] == "OLE Compound File (512-byte sectors)"
+    assert row["signature_status"] == "container-only: OLE"
+    assert row["confidence"] == "MEDIUM"
