@@ -2732,3 +2732,88 @@ def test_generated_machine_outputs_match_packaged_schema_field_contracts(tmp_pat
     assert_exact_fields(bundle, bundle_schema)
     for entry in bundle["files"]:
         assert_exact_fields(entry, bundle_schema["properties"]["files"]["items"])
+
+
+def test_schema1_runtime_validation_rejects_additional_properties(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "strict_schema_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_schema_report"
+    scan(source, output)
+
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    cases = []
+
+    top = json.loads(json.dumps(original))
+    top["unexpected"] = True
+    cases.append((top, "unexpected top-level fields"))
+
+    tool = json.loads(json.dumps(original))
+    tool["tool"]["unexpected"] = True
+    cases.append((tool, "invalid tool metadata"))
+
+    provenance = json.loads(json.dumps(original))
+    provenance["provenance"]["unexpected"] = True
+    cases.append((provenance, "invalid provenance metadata"))
+
+    summary = json.loads(json.dumps(original))
+    summary["summary"]["unexpected"] = 1
+    cases.append((summary, "invalid summary fields"))
+
+    file_row = json.loads(json.dumps(original))
+    file_row["files"][0]["unexpected"] = "x"
+    cases.append((file_row, "unexpected fields"))
+
+    for index, (payload, message) in enumerate(cases):
+        payload["report_sha256"] = report_payload_sha256(payload)
+        path = tmp_path / f"strict_case_{index}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            load_scan_report(path)
+
+
+def test_schema1_runtime_validation_rejects_invalid_summary_types(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "strict_summary_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_summary_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["summary"]["file_count"] = True
+    payload["report_sha256"] = report_payload_sha256(payload)
+    path = tmp_path / "bad_summary.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid summary file_count"):
+        load_scan_report(path)
+
+
+def test_schema1_runtime_validation_handles_non_string_enum_without_typeerror(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "strict_enum_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_enum_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["files"][0]["risk"] = ["SAFE"]
+    payload["report_sha256"] = report_payload_sha256(payload)
+    path = tmp_path / "bad_enum.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="non-string risk"):
+        load_scan_report(path)

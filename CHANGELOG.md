@@ -26,7 +26,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Packaged Draft 2020-12 JSON Schemas for scan, comparison, and verification outputs
 * `schema` CLI command to print packaged schemas without external dependencies
 * Unsupported scan schema takes precedence over checksum status in standalone verification
-* Version-aware strict validation for schema 1 report structure, relative paths, SHA-256 fields, sizes, priorities, provenance, and errors
+* Version-aware strict validation for schema 1 report structure, relative paths, SHA-256 fields, sizes, priorities, provenance, and errors\n* Schema 1 runtime validation now rejects additional properties and invalid summary field types to match the packaged JSON Schema
 * Concise CLI errors with exit code 2 for malformed compare/verify inputs instead of tracebacks
 * Compound-extension matching with `.nii.gz` NIfTI coverage
 * Bounded NIfTI-1 header evidence for both `.nii` and `.nii.gz` using the standard 348-byte header and magic field

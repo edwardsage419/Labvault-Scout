@@ -70,19 +70,27 @@ def _validate_report_path(value: object, *, allow_root: bool = False) -> str:
 
 def _validate_schema1_payload(payload: dict) -> None:
     required_top = {"schema_version", "tool", "provenance", "summary", "files", "errors", "report_sha256"}
-    missing_top = sorted(required_top - set(payload))
+    actual_top = set(payload)
+    missing_top = sorted(required_top - actual_top)
+    extra_top = sorted(actual_top - required_top)
     if missing_top:
         raise ValueError(f"Schema 1 report is missing top-level fields: {', '.join(missing_top)}")
+    if extra_top:
+        raise ValueError(f"Schema 1 report has unexpected top-level fields: {', '.join(extra_top)}")
 
     tool = payload["tool"]
-    if not isinstance(tool, dict) or tool.get("name") != "LabVault Scout":
+    if (
+        not isinstance(tool, dict)
+        or set(tool) != {"name", "version"}
+        or tool.get("name") != "LabVault Scout"
+        or not isinstance(tool.get("version"), str)
+        or not tool["version"]
+    ):
         raise ValueError("Schema 1 report has invalid tool metadata")
-    if not isinstance(tool.get("version"), str) or not tool["version"]:
-        raise ValueError("Schema 1 report has invalid tool version")
 
     provenance = payload["provenance"]
     required_provenance = {"hash_algorithm", "path_style", "rules_sha256", "rules_count", "source_access"}
-    if not isinstance(provenance, dict) or not required_provenance.issubset(provenance):
+    if not isinstance(provenance, dict) or set(provenance) != required_provenance:
         raise ValueError("Schema 1 report has invalid provenance metadata")
     if provenance["hash_algorithm"] != "sha256" or provenance["path_style"] != "relative-posix":
         raise ValueError("Schema 1 report has unsupported hash/path semantics")
@@ -93,8 +101,36 @@ def _validate_schema1_payload(payload: dict) -> None:
     if not isinstance(provenance["rules_sha256"], str) or not SHA256_RE.fullmatch(provenance["rules_sha256"]):
         raise ValueError("Schema 1 report has invalid rules_sha256")
 
-    if not isinstance(payload["summary"], dict):
-        raise ValueError("Schema 1 report has invalid summary")
+    summary = payload["summary"]
+    required_summary = {
+        "file_count",
+        "total_bytes",
+        "inventory_sha256",
+        "error_count",
+        "risk_counts",
+        "priority_counts",
+        "open_copy_count",
+        "duplicate_group_count",
+    }
+    if not isinstance(summary, dict) or set(summary) != required_summary:
+        raise ValueError("Schema 1 report has invalid summary fields")
+
+    for field in ("file_count", "total_bytes", "error_count", "open_copy_count", "duplicate_group_count"):
+        value = summary[field]
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"Schema 1 report has invalid summary {field}")
+    if not isinstance(summary["inventory_sha256"], str) or not SHA256_RE.fullmatch(summary["inventory_sha256"]):
+        raise ValueError("Schema 1 report has invalid inventory_sha256")
+    for field in ("risk_counts", "priority_counts"):
+        counts = summary[field]
+        if not isinstance(counts, dict):
+            raise ValueError(f"Schema 1 report has invalid summary {field}")
+        for key, value in counts.items():
+            if not isinstance(key, str) or not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"Schema 1 report has invalid summary {field}")
+
+    if not isinstance(payload["files"], list):
+        raise ValueError("Schema 1 report has invalid files list")
     if not isinstance(payload["errors"], list):
         raise ValueError("Schema 1 report has invalid errors list")
     if not isinstance(payload["report_sha256"], str) or not SHA256_RE.fullmatch(payload["report_sha256"]):
@@ -105,9 +141,13 @@ def _validate_schema1_payload(payload: dict) -> None:
     for row in payload["files"]:
         if not isinstance(row, dict):
             raise ValueError("Schema 1 report contains a non-object file row")
-        missing = sorted(required_file_fields - set(row))
+        actual_fields = set(row)
+        missing = sorted(required_file_fields - actual_fields)
+        extra = sorted(actual_fields - required_file_fields)
         if missing:
             raise ValueError(f"Schema 1 file row is missing fields: {', '.join(missing)}")
+        if extra:
+            raise ValueError(f"Schema 1 file row has unexpected fields: {', '.join(extra)}")
         _validate_report_path(row["path"])
         if not isinstance(row["size"], int) or isinstance(row["size"], bool) or row["size"] < 0:
             raise ValueError(f"Schema 1 file row has invalid size: {row['path']}")
@@ -115,23 +155,22 @@ def _validate_schema1_payload(payload: dict) -> None:
             raise ValueError(f"Schema 1 file row has invalid sha256: {row['path']}")
         if not isinstance(row["priority_score"], int) or isinstance(row["priority_score"], bool) or not 0 <= row["priority_score"] <= 100:
             raise ValueError(f"Schema 1 file row has invalid priority_score: {row['path']}")
+        for field in string_fields:
+            if not isinstance(row[field], str):
+                raise ValueError(f"Schema 1 file row has non-string {field}: {row['path']}")
         if row["risk"] not in SCHEMA1_RISKS:
             raise ValueError(f"Schema 1 file row has invalid risk: {row['path']}")
         if row["confidence"] not in SCHEMA1_CONFIDENCE:
             raise ValueError(f"Schema 1 file row has invalid confidence: {row['path']}")
         if row["priority"] not in SCHEMA1_PRIORITY:
             raise ValueError(f"Schema 1 file row has invalid priority: {row['path']}")
-        for field in string_fields:
-            if not isinstance(row[field], str):
-                raise ValueError(f"Schema 1 file row has non-string {field}: {row['path']}")
 
     for error in payload["errors"]:
-        if not isinstance(error, dict):
-            raise ValueError("Schema 1 report contains a non-object error row")
-        _validate_report_path(error.get("path"), allow_root=True)
-        if not isinstance(error.get("error"), str) or not error["error"]:
+        if not isinstance(error, dict) or set(error) != {"path", "error"}:
+            raise ValueError("Schema 1 report contains an invalid error row")
+        _validate_report_path(error["path"], allow_root=True)
+        if not isinstance(error["error"], str) or not error["error"]:
             raise ValueError("Schema 1 report contains an invalid error type")
-
 
 def load_scan_report(path: Path) -> dict:
     """Load a LabVault Scout scan report with version-aware validation."""
