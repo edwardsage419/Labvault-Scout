@@ -112,7 +112,7 @@ def inspect_zip_container(path: Path) -> str:
         return "Invalid ZIP container"
 
 
-def extension_signature_status(path: Path, signature: str) -> str:
+def extension_signature_status(path: Path, signature: str, container_type: str = "") -> str:
     """Flag strong contradictions for formats whose outer container is predictable."""
     ext = path.suffix.lower()
     expected = {
@@ -130,6 +130,13 @@ def extension_signature_status(path: Path, signature: str) -> str:
     if expected and not signature:
         return f"unverified: expected {expected}"
     if expected == signature:
+        expected_container = {
+            ".xlsx": "OOXML Excel",
+            ".docx": "OOXML Word",
+            ".pptx": "OOXML PowerPoint",
+        }.get(ext)
+        if expected_container and container_type and container_type != expected_container:
+            return f"unverified: expected {expected_container} structure"
         return "verified"
     return ""
 
