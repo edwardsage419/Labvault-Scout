@@ -26,7 +26,7 @@ python -m pip install .
 labvault-scout scan /path/to/research
 ```
 
-报告默认写入 `labvault-report/`，包括 `report.html`、`files.csv`、`scan.json`、精确重复文件清单 `duplicates.csv`、按保存优先级排序的 `migration_plan.csv`，以及记录核心报告文件 SHA-256/大小的 `bundle_manifest.json`。
+报告默认写入 `labvault-report/`，包括 `report.html`、`files.csv`、`scan.json`、精确重复文件清单 `duplicates.csv`，以及按保存优先级排序的 `migration_plan.csv`。
 
 ## 风险等级
 
