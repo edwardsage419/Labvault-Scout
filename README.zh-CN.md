@@ -71,11 +71,11 @@ labvault-scout schema verification
 
 ## 格式结构证据
 
-v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5、TIFF/BigTIFF 与 FITS primary header 的有界只读检查。对于基于 HDF5 的 NetCDF-4，当前只报告保守的容器证据，不声称已经验证 NetCDF 专用结构；FITS `SIMPLE=F` 会明确标记为 nonconforming 并进入容器复核。
+v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5、TIFF/BigTIFF、FITS primary header、MATLAB Level 5 MAT-file 与 DICOM Part 10 preamble/`DICM` 标记的有界只读检查。对于基于 HDF5 的 NetCDF-4 和 `.mat`，当前只报告保守的容器证据，不声称已经验证格式专用结构；FITS `SIMPLE=F` 会明确标记为 nonconforming 并进入容器复核。DICOM 检查只读取 Part 10 preamble/marker，不解析患者元数据或数据集内容。
 
 ## 当前状态
 
-v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理，以及有界 NIfTI-1 结构证据。
+v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述且可验证的报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理、随包分发的 JSON Schema，以及 NIfTI、NetCDF、TIFF/BigTIFF、FITS、MATLAB Level 5 和 DICOM Part 10 的有界结构证据。
 
 参见 [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) 中英双语开发计划。
 
