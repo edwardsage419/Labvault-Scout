@@ -68,7 +68,7 @@ def inspect_zip_container(path: Path) -> str:
                     return "OOXML PowerPoint"
             if "mimetype" in names:
                 try:
-                    media_type = archive.read("mimetype").decode("ascii", errors="strict").strip()
+                    with archive.open("mimetype") as member:\n                        media_type = member.read(256).decode("ascii", errors="strict").strip()
                 except (KeyError, UnicodeDecodeError, RuntimeError, OSError):
                     media_type = ""
                 odf_types = {
