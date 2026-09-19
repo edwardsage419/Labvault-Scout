@@ -1880,3 +1880,47 @@ def test_cli_verify_report_exit_codes(tmp_path: Path, monkeypatch, capsys):
     with pytest.raises(SystemExit) as exc:
         main()
     assert exc.value.code == 1
+
+
+def test_scan_json_has_deterministic_full_report_checksum(tmp_path: Path):
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "checksum_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "checksum_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert len(payload["report_sha256"]) == 64
+    assert payload["report_sha256"] == report_payload_sha256(payload)
+
+
+def test_report_checksum_detects_assessment_field_tampering(tmp_path: Path):
+    from labvault_scout.compare import report_integrity_status
+
+    source = tmp_path / "assessment_tamper_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "assessment_tamper_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert report_integrity_status(payload) == "VERIFIED"
+
+    payload["files"][0]["risk"] = "RESCUE"
+    assert report_integrity_status(payload) == "MISMATCH"
+
+
+def test_report_checksum_detects_provenance_tampering(tmp_path: Path):
+    from labvault_scout.compare import report_integrity_status
+
+    source = tmp_path / "provenance_tamper_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "provenance_tamper_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["provenance"]["rules_sha256"] = "0" * 64
+    assert report_integrity_status(payload) == "MISMATCH"

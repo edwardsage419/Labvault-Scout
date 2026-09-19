@@ -119,9 +119,9 @@ Comparison reports one of three rule states:
 
 ## Report integrity / 报告完整性
 
-v0.3 scan reports embed `summary.inventory_sha256` and deterministic summary counts. Before comparison, LabVault Scout recomputes the inventory fingerprint, file count, total bytes, risk/priority counts, and error count from the report contents.
+v0.3 scan reports embed `summary.inventory_sha256`, deterministic summary counts, and a top-level `report_sha256`. Before comparison, LabVault Scout recomputes the full-report checksum, inventory fingerprint, file count, total bytes, risk/priority counts, and error count from the report contents.
 
-v0.3 扫描报告内嵌 `summary.inventory_sha256` 和确定性的摘要计数。比较前，LabVault Scout 会根据报告内容重新计算 inventory 指纹、文件数量、总字节、风险/优先级计数和错误数量。
+v0.3 扫描报告内嵌 `summary.inventory_sha256`、确定性的摘要计数和顶层 `report_sha256`。比较前，LabVault Scout 会根据报告内容重新计算完整报告校验和、inventory 指纹、文件数量、总字节、风险/优先级计数和错误数量。
 
 Integrity states / 完整性状态：
 
@@ -133,9 +133,9 @@ A `MISMATCH` makes the comparison `PARTIAL` and produces automation exit code 2.
 
 `MISMATCH` 会把比较状态降级为 `PARTIAL`，自动化退出码为 2。单独的 `UNKNOWN` 不会让旧版报告比较自动变成 PARTIAL。
 
-The inventory fingerprint is an internal consistency check, not a cryptographic signature of authorship or provenance.
+The inventory fingerprint and full-report checksum are internal consistency checks, not cryptographic signatures of authorship or provenance.
 
-inventory 指纹属于内部一致性检查，不是用于证明作者身份或来源真实性的数字签名。
+inventory 指纹和完整报告校验和属于内部一致性检查，不是用于证明作者身份或来源真实性的数字签名。
 
 
 ## Standalone verification / 独立验证

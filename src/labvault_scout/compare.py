@@ -7,7 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from . import __version__
-from .report import inventory_sha256
+from .report import inventory_sha256, report_payload_sha256
 
 COMPARISON_SCHEMA_VERSION = "1"
 SUPPORTED_SCAN_SCHEMA_VERSIONS = {"1"}
@@ -138,6 +138,13 @@ def report_integrity_status(payload: dict) -> str:
     if not isinstance(expected, str) or not expected:
         return "UNKNOWN"
 
+    report_checksum = payload.get("report_sha256")
+    if report_checksum is not None:
+        if not isinstance(report_checksum, str) or not report_checksum:
+            return "MISMATCH"
+        if report_payload_sha256(payload) != report_checksum:
+            return "MISMATCH"
+
     try:
         actual = inventory_sha256(payload["files"])
         metrics = scan_metrics(payload)
@@ -186,6 +193,7 @@ def report_identity(payload: dict) -> dict:
         },
         "error_count": error_count,
         "inventory_sha256": str(inventory),
+        "report_sha256": str(payload.get("report_sha256", "")),
         "integrity_status": report_integrity_status(payload),
         "rules_sha256": str(provenance.get("rules_sha256", "")),
         "hash_algorithm": str(provenance.get("hash_algorithm", "")),
@@ -430,6 +438,7 @@ def verify_report(payload: dict) -> dict:
         "integrity_status": integrity,
         "error_count": identity["error_count"],
         "inventory_sha256": identity["inventory_sha256"],
+        "report_sha256": identity["report_sha256"],
         "rules_sha256": identity["rules_sha256"],
         "tool": identity["tool"],
     }

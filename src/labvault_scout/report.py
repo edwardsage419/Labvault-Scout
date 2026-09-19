@@ -29,6 +29,19 @@ def duplicate_groups(rows: list[dict]) -> list[dict]:
     return output
 
 
+def report_payload_sha256(payload: dict) -> str:
+    """Return a deterministic checksum of a report payload excluding its checksum field."""
+    clean = dict(payload)
+    clean.pop("report_sha256", None)
+    encoded = json.dumps(
+        clean,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def inventory_sha256(rows: list[dict]) -> str:
     """Return a deterministic fingerprint of relative paths, sizes, and content hashes."""
     digest = hashlib.sha256()
@@ -83,6 +96,7 @@ def write_reports(
         "files": rows,
         "errors": errors,
     }
+    payload["report_sha256"] = report_payload_sha256(payload)
     (output_dir / "scan.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     migration_rows = sorted(

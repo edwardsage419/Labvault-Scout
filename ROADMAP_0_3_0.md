@@ -11,8 +11,8 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 已实现：在不暴露源目录绝对路径的前提下，记录明确的报告 schema、工具版本、哈希/路径语义和确定性的规则集指纹。
    - Repeated-scan comparison reports whether preservation rules are the same, changed, or unavailable in legacy reports.
    - 重复扫描比较会明确显示保存规则相同、已变化，或旧报告中不可用。
-   - Embedded inventory fingerprints and summary counts are validated before comparisons; mismatches downgrade the result to PARTIAL.
-   - 比较前会验证内嵌 inventory 指纹和摘要计数；如果不匹配，结果降级为 PARTIAL。
+   - Embedded inventory fingerprints, summary counts, and full-report checksums are validated before comparisons; mismatches downgrade the result to PARTIAL.
+   - 比较前会验证内嵌 inventory 指纹、摘要计数和完整报告校验和；如果不匹配，结果降级为 PARTIAL。
    - Standalone `verify` checks one `scan.json` without requiring a second report.
    - 独立 `verify` 命令可以直接检查单份 `scan.json`，无需第二份报告。
 
