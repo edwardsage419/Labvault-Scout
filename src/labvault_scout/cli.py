@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from . import __version__
-from .compare import compare_reports, comparison_exit_code, write_comparison
+from .compare import compare_reports, comparison_exit_code, load_scan_report, verify_report, write_comparison
 from .evidence import build_evidence
 from .hashing import sha256_with_head
 from .identifier import extension_signature_status, hdf5_container_from_header, inspect_gzip_nifti, inspect_hdf5_container, inspect_signature, inspect_zip_container, nifti1_container_from_header, ole_container_from_header, signature_from_head
@@ -109,6 +109,9 @@ def main() -> None:
         help="Exit 0 for no changes, 1 for changes, or 2 for a partial comparison",
     )
 
+    verify_parser = sub.add_parser("verify", help="Verify one scan.json report")
+    verify_parser.add_argument("report", type=Path)
+
     args = parser.parse_args()
     if args.command == "scan":
         count = scan(args.directory, args.output)
@@ -119,6 +122,15 @@ def main() -> None:
         print(f"Compared reports. Changes: {result['summary']['change_count']}. Report: {args.output / 'comparison.html'}")
         if args.exit_code:
             raise SystemExit(comparison_exit_code(result))
+    elif args.command == "verify":
+        result = verify_report(load_scan_report(args.report))
+        print(
+            f"Report verification: {result['status']} | "
+            f"schema={result['schema_version']} | "
+            f"integrity={result['integrity_status']} | "
+            f"scan_errors={result['error_count']}"
+        )
+        raise SystemExit(result["exit_code"])
 
 
 if __name__ == "__main__":

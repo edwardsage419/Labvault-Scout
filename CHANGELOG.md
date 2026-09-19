@@ -20,6 +20,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Unsupported future scan schemas mark comparisons as `PARTIAL` instead of silently assuming compatibility
 * Comparisons become `PARTIAL` when a source report's embedded inventory fingerprint validation fails
 * CLI `--version`
+* Standalone `verify` command for scan-report integrity and schema compatibility checks
 * Compound-extension matching with `.nii.gz` NIfTI coverage
 * Bounded NIfTI-1 header evidence for both `.nii` and `.nii.gz` using the standard 348-byte header and magic field
 

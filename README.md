@@ -60,6 +60,16 @@ labvault-scout compare old-report/scan.json new-report/scan.json -o labvault-com
 
 The comparison produces `comparison.html`, `comparison.json`, and `changes.csv`, including aggregate file/byte/risk/priority deltas and priority escalation/de-escalation. Move/rename detection is deliberately conservative: it is reported only when the matching SHA-256 occurs exactly once in each complete source report. If either source scan contains recorded errors, the comparison is marked `PARTIAL` because path additions/removals may be incomplete. For scripts, add `--exit-code`: 0 means no changes, 1 means changes were detected, and 2 means the comparison is partial. Pre-schema v0.2 reports created on Windows are normalized from backslash paths to POSIX paths during comparison; ambiguous normalization collisions are rejected rather than guessed. See [the bilingual comparison guide](docs/COMPARISON.md) for semantics and limitations.
 
+## Verify a report
+
+v0.3 can verify the internal consistency of a single scan report:
+
+```bash
+labvault-scout verify labvault-report/scan.json
+```
+
+Exit code 0 means verified, 1 means integrity is unavailable (typically legacy v0.2), and 2 means integrity failed or the scan schema is unsupported.
+
 ## Development
 
 ```bash

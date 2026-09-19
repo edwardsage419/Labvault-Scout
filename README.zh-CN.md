@@ -47,6 +47,16 @@ labvault-scout compare old-report/scan.json new-report/scan.json -o labvault-com
 
 比较会生成 `comparison.html`、`comparison.json` 和 `changes.csv`，并提供文件数、总字节、风险/优先级汇总差异以及优先级上升/下降。移动/重命名识别采用保守规则：只有匹配的 SHA-256 在两份完整源报告中都只出现一次时，才报告为移动。如果任一源扫描存在已记录错误，比较状态会标记为 `PARTIAL`，因为新增/删除路径可能并不完整。脚本自动化可增加 `--exit-code`：0 表示无变化，1 表示检测到变化，2 表示比较不完整。对于 Windows 上生成的无 schema 的 v0.2 旧报告，比较时会把反斜杠路径规范化为 POSIX 路径；如果规范化后发生路径冲突，则直接拒绝比较而不是猜测。详细语义和限制参见[中英双语比较指南](docs/COMPARISON.md)。
 
+## 验证单份报告
+
+v0.3 可以直接检查单份扫描报告的内部一致性：
+
+```bash
+labvault-scout verify labvault-report/scan.json
+```
+
+退出码 0 表示验证通过，1 表示无法验证内部完整性（通常是 v0.2 旧报告），2 表示完整性验证失败或扫描 schema 不受支持。
+
 ## 当前状态
 
 v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理，以及有界 NIfTI-1 结构证据。

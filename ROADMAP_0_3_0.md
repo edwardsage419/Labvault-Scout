@@ -13,6 +13,8 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 重复扫描比较会明确显示保存规则相同、已变化，或旧报告中不可用。
    - Embedded inventory fingerprints and summary counts are validated before comparisons; mismatches downgrade the result to PARTIAL.
    - 比较前会验证内嵌 inventory 指纹和摘要计数；如果不匹配，结果降级为 PARTIAL。
+   - Standalone `verify` checks one `scan.json` without requiring a second report.
+   - 独立 `verify` 命令可以直接检查单份 `scan.json`，无需第二份报告。
 
 2. Compound and compressed scientific formats / 复合扩展名与压缩科研格式
    - Prefer the longest configured extension so formats such as `.nii.gz` are not reduced to generic `.gz`.

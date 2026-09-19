@@ -403,6 +403,38 @@ def comparison_exit_code(result: dict) -> int:
     return 0
 
 
+def verify_report(payload: dict) -> dict:
+    """Return a compact integrity/compatibility assessment for one scan report."""
+    identity = report_identity(payload)
+    integrity = identity["integrity_status"]
+    schema_supported = identity["schema_supported"]
+
+    if integrity == "MISMATCH":
+        status = "FAILED"
+        exit_code = 2
+    elif not schema_supported:
+        status = "UNSUPPORTED"
+        exit_code = 2
+    elif integrity == "UNKNOWN":
+        status = "UNKNOWN"
+        exit_code = 1
+    else:
+        status = "VERIFIED"
+        exit_code = 0
+
+    return {
+        "status": status,
+        "exit_code": exit_code,
+        "schema_version": identity["schema_version"],
+        "schema_supported": schema_supported,
+        "integrity_status": integrity,
+        "error_count": identity["error_count"],
+        "inventory_sha256": identity["inventory_sha256"],
+        "rules_sha256": identity["rules_sha256"],
+        "tool": identity["tool"],
+    }
+
+
 def _csv_row(item: dict) -> dict:
     before = item.get("before") or {}
     after = item.get("after") or {}

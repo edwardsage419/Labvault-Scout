@@ -136,3 +136,24 @@ A `MISMATCH` makes the comparison `PARTIAL` and produces automation exit code 2.
 The inventory fingerprint is an internal consistency check, not a cryptographic signature of authorship or provenance.
 
 inventory 指纹属于内部一致性检查，不是用于证明作者身份或来源真实性的数字签名。
+
+
+## Standalone verification / 独立验证
+
+A single report can be checked without comparing it to another report:
+
+可以在不进行两份报告比较的情况下直接检查单份报告：
+
+```bash
+labvault-scout verify report/scan.json
+```
+
+Exit codes / 退出码：
+
+- `0`: supported schema and internally verified / schema 受支持且内部一致性验证通过
+- `1`: integrity cannot be verified, typically a legacy report without an embedded fingerprint / 无法验证内部完整性，通常是没有内嵌指纹的旧报告
+- `2`: fingerprint/summary mismatch or unsupported scan schema / 指纹或摘要不匹配，或扫描 schema 不受支持
+
+Recorded scan errors are reported separately. They indicate incomplete source access, not corruption of the `scan.json` itself.
+
+扫描过程中记录的错误会单独显示。它们代表源数据访问不完整，并不等同于 `scan.json` 自身损坏。

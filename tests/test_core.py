@@ -1818,3 +1818,65 @@ def test_report_integrity_detects_tampered_error_count(tmp_path: Path):
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
     payload["summary"]["error_count"] = 5
     assert report_integrity_status(payload) == "MISMATCH"
+
+
+def test_verify_report_statuses(tmp_path: Path):
+    from labvault_scout.compare import load_scan_report, verify_report
+
+    source = tmp_path / "verify_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "verify_report"
+    scan(source, output)
+
+    payload = load_scan_report(output / "scan.json")
+    verified = verify_report(payload)
+    assert verified["status"] == "VERIFIED"
+    assert verified["exit_code"] == 0
+
+    legacy = verify_report({
+        "files": [{"path": "data.csv", "size": 1, "sha256": "same"}],
+        "errors": [],
+    })
+    assert legacy["status"] == "UNKNOWN"
+    assert legacy["exit_code"] == 1
+
+    tampered = json.loads(json.dumps(payload))
+    tampered["summary"]["file_count"] = 999
+    failed = verify_report(tampered)
+    assert failed["status"] == "FAILED"
+    assert failed["exit_code"] == 2
+
+    future = json.loads(json.dumps(payload))
+    future["schema_version"] = "99"
+    unsupported = verify_report(future)
+    assert unsupported["status"] == "UNSUPPORTED"
+    assert unsupported["exit_code"] == 2
+
+
+def test_cli_verify_report_exit_codes(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    source = tmp_path / "verify_cli_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "verify_cli_report"
+    scan(source, output)
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(output / "scan.json")])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+    assert "Report verification: VERIFIED" in capsys.readouterr().out
+
+    legacy_path = tmp_path / "legacy.json"
+    legacy_path.write_text(json.dumps({
+        "files": [{"path": "data.csv", "size": 1, "sha256": "same"}],
+        "errors": [],
+    }), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(legacy_path)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
