@@ -1,5 +1,7 @@
 cff-version: 1.2.0
 message: "If you use LabVault Scout in research, please cite this software."
+authors:
+  - name: "LabVault Scout contributors"
 title: "LabVault Scout"
 type: software
 version: 0.2.0
