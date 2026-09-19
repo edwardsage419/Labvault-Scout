@@ -20,7 +20,16 @@ def scan(root: Path, output: Path) -> int:
     rows: list[dict] = []
     errors: list[dict] = []
     output = output.expanduser().resolve()
-    for path in iter_files(root, excluded=output):
+    if output == root:
+        raise ValueError("Output directory must not be the scan root.")
+    try:
+        output.relative_to(root)
+    except ValueError:
+        excluded_output = None
+    else:
+        excluded_output = output
+
+    for path in iter_files(root, excluded=excluded_output):
         try:
             stat = path.stat()
             rule = classify(path, rules)
