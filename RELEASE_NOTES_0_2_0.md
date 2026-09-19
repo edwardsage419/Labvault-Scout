@@ -21,7 +21,7 @@ LabVault Scout v0.2.0 advances the local, read-only scientific data preservation
 * Scan errors use source-relative paths.
 * Output-directory edge cases cannot silently suppress an entire scan or write reports at the scan root.
 * Non-regular filesystem entries are skipped.
-* Directory traversal failures are retained as non-fatal scan errors instead of being silently omitted.
+* Directory traversal and file-metadata failures are retained as non-fatal scan errors instead of being silently omitted.
 * Same-directory relationships preserve actual directory identity.
 * HDF5 user blocks are recognized at specification-defined signature offsets.
 * OOXML confidence requires matching internal structure, not only a ZIP outer signature.
@@ -53,7 +53,7 @@ LabVault Scout v0.2.0 在本地只读科研数据保存风险扫描基础上，�
 * 扫描错误路径使用相对源目录路径。
 * 输出目录边界情况不会再导致整棵目录被错误排除，也禁止直接把扫描根目录作为输出目录。
 * 跳过 FIFO、设备等非普通文件系统条目。
-* 目录遍历失败会作为非致命扫描错误记录，不再静默漏扫。
+* 目录遍历和文件元数据读取失败会作为非致命扫描错误记录，不再静默漏扫。
 * 同目录关系严格保留实际目录身份。
 * 支持在规范定义的签名偏移位置识别带 user block 的 HDF5。
 * OOXML 只有在内部结构匹配时才获得 verified / 高置信度证据。
