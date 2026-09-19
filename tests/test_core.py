@@ -1590,3 +1590,37 @@ def test_compare_rejects_ambiguous_legacy_path_normalization():
 
     with pytest.raises(ValueError, match="Path collision after legacy normalization"):
         compare_payloads(before, after)
+
+
+def test_compare_large_inventory_is_deterministic_without_timing_threshold():
+    from labvault_scout.compare import compare_payloads
+
+    before_rows = [
+        {
+            "path": f"data/file_{index:04d}.csv",
+            "sha256": f"hash-{index:04d}",
+            "size": index + 1,
+            "risk": "SAFE",
+            "priority": "LOW",
+            "priority_score": 0,
+        }
+        for index in range(1000)
+    ]
+    after_rows = [dict(row) for row in before_rows]
+
+    after_rows[500]["sha256"] = "changed-hash"
+    moved = after_rows.pop(999)
+    moved["path"] = "archive/file_0999.csv"
+    after_rows.append(moved)
+
+    first = compare_payloads({"files": before_rows}, {"files": after_rows})
+    second = compare_payloads(
+        {"files": list(reversed(before_rows))},
+        {"files": list(reversed(after_rows))},
+    )
+
+    assert first == second
+    assert first["summary"]["content_changed_count"] == 1
+    assert first["summary"]["moved_count"] == 1
+    assert first["summary"]["unchanged_count"] == 998
+    assert first["summary"]["change_count"] == 2
