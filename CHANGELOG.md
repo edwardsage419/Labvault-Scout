@@ -17,6 +17,19 @@
 * SHA-256 hashing and the 512-byte identification header are collected in one sequential file read
 * HDF5 and OLE structural checks reuse the shared bounded header
 
+### Fixed
+
+* Runtime `__version__` now matches package metadata
+* Scan error paths remain relative to the source root
+* Output paths outside the source no longer exclude the entire scan; using the scan root itself as output is rejected
+* Scanner traversal skips non-regular filesystem entries
+* Same-directory relationship matching preserves actual directory identity
+* OpenDocument `mimetype` inspection uses a bounded read
+* HDF5 signatures after specification-defined user blocks are recognized
+* OOXML files require matching internal structure before receiving verified/high-confidence evidence
+* Build metadata now requires setuptools 77+ for SPDX license metadata and ships the complete standard MIT license
+* Duplicate test names were removed so all intended regressions are collected
+
 ## 0.1.0
 
 Initial MVP release candidate.
