@@ -5,7 +5,8 @@ from importlib.resources import files
 SCHEMA_FILES = {
     "scan": "scan-1.schema.json",
     "comparison": "comparison-1.schema.json",
-    "verification": "verification-1.schema.json",\n    "bundle": "bundle-manifest-1.schema.json",
+    "verification": "verification-1.schema.json",
+    "bundle": "bundle-manifest-1.schema.json",
 }
 
 
