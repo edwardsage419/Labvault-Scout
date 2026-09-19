@@ -1,0 +1,98 @@
+# Repeated Scan Comparison / 重复扫描比较
+
+LabVault Scout v0.3 development can compare two local `scan.json` reports without uploading research data.
+
+LabVault Scout v0.3 开发线可以在完全本地的情况下比较两份 `scan.json`，不会上传科研数据。
+
+## Usage / 使用方法
+
+```bash
+labvault-scout compare old-report/scan.json new-report/scan.json -o labvault-comparison
+```
+
+Outputs / 输出：
+
+- `comparison.html`: human-readable summary / 供人工阅读的摘要
+- `comparison.json`: machine-readable complete comparison / 机器可读的完整比较
+- `changes.csv`: flat table of detected changes / 检测到的变化表格
+
+## Change types / 变化类型
+
+- `ADDED`: a relative path exists only in the later scan. / 相对路径只存在于后一次扫描。
+- `REMOVED`: a relative path exists only in the earlier scan. / 相对路径只存在于前一次扫描。
+- `MOVED`: one removed path and one added path share a SHA-256 value that occurs exactly once in each report. / 一个删除路径和一个新增路径具有相同 SHA-256，且该哈希在前后两份报告中都只出现一次。
+- `CONTENT_CHANGED`: the same relative path has a different SHA-256. / 同一相对路径的 SHA-256 发生变化。
+- `ASSESSMENT_CHANGED`: content is unchanged but preservation assessment fields changed, for example after rule improvements. / 文件内容未变，但保存评估字段发生变化，例如规则升级后重新评估。
+
+`MOVED` is a conservative content-identity inference, not filesystem history. LabVault Scout does not claim to know that the operating system actually renamed a file.
+
+`MOVED` 是基于内容身份的保守推断，不是文件系统历史记录。LabVault Scout 不声称知道操作系统是否真的执行了重命名。
+
+## Priority changes / 优先级变化
+
+For paired files, comparison records:
+
+对于前后能够配对的文件，比较结果记录：
+
+- `priority_direction = ESCALATED`: preservation priority increased / 保存优先级上升
+- `priority_direction = DEESCALATED`: preservation priority decreased / 保存优先级下降
+- `priority_direction = UNCHANGED`: score/level did not move / 分数或等级未变化
+- `priority_delta`: later score minus earlier score when numeric scores are available / 存在数字分数时，为后一次减前一次的分数差
+
+The comparison summary also includes aggregate file-count, byte-count, risk-count, and priority-count deltas.
+
+比较摘要还包括文件数量、总字节、风险等级数量和优先级数量的净变化。
+
+## COMPLETE vs PARTIAL / COMPLETE 与 PARTIAL
+
+A comparison is `COMPLETE` when neither source scan reports read/traversal errors.
+
+当两份源扫描都没有记录读取或目录遍历错误时，比较状态为 `COMPLETE`。
+
+If either source scan contains errors, the comparison is marked `PARTIAL`. Existing successfully scanned files are still compared, but additions/removals may be incomplete because an inaccessible subtree might be absent from one inventory.
+
+如果任一源扫描存在错误，比较状态标记为 `PARTIAL`。已经成功扫描的文件仍会参与比较，但新增/删除判断可能不完整，因为某个不可访问子目录可能缺失于清单中。
+
+## Automation exit codes / 自动化退出码
+
+Default interactive comparison exits normally regardless of whether changes are found.
+
+默认交互式比较不会因为发现变化而返回非零退出码。
+
+For scripts and local automation:
+
+用于脚本和本地自动化：
+
+```bash
+labvault-scout compare old/scan.json new/scan.json --exit-code
+```
+
+- `0`: complete comparison, no changes / 完整比较且无变化
+- `1`: complete comparison, changes detected / 完整比较且检测到变化
+- `2`: partial comparison because a source scan contains errors / 因源扫描存在错误而比较不完整
+
+## Cross-platform paths / 跨平台路径
+
+v0.3 scan reports store relative paths with POSIX `/` separators on all supported operating systems.
+
+v0.3 在所有支持的操作系统上都使用 POSIX `/` 保存相对路径。
+
+Pre-schema v0.2 reports created on Windows may contain backslashes. During comparison, LabVault Scout normalizes those legacy paths to `/`. If two legacy paths would collapse to the same normalized path, comparison stops with an error rather than guessing.
+
+Windows 上生成的无 schema v0.2 旧报告可能包含反斜杠。比较时会把这些旧路径规范化为 `/`。如果两个旧路径规范化后发生冲突，程序会停止并报告错误，而不是猜测。
+
+## Inventory fingerprint / 清单指纹
+
+v0.3 `scan.json` includes `summary.inventory_sha256`, calculated deterministically from each relative path, file size, and file SHA-256.
+
+v0.3 的 `scan.json` 包含 `summary.inventory_sha256`，它由每个相对路径、文件大小和文件 SHA-256 确定性计算。
+
+The fingerprint is useful for quickly checking whether the inventory content changed. It is not a digital signature and does not authenticate who produced the report.
+
+该指纹适合快速判断文件清单内容是否变化。它不是数字签名，也不能证明报告由谁生成。
+
+## Compatibility limits / 兼容性限制
+
+Comparison is designed for LabVault Scout scan reports. v0.2 legacy reports are supported using their existing `files` records. Unknown or malformed input is rejected rather than silently interpreted.
+
+比较功能面向 LabVault Scout 扫描报告。v0.2 旧报告可通过已有的 `files` 记录进行比较。未知或格式错误的输入会被拒绝，而不会静默猜测。
