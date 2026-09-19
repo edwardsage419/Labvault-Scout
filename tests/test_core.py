@@ -917,3 +917,46 @@ def test_xls_generic_ole_container_does_not_claim_high_confidence(tmp_path: Path
     assert row["container_type"] == "OLE Compound File (512-byte sectors)"
     assert row["signature_status"] == "container-only: OLE"
     assert row["confidence"] == "MEDIUM"
+
+
+def test_iter_files_forwards_walk_errors(tmp_path: Path, monkeypatch):
+    import labvault_scout.scanner as scanner
+
+    source = tmp_path / "walk_error_source"
+    source.mkdir()
+    seen = []
+
+    def fake_walk(root, followlinks=False, onerror=None):
+        exc = PermissionError("blocked")
+        exc.filename = str(Path(root) / "blocked")
+        assert onerror is not None
+        onerror(exc)
+        return []
+
+    monkeypatch.setattr(scanner.os, "walk", fake_walk)
+    paths = list(scanner.iter_files(source, on_error=lambda path, exc: seen.append((path, exc))))
+
+    assert paths == []
+    assert len(seen) == 1
+    assert seen[0][0].name == "blocked"
+    assert isinstance(seen[0][1], PermissionError)
+
+
+def test_scan_json_records_directory_traversal_errors(tmp_path: Path, monkeypatch):
+    import json
+    import labvault_scout.cli as cli
+
+    source = tmp_path / "scan_walk_error_source"
+    source.mkdir()
+    output = tmp_path / "scan_walk_error_report"
+
+    def fake_iter(root, excluded=None, on_error=None):
+        assert on_error is not None
+        on_error(Path(root) / "blocked", PermissionError("blocked"))
+        return iter(())
+
+    monkeypatch.setattr(cli, "iter_files", fake_iter)
+    assert cli.scan(source, output) == 0
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert payload["errors"] == [{"path": "blocked", "error": "PermissionError"}]
