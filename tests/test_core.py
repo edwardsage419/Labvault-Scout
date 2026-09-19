@@ -2146,7 +2146,7 @@ def test_cli_schema_outputs_packaged_schema(monkeypatch, capsys):
 def test_all_schema_registry_entries_load():
     from labvault_scout.schema_registry import SCHEMA_FILES, load_schema_text
 
-    assert set(SCHEMA_FILES) == {"scan", "comparison", "verification"}
+    assert set(SCHEMA_FILES) == {"scan", "comparison", "verification", "bundle"}
     for kind in SCHEMA_FILES:
         assert json.loads(load_schema_text(kind))["$schema"].endswith("/2020-12/schema")
 
