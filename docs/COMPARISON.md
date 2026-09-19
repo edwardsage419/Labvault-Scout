@@ -162,3 +162,8 @@ Exit codes / 退出码：
 Recorded scan errors are reported separately. They indicate incomplete source access, not corruption of the `scan.json` itself.
 
 扫描过程中记录的错误会单独显示。它们代表源数据访问不完整，并不等同于 `scan.json` 自身损坏。
+
+
+Unsupported schema status takes precedence in standalone verification. A future schema may also invalidate the current checksum interpretation, so `verify` reports `UNSUPPORTED` rather than claiming `FAILED` for an unknown schema.
+
+独立验证中，不受支持的 schema 状态优先。未来 schema 也可能改变当前校验和语义，因此 `verify` 会报告 `UNSUPPORTED`，而不会对未知 schema 直接声称 `FAILED`。

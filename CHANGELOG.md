@@ -23,6 +23,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * CLI `--version`
 * Standalone `verify` command for scan-report integrity and schema compatibility checks
 * `verify --json` machine-readable output for local scripts and preservation workflows
+* Unsupported scan schema takes precedence over checksum status in standalone verification
 * Compound-extension matching with `.nii.gz` NIfTI coverage
 * Bounded NIfTI-1 header evidence for both `.nii` and `.nii.gz` using the standard 348-byte header and magic field
 

@@ -1949,3 +1949,22 @@ def test_cli_verify_json_output(tmp_path: Path, monkeypatch, capsys):
     assert payload["integrity_status"] == "VERIFIED"
     assert payload["schema_supported"] is True
     assert len(payload["report_sha256"]) == 64
+
+
+def test_verify_unknown_schema_takes_precedence_over_checksum_mismatch(tmp_path: Path):
+    from labvault_scout.compare import verify_report
+
+    source = tmp_path / "schema_precedence_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "schema_precedence_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["schema_version"] = "99"
+    result = verify_report(payload)
+
+    assert result["status"] == "UNSUPPORTED"
+    assert result["exit_code"] == 2
+    assert result["schema_supported"] is False
+    assert result["integrity_status"] == "MISMATCH"

@@ -417,11 +417,11 @@ def verify_report(payload: dict) -> dict:
     integrity = identity["integrity_status"]
     schema_supported = identity["schema_supported"]
 
-    if integrity == "MISMATCH":
-        status = "FAILED"
-        exit_code = 2
-    elif not schema_supported:
+    if not schema_supported:
         status = "UNSUPPORTED"
+        exit_code = 2
+    elif integrity == "MISMATCH":
+        status = "FAILED"
         exit_code = 2
     elif integrity == "UNKNOWN":
         status = "UNKNOWN"
