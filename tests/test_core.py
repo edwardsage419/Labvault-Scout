@@ -525,7 +525,7 @@ def test_sha256_file_compatibility_after_one_pass_refactor(tmp_path: Path):
     assert sha256_file(path) == hashlib.sha256(content).hexdigest()
 
 
-def test_scan_zero_byte_file_is_reported(tmp_path: Path):
+def test_scan_zero_byte_file_has_known_sha256(tmp_path: Path):
     import csv
 
     source = tmp_path / "zero_source"
@@ -726,3 +726,50 @@ def test_truncated_container_recommends_review():
         "open_copy": "",
     }
     assert recommended_action(row) == "REVIEW_CONTAINER"
+
+
+def test_runtime_version_matches_installed_metadata():
+    from importlib.metadata import version
+    import labvault_scout
+
+    assert labvault_scout.__version__ == version("labvault-scout")
+
+
+def test_scan_error_paths_are_relative(tmp_path: Path, monkeypatch):
+    import json
+    import labvault_scout.cli as cli
+
+    source = tmp_path / "error_source"
+    nested = source / "nested"
+    nested.mkdir(parents=True)
+    (nested / "broken.bin").write_bytes(b"data")
+    output = tmp_path / "error_report"
+
+    def fail_hash(path):
+        raise OSError("simulated read failure")
+
+    monkeypatch.setattr(cli, "sha256_with_head", fail_hash)
+    assert cli.scan(source, output) == 0
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert payload["errors"] == [{"path": str(Path("nested") / "broken.bin"), "error": "OSError"}]
+    assert str(source) not in payload["errors"][0]["path"]
+
+
+def test_hdf5_user_block_is_detected_end_to_end(tmp_path: Path):
+    import csv
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "hdf5_userblock_source"
+    source.mkdir()
+    content = b"U" * 512 + bytes.fromhex("894844460D0A1A0A") + bytes([2]) + b"\x00" * 32
+    (source / "with_userblock.h5").write_bytes(content)
+    output = tmp_path / "hdf5_userblock_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "HDF5"
+    assert row["signature_status"] == "verified"
+    assert row["container_type"] == "HDF5 superblock v2"
