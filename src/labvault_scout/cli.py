@@ -5,7 +5,8 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__\nfrom .bundle import verify_bundle
+from . import __version__
+from .bundle import verify_bundle
 from .compare import compare_reports, comparison_exit_code, load_scan_report, verify_report, write_comparison
 from .evidence import build_evidence
 from .hashing import sha256_with_head
