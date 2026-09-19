@@ -9,6 +9,7 @@ from pathlib import Path
 from . import __version__
 
 COMPARISON_SCHEMA_VERSION = "1"
+SUPPORTED_SCAN_SCHEMA_VERSIONS = {"1"}
 ASSESSMENT_FIELDS = (
     "format",
     "signature",
@@ -137,8 +138,11 @@ def report_identity(payload: dict) -> dict:
     summary = payload.get("summary")
     inventory = summary.get("inventory_sha256", "") if isinstance(summary, dict) else ""
     _, legacy_paths_normalized = _file_index(payload)
+    schema_version = str(payload.get("schema_version", "legacy"))
+    schema_supported = schema_version == "legacy" or schema_version in SUPPORTED_SCAN_SCHEMA_VERSIONS
     return {
-        "schema_version": str(payload.get("schema_version", "legacy")),
+        "schema_version": schema_version,
+        "schema_supported": schema_supported,
         "tool": {
             "name": str(tool.get("name", "LabVault Scout")),
             "version": str(tool.get("version", "unknown")),
@@ -285,11 +289,17 @@ def compare_payloads(before: dict, after: dict) -> dict:
 
     before_identity = report_identity(before)
     after_identity = report_identity(after)
-    partial = bool(before_identity["error_count"] or after_identity["error_count"])
+    has_scan_errors = bool(before_identity["error_count"] or after_identity["error_count"])
+    unsupported_schema = not before_identity["schema_supported"] or not after_identity["schema_supported"]
+    partial = has_scan_errors or unsupported_schema
     warnings = []
-    if partial:
+    if has_scan_errors:
         warnings.append(
             "One or both source scans contain errors; path additions/removals may be incomplete."
+        )
+    if unsupported_schema:
+        warnings.append(
+            "One or both source reports use an unsupported scan schema; comparison semantics may be incomplete."
         )
     if before_paths_normalized or after_paths_normalized:
         warnings.append(

@@ -15,6 +15,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Optional `compare --exit-code` automation mode: 0=no changes, 1=changes, 2=partial comparison
 * Thousand-file repeated-scan comparison regression coverage without timing thresholds
 * Comparison output is marked `PARTIAL` when either source scan contains recorded errors
+* Unsupported future scan schemas mark comparisons as `PARTIAL` instead of silently assuming compatibility
 * CLI `--version`
 * Compound-extension matching with `.nii.gz` NIfTI coverage
 * Bounded NIfTI-1 header evidence for both `.nii` and `.nii.gz` using the standard 348-byte header and magic field

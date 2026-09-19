@@ -45,13 +45,13 @@ The comparison summary also includes aggregate file-count, byte-count, risk-coun
 
 ## COMPLETE vs PARTIAL / COMPLETE 与 PARTIAL
 
-A comparison is `COMPLETE` when neither source scan reports read/traversal errors.
+A comparison is `COMPLETE` when neither source scan reports read/traversal errors and both scan schemas are supported.
 
-当两份源扫描都没有记录读取或目录遍历错误时，比较状态为 `COMPLETE`。
+当两份源扫描都没有记录读取或目录遍历错误，并且两份扫描 schema 均受支持时，比较状态为 `COMPLETE`。
 
-If either source scan contains errors, the comparison is marked `PARTIAL`. Existing successfully scanned files are still compared, but additions/removals may be incomplete because an inaccessible subtree might be absent from one inventory.
+If either source scan contains errors, or a report uses an unsupported future scan schema, the comparison is marked `PARTIAL`. Existing successfully scanned files are still compared, but additions/removals or field semantics may be incomplete.
 
-如果任一源扫描存在错误，比较状态标记为 `PARTIAL`。已经成功扫描的文件仍会参与比较，但新增/删除判断可能不完整，因为某个不可访问子目录可能缺失于清单中。
+如果任一源扫描存在错误，或报告使用未知未来扫描 schema，比较状态标记为 `PARTIAL`。已经成功扫描的文件仍会参与比较，但新增/删除判断或字段语义可能不完整。
 
 ## Automation exit codes / 自动化退出码
 
@@ -93,6 +93,6 @@ The fingerprint is useful for quickly checking whether the inventory content cha
 
 ## Compatibility limits / 兼容性限制
 
-Comparison is designed for LabVault Scout scan reports. v0.2 legacy reports are supported using their existing `files` records. Unknown or malformed input is rejected rather than silently interpreted.
+Comparison is designed for LabVault Scout scan reports. v0.2 legacy reports are explicitly supported using their existing `files` records. Malformed structures are rejected. Unknown future scan schema versions are compared conservatively but marked `PARTIAL` rather than silently treated as fully compatible.
 
-比较功能面向 LabVault Scout 扫描报告。v0.2 旧报告可通过已有的 `files` 记录进行比较。未知或格式错误的输入会被拒绝，而不会静默猜测。
+比较功能面向 LabVault Scout 扫描报告。v0.2 旧报告通过已有的 `files` 记录明确支持。格式错误的结构会被拒绝；未知未来扫描 schema 会保守地尝试比较，但标记为 `PARTIAL`，不会静默视为完全兼容。

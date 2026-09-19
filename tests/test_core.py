@@ -1624,3 +1624,38 @@ def test_compare_large_inventory_is_deterministic_without_timing_threshold():
     assert first["summary"]["moved_count"] == 1
     assert first["summary"]["unchanged_count"] == 998
     assert first["summary"]["change_count"] == 2
+
+
+def test_compare_unknown_scan_schema_is_partial_and_exit_code_two():
+    from labvault_scout.compare import compare_payloads, comparison_exit_code
+
+    before = {
+        "schema_version": "99",
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+    after = {
+        "schema_version": "1",
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+
+    result = compare_payloads(before, after)
+    assert result["comparison_status"] == "PARTIAL"
+    assert result["before"]["schema_supported"] is False
+    assert result["after"]["schema_supported"] is True
+    assert any("unsupported scan schema" in warning for warning in result["warnings"])
+    assert comparison_exit_code(result) == 2
+
+
+def test_compare_legacy_schema_remains_supported():
+    from labvault_scout.compare import compare_payloads
+
+    result = compare_payloads(
+        {"files": [{"path": "data.csv", "sha256": "same"}], "errors": []},
+        {"files": [{"path": "data.csv", "sha256": "same"}], "errors": []},
+    )
+
+    assert result["comparison_status"] == "COMPLETE"
+    assert result["before"]["schema_version"] == "legacy"
+    assert result["before"]["schema_supported"] is True

@@ -27,6 +27,8 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 可选退出码模式支持本地自动化，同时保持默认交互行为不变。
    - Legacy v0.2 Windows path separators are normalized conservatively for cross-platform comparisons.
    - 对旧版 v0.2 Windows 路径分隔符进行保守规范化，支持跨平台比较。
+   - Unknown future scan schemas are treated conservatively as partial compatibility rather than assumed compatible.
+   - 对未知未来扫描 schema 采用保守的部分兼容状态，而不是默认完全兼容。
 
 4. Scale and determinism / 规模与确定性
    - Implemented: deterministic traversal, cross-platform POSIX report paths, and an inventory SHA-256 fingerprint.
