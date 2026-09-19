@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from importlib.resources import files
 from pathlib import Path
@@ -9,6 +10,17 @@ def load_rules() -> dict[str, dict]:
     rule_path = files("labvault_scout").joinpath("rules/scientific_formats.json")
     rules = json.loads(rule_path.read_text(encoding="utf-8"))
     return {item["extension"].lower(): item for item in rules}
+
+
+def rules_sha256(rules: dict[str, dict]) -> str:
+    """Return a deterministic fingerprint of the active preservation rules."""
+    canonical = json.dumps(
+        rules,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def matched_extension(path: Path, rules: dict[str, dict]) -> str:

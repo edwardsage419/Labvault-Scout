@@ -96,3 +96,22 @@ The fingerprint is useful for quickly checking whether the inventory content cha
 Comparison is designed for LabVault Scout scan reports. v0.2 legacy reports are explicitly supported using their existing `files` records. Malformed structures are rejected. Unknown future scan schema versions are compared conservatively but marked `PARTIAL` rather than silently treated as fully compatible.
 
 比较功能面向 LabVault Scout 扫描报告。v0.2 旧报告通过已有的 `files` 记录明确支持。格式错误的结构会被拒绝；未知未来扫描 schema 会保守地尝试比较，但标记为 `PARTIAL`，不会静默视为完全兼容。
+
+
+## Rule context / 规则上下文
+
+v0.3 scan reports record a deterministic SHA-256 fingerprint of the active preservation rules, together with the content hash algorithm and relative-path convention. No absolute source directory is stored in this provenance block.
+
+v0.3 扫描报告会记录当前保存规则的确定性 SHA-256 指纹，同时记录内容哈希算法和相对路径约定。该来源信息中不会保存源目录绝对路径。
+
+Comparison reports one of three rule states:
+
+比较结果会显示三种规则状态之一：
+
+- `SAME`: both reports contain the same rule fingerprint / 两份报告具有相同规则指纹
+- `CHANGED`: both fingerprints exist but differ / 两份报告都有规则指纹，但内容不同
+- `UNKNOWN`: one or both reports do not contain a rule fingerprint, typically legacy v0.2 reports / 一份或两份报告缺少规则指纹，通常是 v0.2 旧报告
+
+`CHANGED` does not make the file inventory comparison partial. Instead, it adds a warning that `ASSESSMENT_CHANGED` results may reflect rule evolution rather than file-content changes.
+
+`CHANGED` 不会让文件清单比较变成 PARTIAL；它会增加警告，提示 `ASSESSMENT_CHANGED` 可能来自规则演进，而不是文件内容变化。

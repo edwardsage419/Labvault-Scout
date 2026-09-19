@@ -12,7 +12,7 @@ from .actions import recommended_action
 from .priority import assign_priority, priority_reason
 from .relationships import detect_open_copies
 from .report import write_reports
-from .risk import classify, load_rules
+from .risk import classify, load_rules, rules_sha256
 from .scanner import iter_files
 
 
@@ -80,7 +80,14 @@ def scan(root: Path, output: Path) -> int:
         row["priority_score"], row["priority"] = assign_priority(row)
         row["priority_reason"] = priority_reason(row)
         row["recommended_action"] = recommended_action(row)
-    write_reports(rows, output, errors)
+    provenance = {
+        "hash_algorithm": "sha256",
+        "path_style": "relative-posix",
+        "rules_sha256": rules_sha256(rules),
+        "rules_count": len(rules),
+        "source_access": "read-only",
+    }
+    write_reports(rows, output, errors, provenance=provenance)
     return len(rows)
 
 

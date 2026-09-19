@@ -138,6 +138,9 @@ def report_identity(payload: dict) -> dict:
     summary = payload.get("summary")
     inventory = summary.get("inventory_sha256", "") if isinstance(summary, dict) else ""
     _, legacy_paths_normalized = _file_index(payload)
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, dict):
+        provenance = {}
     schema_version = str(payload.get("schema_version", "legacy"))
     schema_supported = schema_version == "legacy" or schema_version in SUPPORTED_SCAN_SCHEMA_VERSIONS
     return {
@@ -149,6 +152,9 @@ def report_identity(payload: dict) -> dict:
         },
         "error_count": error_count,
         "inventory_sha256": str(inventory),
+        "rules_sha256": str(provenance.get("rules_sha256", "")),
+        "hash_algorithm": str(provenance.get("hash_algorithm", "")),
+        "path_style": str(provenance.get("path_style", "")),
         "legacy_paths_normalized": legacy_paths_normalized,
         "metrics": scan_metrics(payload),
     }
@@ -291,6 +297,13 @@ def compare_payloads(before: dict, after: dict) -> dict:
     after_identity = report_identity(after)
     has_scan_errors = bool(before_identity["error_count"] or after_identity["error_count"])
     unsupported_schema = not before_identity["schema_supported"] or not after_identity["schema_supported"]
+    before_rules = before_identity["rules_sha256"]
+    after_rules = after_identity["rules_sha256"]
+    if before_rules and after_rules:
+        rules_status = "SAME" if before_rules == after_rules else "CHANGED"
+    else:
+        rules_status = "UNKNOWN"
+
     partial = has_scan_errors or unsupported_schema
     warnings = []
     if has_scan_errors:
@@ -305,11 +318,16 @@ def compare_payloads(before: dict, after: dict) -> dict:
         warnings.append(
             "Legacy pre-schema backslash paths were normalized to POSIX separators for comparison."
         )
+    if rules_status == "CHANGED":
+        warnings.append(
+            "Rule-set fingerprint changed; assessment differences may reflect rule changes rather than file content."
+        )
 
     return {
         "schema_version": COMPARISON_SCHEMA_VERSION,
         "tool": {"name": "LabVault Scout", "version": __version__},
         "comparison_status": "PARTIAL" if partial else "COMPLETE",
+        "rules_status": rules_status,
         "warnings": warnings,
         "before": before_identity,
         "after": after_identity,
@@ -402,7 +420,7 @@ def write_comparison(result: dict, output_dir: Path) -> None:
 <title>LabVault Scout Comparison</title>
 <style>body{{font-family:system-ui;max-width:1100px;margin:40px auto;padding:0 20px}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ddd;padding:7px;text-align:left}}th{{background:#f5f5f5}}</style>
 <h1>LabVault Scout Comparison</h1>
-<p>Tool version: {html.escape(__version__)} | Comparison schema: {COMPARISON_SCHEMA_VERSION} | Status: {html.escape(result.get("comparison_status", "COMPLETE"))}</p>
+<p>Tool version: {html.escape(__version__)} | Comparison schema: {COMPARISON_SCHEMA_VERSION} | Status: {html.escape(result.get("comparison_status", "COMPLETE"))} | Rules: {html.escape(result.get("rules_status", "UNKNOWN"))}</p>
 {warning_html}
 <p>Changes: {summary['change_count']} | Added: {summary['added_count']} | Removed: {summary['removed_count']} | Moved: {summary['moved_count']} | Content changed: {summary['content_changed_count']} | Assessment changed: {summary['assessment_changed_count']} | Priority escalated: {summary['priority_escalated_count']} | Priority deescalated: {summary['priority_deescalated_count']} | Unchanged: {summary['unchanged_count']}</p>
 <p>File count delta: {delta['file_count']:+d} | Total bytes delta: {delta['total_bytes']:+d}</p>

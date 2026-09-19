@@ -1659,3 +1659,84 @@ def test_compare_legacy_schema_remains_supported():
     assert result["comparison_status"] == "COMPLETE"
     assert result["before"]["schema_version"] == "legacy"
     assert result["before"]["schema_supported"] is True
+
+
+def test_rules_fingerprint_is_deterministic_and_sensitive():
+    from labvault_scout.risk import rules_sha256
+
+    first = {
+        ".csv": {"risk": "SAFE", "name": "CSV"},
+        ".jnb": {"risk": "RESCUE", "name": "SigmaPlot"},
+    }
+    reordered = {
+        ".jnb": {"name": "SigmaPlot", "risk": "RESCUE"},
+        ".csv": {"name": "CSV", "risk": "SAFE"},
+    }
+    changed = {
+        ".csv": {"risk": "WATCH", "name": "CSV"},
+        ".jnb": {"risk": "RESCUE", "name": "SigmaPlot"},
+    }
+
+    assert rules_sha256(first) == rules_sha256(reordered)
+    assert rules_sha256(first) != rules_sha256(changed)
+
+
+def test_scan_json_records_non_sensitive_provenance(tmp_path: Path):
+    source = tmp_path / "provenance_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "provenance_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    provenance = payload["provenance"]
+
+    assert provenance["hash_algorithm"] == "sha256"
+    assert provenance["path_style"] == "relative-posix"
+    assert provenance["source_access"] == "read-only"
+    assert provenance["rules_count"] > 0
+    assert len(provenance["rules_sha256"]) == 64
+    assert str(source) not in json.dumps(provenance)
+
+
+def test_compare_reports_rule_context_status():
+    from labvault_scout.compare import compare_payloads
+
+    base = {
+        "schema_version": "1",
+        "provenance": {"rules_sha256": "a" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+    same = {
+        "schema_version": "1",
+        "provenance": {"rules_sha256": "a" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+    changed = {
+        "schema_version": "1",
+        "provenance": {"rules_sha256": "b" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+
+    same_result = compare_payloads(base, same)
+    assert same_result["rules_status"] == "SAME"
+    assert not any("Rule-set fingerprint changed" in warning for warning in same_result["warnings"])
+
+    changed_result = compare_payloads(base, changed)
+    assert changed_result["comparison_status"] == "COMPLETE"
+    assert changed_result["rules_status"] == "CHANGED"
+    assert any("Rule-set fingerprint changed" in warning for warning in changed_result["warnings"])
+
+
+def test_compare_legacy_rule_context_is_unknown():
+    from labvault_scout.compare import compare_payloads
+
+    result = compare_payloads(
+        {"files": [{"path": "data.csv", "sha256": "same"}], "errors": []},
+        {"files": [{"path": "data.csv", "sha256": "same"}], "errors": []},
+    )
+
+    assert result["rules_status"] == "UNKNOWN"

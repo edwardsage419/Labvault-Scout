@@ -6,12 +6,13 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 
 ### Added
 
-* Self-describing `scan.json` metadata with report schema and tool version
+* Self-describing `scan.json` metadata with report schema, tool version, hash/path semantics, and a deterministic preservation-rule fingerprint
 * Project-level JSON summary for file bytes, scan errors, risk/priority counts, open copies, duplicate groups, and a deterministic inventory SHA-256 fingerprint
 * Offline `compare` command for added, removed, moved, content-changed, and assessment-changed files
 * Deterministic `comparison.json`, `changes.csv`, and `comparison.html` outputs
 * Explicit priority escalation/de-escalation direction and score deltas in repeated-scan comparisons
 * Aggregate comparison deltas for file count, total bytes, risk counts, and priority counts
+* Rule-context comparison (`SAME`, `CHANGED`, or `UNKNOWN`) so assessment drift can be distinguished from content drift
 * Optional `compare --exit-code` automation mode: 0=no changes, 1=changes, 2=partial comparison
 * Thousand-file repeated-scan comparison regression coverage without timing thresholds
 * Comparison output is marked `PARTIAL` when either source scan contains recorded errors

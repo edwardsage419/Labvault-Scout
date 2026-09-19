@@ -7,8 +7,10 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
 ## Priorities / 优先级
 
 1. Report compatibility and provenance / 报告兼容性与来源信息
-   - Add explicit report schema and tool version metadata without exposing source absolute paths.
-   - 在不暴露源目录绝对路径的前提下，为报告增加明确的 schema 与工具版本信息。
+   - Implemented: explicit report schema, tool version, hash/path semantics, and deterministic rule-set fingerprint without exposing source absolute paths.
+   - 已实现：在不暴露源目录绝对路径的前提下，记录明确的报告 schema、工具版本、哈希/路径语义和确定性的规则集指纹。
+   - Repeated-scan comparison reports whether preservation rules are the same, changed, or unavailable in legacy reports.
+   - 重复扫描比较会明确显示保存规则相同、已变化，或旧报告中不可用。
 
 2. Compound and compressed scientific formats / 复合扩展名与压缩科研格式
    - Prefer the longest configured extension so formats such as `.nii.gz` are not reduced to generic `.gz`.
