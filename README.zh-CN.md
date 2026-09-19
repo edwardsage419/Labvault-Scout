@@ -17,7 +17,7 @@ LabVault Scout 是一个完全本地、只读、开源的科研数据保存风�
 
 ## 快速开始
 
-需要 Python 3.10 或更高版本。
+需要 Python 3.10 或更高版本。以下命令安装冻结的 v0.2.0-rc1 标签，不跟随持续变化的开发分支。
 
 ```bash
 git clone https://github.com/edwardsage419/Labvault-Scout.git
