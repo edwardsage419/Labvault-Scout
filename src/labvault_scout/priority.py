@@ -6,6 +6,13 @@ PRESERVATION_PACKAGE_CREDIT = {
     "RO-Crate Research Object": 10,
     "BagIt Research Package": 10,
 }
+STRUCTURAL_WARNING_PREFIXES = ("Invalid ", "Truncated ", "Unreadable ", "Unknown ")
+STRUCTURAL_WARNING_PENALTY = 10
+
+
+def has_structural_warning(row: dict) -> bool:
+    """Return True when bounded container evidence reports a structural problem."""
+    return row.get("container_type", "").startswith(STRUCTURAL_WARNING_PREFIXES)
 
 
 def priority_reason(row: dict) -> str:
@@ -17,6 +24,8 @@ def priority_reason(row: dict) -> str:
     package_credit = PRESERVATION_PACKAGE_CREDIT.get(row.get("container_type", ""), 0)
     if package_credit:
         reasons.append(f"preservation_package=-{package_credit}")
+    if has_structural_warning(row):
+        reasons.append(f"container=+{STRUCTURAL_WARNING_PENALTY}")
     status = row.get("signature_status", "")
     if status.startswith("mismatch") or status.startswith("unverified"):
         reasons.append("signature=+10")
@@ -35,6 +44,9 @@ def assign_priority(row: dict) -> tuple[int, str]:
 
     package_credit = PRESERVATION_PACKAGE_CREDIT.get(row.get("container_type", ""), 0)
     score -= package_credit
+
+    if has_structural_warning(row):
+        score += STRUCTURAL_WARNING_PENALTY
 
     status = row.get("signature_status", "")
     if status.startswith("mismatch") or status.startswith("unverified"):

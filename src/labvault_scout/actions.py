@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .priority import has_structural_warning
+
 
 def recommended_action(row: dict) -> str:
     """Return a conservative, actionable preservation recommendation."""
@@ -7,6 +9,9 @@ def recommended_action(row: dict) -> str:
     open_copy = bool(row.get("open_copy"))
     strength = row.get("relationship_strength", "")
     priority = row.get("priority", "")
+
+    if has_structural_warning(row):
+        return "REVIEW_CONTAINER"
 
     if risk == "SAFE" and priority == "LOW":
         return "KEEP"

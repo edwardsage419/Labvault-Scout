@@ -698,3 +698,31 @@ def test_csv_and_json_share_core_scan_values(tmp_path: Path):
 
     for key in ("path", "sha256", "format", "risk", "confidence", "priority", "priority_reason", "recommended_action"):
         assert csv_row[key] == str(json_row[key])
+
+
+def test_structural_container_warning_increases_priority():
+    from labvault_scout.priority import assign_priority, priority_reason
+
+    row = {
+        "risk": "UNKNOWN",
+        "container_type": "Invalid ZIP container",
+        "signature_status": "verified",
+        "confidence": "HIGH",
+        "open_copy": "",
+    }
+    score, label = assign_priority(row)
+    assert score == 60
+    assert label == "MEDIUM"
+    assert priority_reason(row) == "base=50;container=+10"
+
+
+def test_truncated_container_recommends_review():
+    from labvault_scout.actions import recommended_action
+
+    row = {
+        "risk": "RESCUE",
+        "container_type": "Truncated HDF5 container",
+        "priority": "HIGH",
+        "open_copy": "",
+    }
+    assert recommended_action(row) == "REVIEW_CONTAINER"

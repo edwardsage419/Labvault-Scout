@@ -2,7 +2,7 @@
 
 ## Unreleased 0.2.0
 
-Development continues on `develop-v0.2.0`. See `ROADMAP_0_2_0.md`.
+RC2 hardening continues on `develop-v0.2.0-post-rc1`. See `ROADMAP_0_2_0.md`.
 
 ### Added
 
@@ -13,6 +13,8 @@ Development continues on `develop-v0.2.0`. See `ROADMAP_0_2_0.md`.
 * Thousand-file directory scale coverage
 
 ### Changed
+
+* Structural container warnings add preservation priority and recommend `REVIEW_CONTAINER`
 
 * SHA-256 hashing and the 512-byte identification header are collected in one sequential file read
 * HDF5 and OLE structural checks reuse the shared bounded header
