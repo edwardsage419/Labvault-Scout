@@ -68,7 +68,7 @@ v0.3 can verify the internal consistency of a single scan report:
 labvault-scout verify labvault-report/scan.json
 ```
 
-Exit code 0 means verified, 1 means integrity is unavailable (typically legacy v0.2), and 2 means integrity failed or the scan schema is unsupported.
+Exit code 0 means verified, 1 means integrity is unavailable (typically legacy v0.2), and 2 means integrity failed or the scan schema is unsupported. Add `--json` for machine-readable output.
 
 ## Development
 

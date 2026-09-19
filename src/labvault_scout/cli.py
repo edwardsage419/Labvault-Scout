@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from . import __version__
@@ -111,6 +112,12 @@ def main() -> None:
 
     verify_parser = sub.add_parser("verify", help="Verify one scan.json report")
     verify_parser.add_argument("report", type=Path)
+    verify_parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Print machine-readable verification result",
+    )
 
     args = parser.parse_args()
     if args.command == "scan":
@@ -124,12 +131,15 @@ def main() -> None:
             raise SystemExit(comparison_exit_code(result))
     elif args.command == "verify":
         result = verify_report(load_scan_report(args.report))
-        print(
-            f"Report verification: {result['status']} | "
-            f"schema={result['schema_version']} | "
-            f"integrity={result['integrity_status']} | "
-            f"scan_errors={result['error_count']}"
-        )
+        if args.json_output:
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        else:
+            print(
+                f"Report verification: {result['status']} | "
+                f"schema={result['schema_version']} | "
+                f"integrity={result['integrity_status']} | "
+                f"scan_errors={result['error_count']}"
+            )
         raise SystemExit(result["exit_code"])
 
 

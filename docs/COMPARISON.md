@@ -146,6 +146,7 @@ A single report can be checked without comparing it to another report:
 
 ```bash
 labvault-scout verify report/scan.json
+labvault-scout verify report/scan.json --json
 ```
 
 Exit codes / 退出码：
@@ -153,6 +154,10 @@ Exit codes / 退出码：
 - `0`: supported schema and internally verified / schema 受支持且内部一致性验证通过
 - `1`: integrity cannot be verified, typically a legacy report without an embedded fingerprint / 无法验证内部完整性，通常是没有内嵌指纹的旧报告
 - `2`: fingerprint/summary mismatch or unsupported scan schema / 指纹或摘要不匹配，或扫描 schema 不受支持
+
+`--json` prints the verification result as one machine-readable JSON object while preserving the same exit codes.
+
+`--json` 会以单个机器可读 JSON 对象输出验证结果，同时保持相同的退出码语义。
 
 Recorded scan errors are reported separately. They indicate incomplete source access, not corruption of the `scan.json` itself.
 

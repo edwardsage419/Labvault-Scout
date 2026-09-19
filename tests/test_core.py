@@ -1924,3 +1924,28 @@ def test_report_checksum_detects_provenance_tampering(tmp_path: Path):
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
     payload["provenance"]["rules_sha256"] = "0" * 64
     assert report_integrity_status(payload) == "MISMATCH"
+
+
+def test_cli_verify_json_output(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    source = tmp_path / "verify_json_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "verify_json_report"
+    scan(source, output)
+
+    monkeypatch.setattr(sys, "argv", [
+        "labvault-scout", "verify", str(output / "scan.json"), "--json"
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "VERIFIED"
+    assert payload["integrity_status"] == "VERIFIED"
+    assert payload["schema_supported"] is True
+    assert len(payload["report_sha256"]) == 64
