@@ -1058,3 +1058,13 @@ def test_html_report_identifies_tool_and_schema(tmp_path: Path):
     assert f"Tool version: {labvault_scout.__version__}" in page
     assert f"Report schema: {REPORT_SCHEMA_VERSION}" in page
     assert "Tool version: $" not in page
+
+
+def test_scanner_orders_files_deterministically(tmp_path: Path):
+    source = tmp_path / "ordered_source"
+    source.mkdir()
+    for name in ("z.csv", "A.csv", "m.csv", "b.csv"):
+        (source / name).write_text("x\n1\n", encoding="utf-8")
+
+    names = [path.name for path in iter_files(source)]
+    assert names == sorted(names)
