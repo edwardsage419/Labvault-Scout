@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from . import __version__
+from .compare import compare_reports, write_comparison
 from .evidence import build_evidence
 from .hashing import sha256_with_head
 from .identifier import extension_signature_status, hdf5_container_from_header, inspect_gzip_nifti, inspect_hdf5_container, inspect_signature, inspect_zip_container, nifti1_container_from_header, ole_container_from_header, signature_from_head
@@ -90,10 +91,20 @@ def main() -> None:
     scan_parser = sub.add_parser("scan", help="Scan a directory read-only")
     scan_parser.add_argument("directory", type=Path)
     scan_parser.add_argument("-o", "--output", type=Path, default=Path("labvault-report"))
+
+    compare_parser = sub.add_parser("compare", help="Compare two scan.json reports")
+    compare_parser.add_argument("before", type=Path)
+    compare_parser.add_argument("after", type=Path)
+    compare_parser.add_argument("-o", "--output", type=Path, default=Path("labvault-comparison"))
+
     args = parser.parse_args()
     if args.command == "scan":
         count = scan(args.directory, args.output)
         print(f"Scanned {count} files. Report: {args.output / 'report.html'}")
+    elif args.command == "compare":
+        result = compare_reports(args.before, args.after)
+        write_comparison(result, args.output)
+        print(f"Compared reports. Changes: {result['summary']['change_count']}. Report: {args.output / 'comparison.html'}")
 
 
 if __name__ == "__main__":

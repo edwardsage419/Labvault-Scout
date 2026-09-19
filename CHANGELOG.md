@@ -8,6 +8,8 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 
 * Self-describing `scan.json` metadata with report schema and tool version
 * Project-level JSON summary for file bytes, scan errors, risk/priority counts, open copies, and duplicate groups
+* Offline `compare` command for added, removed, moved, content-changed, and assessment-changed files
+* Deterministic `comparison.json`, `changes.csv`, and `comparison.html` outputs
 * CLI `--version`
 * Compound-extension matching with `.nii.gz` NIfTI coverage
 * Bounded NIfTI-1 header evidence for both `.nii` and `.nii.gz` using the standard 348-byte header and magic field

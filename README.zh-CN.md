@@ -37,6 +37,16 @@ labvault-scout scan /path/to/research
 
 风险等级用于保存工作优先级判断，不代表对未来可读性的保证。
 
+## 比较两次扫描
+
+v0.3 开发线可以完全在本地比较两份 LabVault Scout `scan.json`：
+
+```bash
+labvault-scout compare old-report/scan.json new-report/scan.json -o labvault-comparison
+```
+
+比较会生成 `comparison.html`、`comparison.json` 和 `changes.csv`。移动/重命名识别采用保守规则：只有一个删除路径和一个新增路径具有唯一且相同的 SHA-256 时，才报告为移动。
+
 ## 当前状态
 
 v0.2.0 是第二个正式版本。在 v0.1.0 基础上增加衍生文件家族关系、EXACT / DERIVATIVE 关系强度、机器可读优先级原因、保存建议行动、OpenDocument / HDF5 / RO-Crate / BagIt 结构证据，以及减少重复文件读取的扫描优化。

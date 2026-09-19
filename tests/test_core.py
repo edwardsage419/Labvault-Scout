@@ -1188,3 +1188,147 @@ def test_uncompressed_nifti_invalid_header_is_reviewed(tmp_path: Path):
     assert row["signature_status"] == "unverified: expected NIFTI1"
     assert row["confidence"] == "LOW"
     assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_compare_reports_tracks_content_assessment_add_remove_and_move(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads
+
+    def row(path, digest, risk="SAFE", priority="LOW", score=0, action="KEEP"):
+        return {
+            "path": path,
+            "size": 10,
+            "sha256": digest,
+            "format": "CSV",
+            "signature": "",
+            "signature_status": "",
+            "container_type": "",
+            "risk": risk,
+            "confidence": "MEDIUM",
+            "priority_score": score,
+            "priority": priority,
+            "priority_reason": f"base={score}",
+            "recommended_action": action,
+            "open_copy": "",
+            "relationship_strength": "",
+            "relationship_evidence": "",
+            "evidence": "extension rule: CSV",
+            "reason": "test",
+        }
+
+    before = {"files": [
+        row("same.csv", "same"),
+        row("content.csv", "old"),
+        row("assessment.csv", "assessment", risk="SAFE", priority="LOW", score=0),
+        row("removed.csv", "removed"),
+        row("old/name.csv", "moved"),
+    ]}
+    after = {"files": [
+        row("same.csv", "same"),
+        row("content.csv", "new"),
+        row("assessment.csv", "assessment", risk="WATCH", priority="MEDIUM", score=40, action="REVIEW_FORMAT"),
+        row("added.csv", "added"),
+        row("new/name.csv", "moved"),
+    ]}
+
+    result = compare_payloads(before, after)
+    assert result["summary"] == {
+        "added_count": 1,
+        "removed_count": 1,
+        "moved_count": 1,
+        "content_changed_count": 1,
+        "assessment_changed_count": 1,
+        "unchanged_count": 1,
+        "change_count": 5,
+    }
+    types = [item["change_type"] for item in result["changes"]]
+    assert types == ["MOVED", "CONTENT_CHANGED", "ASSESSMENT_CHANGED", "ADDED", "REMOVED"]
+    assessment = next(item for item in result["changes"] if item["change_type"] == "ASSESSMENT_CHANGED")
+    assert "risk" in assessment["changed_fields"]
+    assert "priority" in assessment["changed_fields"]
+    assert "recommended_action" in assessment["changed_fields"]
+
+
+def test_compare_move_detection_is_conservative_for_duplicate_hashes():
+    from labvault_scout.compare import compare_payloads
+
+    before = {"files": [
+        {"path": "old/a.csv", "sha256": "same"},
+        {"path": "old/b.csv", "sha256": "same"},
+    ]}
+    after = {"files": [
+        {"path": "new/a.csv", "sha256": "same"},
+        {"path": "new/b.csv", "sha256": "same"},
+    ]}
+
+    result = compare_payloads(before, after)
+    assert result["summary"]["moved_count"] == 0
+    assert result["summary"]["added_count"] == 2
+    assert result["summary"]["removed_count"] == 2
+
+
+def test_compare_accepts_legacy_v02_scan_json(tmp_path: Path):
+    from labvault_scout.compare import compare_reports
+
+    before = tmp_path / "before.json"
+    after = tmp_path / "after.json"
+    before.write_text(json.dumps({"files": [{"path": "data.csv", "sha256": "a"}], "errors": []}), encoding="utf-8")
+    after.write_text(json.dumps({"files": [{"path": "data.csv", "sha256": "a"}], "errors": []}), encoding="utf-8")
+
+    result = compare_reports(before, after)
+    assert result["before"]["schema_version"] == "legacy"
+    assert result["after"]["schema_version"] == "legacy"
+    assert result["summary"]["unchanged_count"] == 1
+    assert result["summary"]["change_count"] == 0
+
+
+def test_compare_rejects_duplicate_paths(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+
+    report = tmp_path / "bad.json"
+    report.write_text(json.dumps({"files": [
+        {"path": "data.csv", "sha256": "a"},
+        {"path": "data.csv", "sha256": "b"},
+    ]}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Duplicate path"):
+        load_scan_report(report)
+
+
+def test_write_comparison_outputs_json_csv_and_html(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads, write_comparison
+
+    result = compare_payloads(
+        {"files": [{"path": "old.csv", "sha256": "a", "risk": "SAFE"}]},
+        {"files": [{"path": "new.csv", "sha256": "a", "risk": "SAFE"}]},
+    )
+    output = tmp_path / "comparison"
+    write_comparison(result, output)
+
+    assert (output / "comparison.json").exists()
+    assert (output / "changes.csv").exists()
+    assert (output / "comparison.html").exists()
+    payload = json.loads((output / "comparison.json").read_text(encoding="utf-8"))
+    assert payload["summary"]["moved_count"] == 1
+    with (output / "changes.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+    assert row["change_type"] == "MOVED"
+    assert row["before_path"] == "old.csv"
+    assert row["after_path"] == "new.csv"
+
+
+def test_cli_compare_command(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    from labvault_scout.cli import main
+
+    before = tmp_path / "before.json"
+    after = tmp_path / "after.json"
+    output = tmp_path / "compare-output"
+    before.write_text(json.dumps({"files": [{"path": "a.csv", "sha256": "a"}]}), encoding="utf-8")
+    after.write_text(json.dumps({"files": [{"path": "a.csv", "sha256": "b"}]}), encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "compare", str(before), str(after), "-o", str(output)])
+    main()
+
+    assert (output / "comparison.json").exists()
+    assert "Changes: 1" in capsys.readouterr().out

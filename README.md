@@ -50,6 +50,16 @@ The initial rules include common research and scientific formats such as CSV, TS
 
 Identification combines extension rules with read-only signature checks for ZIP, OLE, HDF5, and PDF. ZIP structures for OOXML, OpenDocument, RO-Crate, and BagIt are inspected without extracting or executing file content; HDF5 detection also recognizes specification-defined user-block offsets.
 
+## Compare scans
+
+The v0.3 development line can compare two LabVault Scout `scan.json` reports locally:
+
+```bash
+labvault-scout compare old-report/scan.json new-report/scan.json -o labvault-comparison
+```
+
+The comparison produces `comparison.html`, `comparison.json`, and `changes.csv`. Move/rename detection is deliberately conservative: it is reported only when one removed path and one added path share a unique SHA-256 value.
+
 ## Development
 
 ```bash

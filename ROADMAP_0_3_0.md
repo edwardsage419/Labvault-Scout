@@ -19,8 +19,10 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 在标准库能够安全执行有界只读检查的范围内继续增强其他压缩格式证据。
 
 3. Stronger project summaries / 更强项目级摘要
-   - Make preservation reports easier to compare across repeated scans while retaining transparent evidence.
-   - 在保留透明证据的同时，让多次扫描之间更容易进行比较。
+   - Implemented: deterministic project summaries and local comparison of repeated `scan.json` reports.
+   - 已实现：确定性的项目摘要，以及本地比较多次 `scan.json` 报告。
+   - Comparison distinguishes additions, removals, unique-hash moves, content changes, and preservation-assessment changes.
+   - 比较结果区分新增、删除、唯一哈希移动、内容变化和保存评估变化。
 
 4. Scale and determinism / 规模与确定性
    - Keep output deterministic where possible and extend scale tests without brittle timing thresholds.
