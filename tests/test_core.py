@@ -2682,3 +2682,53 @@ def test_verify_bundle_rejects_symlinked_core_artifact_when_supported(tmp_path: 
     result = verify_bundle(output)
     assert {"path": "report.html", "issue": "SYMLINK"} in result["problems"]
     assert result["status"] == "FAILED"
+
+
+def test_generated_machine_outputs_match_packaged_schema_field_contracts(tmp_path: Path):
+    from labvault_scout.bundle import load_bundle_manifest
+    from labvault_scout.compare import compare_reports, load_scan_report, verify_report
+    from labvault_scout.schema_registry import load_schema_text
+
+    def assert_exact_fields(payload, schema):
+        assert set(payload) == set(schema["required"])
+        assert set(payload) == set(schema["properties"])
+
+    source = tmp_path / "contract_source"
+    source.mkdir()
+    data = source / "data.csv"
+    data.write_text("x\n1\n", encoding="utf-8")
+
+    before_dir = tmp_path / "contract_before"
+    scan(source, before_dir)
+
+    data.write_text("x\n2\n", encoding="utf-8")
+    after_dir = tmp_path / "contract_after"
+    scan(source, after_dir)
+
+    scan_payload = json.loads((after_dir / "scan.json").read_text(encoding="utf-8"))
+    scan_schema = json.loads(load_schema_text("scan"))
+    assert_exact_fields(scan_payload, scan_schema)
+    assert_exact_fields(scan_payload["tool"], scan_schema["properties"]["tool"])
+    assert_exact_fields(scan_payload["provenance"], scan_schema["properties"]["provenance"])
+    assert_exact_fields(scan_payload["summary"], scan_schema["properties"]["summary"])
+    assert_exact_fields(scan_payload["files"][0], scan_schema["properties"]["files"]["items"])
+
+    comparison = compare_reports(before_dir / "scan.json", after_dir / "scan.json")
+    comparison_schema = json.loads(load_schema_text("comparison"))
+    assert_exact_fields(comparison, comparison_schema)
+    assert_exact_fields(comparison["before"], comparison_schema["properties"]["before"])
+    assert_exact_fields(comparison["after"], comparison_schema["properties"]["after"])
+    assert_exact_fields(comparison["metrics_delta"], comparison_schema["properties"]["metrics_delta"])
+    assert_exact_fields(comparison["summary"], comparison_schema["properties"]["summary"])
+    assert comparison["changes"]
+    assert_exact_fields(comparison["changes"][0], comparison_schema["properties"]["changes"]["items"])
+
+    verification = verify_report(load_scan_report(after_dir / "scan.json"))
+    verification_schema = json.loads(load_schema_text("verification"))["oneOf"][0]
+    assert_exact_fields(verification, verification_schema)
+
+    bundle = load_bundle_manifest(after_dir)
+    bundle_schema = json.loads(load_schema_text("bundle"))
+    assert_exact_fields(bundle, bundle_schema)
+    for entry in bundle["files"]:
+        assert_exact_fields(entry, bundle_schema["properties"]["files"]["items"])
