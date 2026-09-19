@@ -16,7 +16,7 @@ LabVault Scout runs locally. It does not upload research data, require an accoun
 
 ## Quick start
 
-Python 3.10 or newer is required.
+Python 3.10 or newer is required. The command below installs the frozen v0.2.0-rc1 tag rather than the moving development branch.
 
 ```bash
 git clone https://github.com/edwardsage419/Labvault-Scout.git
