@@ -32,4 +32,4 @@ labvault-scout = "labvault_scout.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-labvault_scout = ["rules/*.json"]
+labvault_scout = ["rules/*.json", "schemas/*.json"]

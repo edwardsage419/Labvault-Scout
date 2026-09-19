@@ -1,0 +1,395 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LabVault Scout comparison report schema 1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tool",
+    "comparison_status",
+    "rules_status",
+    "warnings",
+    "before",
+    "after",
+    "metrics_delta",
+    "summary",
+    "changes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "tool": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "const": "LabVault Scout"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "comparison_status": {
+      "enum": [
+        "COMPLETE",
+        "PARTIAL"
+      ]
+    },
+    "rules_status": {
+      "enum": [
+        "SAME",
+        "CHANGED",
+        "UNKNOWN"
+      ]
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "before": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "schema_supported",
+        "tool",
+        "error_count",
+        "inventory_sha256",
+        "report_sha256",
+        "integrity_status",
+        "rules_sha256",
+        "hash_algorithm",
+        "path_style",
+        "legacy_paths_normalized",
+        "metrics"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string"
+        },
+        "schema_supported": {
+          "type": "boolean"
+        },
+        "tool": {
+          "type": "object",
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "const": "LabVault Scout"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "error_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inventory_sha256": {
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
+        },
+        "report_sha256": {
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
+        },
+        "integrity_status": {
+          "enum": [
+            "VERIFIED",
+            "MISMATCH",
+            "UNKNOWN"
+          ]
+        },
+        "rules_sha256": {
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
+        },
+        "hash_algorithm": {
+          "type": "string"
+        },
+        "path_style": {
+          "type": "string"
+        },
+        "legacy_paths_normalized": {
+          "type": "boolean"
+        },
+        "metrics": {
+          "type": "object",
+          "required": [
+            "file_count",
+            "total_bytes",
+            "risk_counts",
+            "priority_counts"
+          ],
+          "properties": {
+            "file_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "risk_counts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            },
+            "priority_counts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "after": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "schema_supported",
+        "tool",
+        "error_count",
+        "inventory_sha256",
+        "report_sha256",
+        "integrity_status",
+        "rules_sha256",
+        "hash_algorithm",
+        "path_style",
+        "legacy_paths_normalized",
+        "metrics"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string"
+        },
+        "schema_supported": {
+          "type": "boolean"
+        },
+        "tool": {
+          "type": "object",
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "const": "LabVault Scout"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "error_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inventory_sha256": {
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
+        },
+        "report_sha256": {
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
+        },
+        "integrity_status": {
+          "enum": [
+            "VERIFIED",
+            "MISMATCH",
+            "UNKNOWN"
+          ]
+        },
+        "rules_sha256": {
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
+        },
+        "hash_algorithm": {
+          "type": "string"
+        },
+        "path_style": {
+          "type": "string"
+        },
+        "legacy_paths_normalized": {
+          "type": "boolean"
+        },
+        "metrics": {
+          "type": "object",
+          "required": [
+            "file_count",
+            "total_bytes",
+            "risk_counts",
+            "priority_counts"
+          ],
+          "properties": {
+            "file_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "risk_counts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            },
+            "priority_counts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "metrics_delta": {
+      "type": "object",
+      "required": [
+        "file_count",
+        "total_bytes",
+        "risk_counts",
+        "priority_counts"
+      ],
+      "properties": {
+        "file_count": {
+          "type": "integer"
+        },
+        "total_bytes": {
+          "type": "integer"
+        },
+        "risk_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "priority_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "added_count",
+        "removed_count",
+        "moved_count",
+        "content_changed_count",
+        "assessment_changed_count",
+        "priority_escalated_count",
+        "priority_deescalated_count",
+        "unchanged_count",
+        "change_count"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "change_type",
+          "before_path",
+          "after_path",
+          "priority_direction",
+          "priority_delta",
+          "changed_fields",
+          "before",
+          "after"
+        ],
+        "properties": {
+          "change_type": {
+            "enum": [
+              "ADDED",
+              "REMOVED",
+              "MOVED",
+              "CONTENT_CHANGED",
+              "ASSESSMENT_CHANGED"
+            ]
+          },
+          "before_path": {
+            "type": "string"
+          },
+          "after_path": {
+            "type": "string"
+          },
+          "priority_direction": {
+            "enum": [
+              "",
+              "ESCALATED",
+              "DEESCALATED",
+              "UNCHANGED"
+            ]
+          },
+          "priority_delta": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "changed_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object"
+              }
+            ]
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

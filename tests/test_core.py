@@ -2116,3 +2116,36 @@ def test_cli_compare_invalid_report_exits_two_without_traceback(tmp_path: Path, 
     assert captured.out == ""
     assert captured.err.startswith("Error:")
     assert "Traceback" not in captured.err
+
+
+def test_packaged_json_schemas_are_available_and_parseable():
+    from labvault_scout.schema_registry import load_schema_text
+    from labvault_scout.report import FIELDS
+
+    scan_schema = json.loads(load_schema_text("scan"))
+    comparison_schema = json.loads(load_schema_text("comparison"))
+    verification_schema = json.loads(load_schema_text("verification"))
+
+    assert scan_schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert scan_schema["properties"]["schema_version"]["const"] == "1"
+    assert set(scan_schema["properties"]["files"]["items"]["required"]) == set(FIELDS)
+    assert comparison_schema["properties"]["schema_version"]["const"] == "1"
+    assert verification_schema["oneOf"]
+
+
+def test_cli_schema_outputs_packaged_schema(monkeypatch, capsys):
+    import sys
+    from labvault_scout.cli import main
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "schema", "scan"])
+    main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["title"] == "LabVault Scout scan report schema 1"
+
+
+def test_all_schema_registry_entries_load():
+    from labvault_scout.schema_registry import SCHEMA_FILES, load_schema_text
+
+    assert set(SCHEMA_FILES) == {"scan", "comparison", "verification"}
+    for kind in SCHEMA_FILES:
+        assert json.loads(load_schema_text(kind))["$schema"].endswith("/2020-12/schema")

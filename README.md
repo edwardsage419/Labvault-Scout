@@ -70,6 +70,18 @@ labvault-scout verify labvault-report/scan.json
 
 Exit code 0 means verified, 1 means integrity is unavailable (typically legacy v0.2), and 2 means integrity failed or the scan schema is unsupported. Add `--json` for machine-readable output.
 
+## Machine-readable schemas
+
+v0.3 packages JSON Schema Draft 2020-12 definitions for scan, comparison, and verification outputs:
+
+```bash
+labvault-scout schema scan
+labvault-scout schema comparison
+labvault-scout schema verification
+```
+
+See [docs/SCHEMAS.md](docs/SCHEMAS.md).
+
 ## Development
 
 ```bash

@@ -23,6 +23,8 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * CLI `--version`
 * Standalone `verify` command for scan-report integrity and schema compatibility checks
 * `verify --json` machine-readable output for local scripts and preservation workflows
+* Packaged Draft 2020-12 JSON Schemas for scan, comparison, and verification outputs
+* `schema` CLI command to print packaged schemas without external dependencies
 * Unsupported scan schema takes precedence over checksum status in standalone verification
 * Version-aware strict validation for schema 1 report structure, relative paths, SHA-256 fields, sizes, priorities, provenance, and errors
 * Concise CLI errors with exit code 2 for malformed compare/verify inputs instead of tracebacks

@@ -57,6 +57,18 @@ labvault-scout verify labvault-report/scan.json
 
 退出码 0 表示验证通过，1 表示无法验证内部完整性（通常是 v0.2 旧报告），2 表示完整性验证失败或扫描 schema 不受支持。增加 `--json` 可获得机器可读输出。
 
+## 机器可读 Schema
+
+v0.3 随包提供 scan、comparison 和 verification 输出的 JSON Schema Draft 2020-12 定义：
+
+```bash
+labvault-scout schema scan
+labvault-scout schema comparison
+labvault-scout schema verification
+```
+
+参见 [docs/SCHEMAS.md](docs/SCHEMAS.md)。
+
 ## 当前状态
 
 v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理，以及有界 NIfTI-1 结构证据。

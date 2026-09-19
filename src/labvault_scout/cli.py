@@ -15,6 +15,7 @@ from .priority import assign_priority, priority_reason
 from .relationships import detect_open_copies
 from .report import write_reports
 from .risk import classify, load_rules, rules_sha256
+from .schema_registry import SCHEMA_FILES, load_schema_text
 from .scanner import iter_files
 
 
@@ -120,6 +121,9 @@ def main() -> None:
         help="Print machine-readable verification result",
     )
 
+    schema_parser = sub.add_parser("schema", help="Print a packaged JSON Schema")
+    schema_parser.add_argument("kind", choices=sorted(SCHEMA_FILES))
+
     args = parser.parse_args()
     if args.command == "scan":
         count = scan(args.directory, args.output)
@@ -153,6 +157,8 @@ def main() -> None:
                 f"scan_errors={result['error_count']}"
             )
         raise SystemExit(result["exit_code"])
+    elif args.command == "schema":
+        print(load_schema_text(args.kind))
 
 
 if __name__ == "__main__":
