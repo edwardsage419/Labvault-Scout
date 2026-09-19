@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
 from typing import Callable, Iterator
 
@@ -41,7 +42,8 @@ def iter_files(
         for name in files:
             path = current_path / name
             try:
-                if not path.is_symlink() and path.is_file() and not _is_within(path, excluded):
+                mode = path.lstat().st_mode
+                if not stat.S_ISLNK(mode) and stat.S_ISREG(mode) and not _is_within(path, excluded):
                     yield path
             except OSError as exc:
                 if on_error is not None:
