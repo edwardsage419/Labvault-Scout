@@ -525,7 +525,7 @@ def test_sha256_file_compatibility_after_one_pass_refactor(tmp_path: Path):
     assert sha256_file(path) == hashlib.sha256(content).hexdigest()
 
 
-def test_scan_zero_byte_file_is_reported(tmp_path: Path):
+def test_scan_zero_byte_file_has_known_sha256(tmp_path: Path):
     import csv
 
     source = tmp_path / "zero_source"
@@ -726,3 +726,262 @@ def test_truncated_container_recommends_review():
         "open_copy": "",
     }
     assert recommended_action(row) == "REVIEW_CONTAINER"
+
+
+def test_runtime_version_matches_installed_metadata():
+    from importlib.metadata import version
+    import labvault_scout
+
+    assert labvault_scout.__version__ == version("labvault-scout")
+
+
+def test_scan_error_paths_are_relative(tmp_path: Path, monkeypatch):
+    import json
+    import labvault_scout.cli as cli
+
+    source = tmp_path / "error_source"
+    nested = source / "nested"
+    nested.mkdir(parents=True)
+    (nested / "broken.bin").write_bytes(b"data")
+    output = tmp_path / "error_report"
+
+    def fail_hash(path):
+        raise OSError("simulated read failure")
+
+    monkeypatch.setattr(cli, "sha256_with_head", fail_hash)
+    assert cli.scan(source, output) == 0
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert payload["errors"] == [{"path": str(Path("nested") / "broken.bin"), "error": "OSError"}]
+    assert str(source) not in payload["errors"][0]["path"]
+
+
+def test_hdf5_user_block_is_detected_end_to_end(tmp_path: Path):
+    import csv
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "hdf5_userblock_source"
+    source.mkdir()
+    content = b"U" * 512 + bytes.fromhex("894844460D0A1A0A") + bytes([2]) + b"\x00" * 32
+    (source / "with_userblock.h5").write_bytes(content)
+    output = tmp_path / "hdf5_userblock_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "HDF5"
+    assert row["signature_status"] == "verified"
+    assert row["container_type"] == "HDF5 superblock v2"
+
+
+def test_case_distinct_directories_do_not_form_relationship():
+    from labvault_scout.relationships import detect_open_copies
+
+    rows = [
+        {"path": "Run/experiment.jnb", "risk": "RESCUE"},
+        {"path": "run/experiment_export.csv", "risk": "SAFE"},
+    ]
+    detect_open_copies(rows)
+    assert rows[0]["open_copy"] == ""
+    assert rows[0]["relationship_strength"] == ""
+
+
+def test_scanner_skips_fifo_entries_when_supported(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.scanner import iter_files
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("FIFO creation is not supported on this platform")
+
+    source = tmp_path / "special_entries"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    fifo = source / "named_pipe"
+    os.mkfifo(fifo)
+
+    paths = list(iter_files(source))
+    assert [path.name for path in paths] == ["data.csv"]
+
+
+def test_output_ancestor_does_not_exclude_scan_root(tmp_path: Path):
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "ancestor_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+
+    assert scan(source, tmp_path) == 1
+
+
+def test_output_equal_to_scan_root_is_rejected(tmp_path: Path):
+    import pytest
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "same_root"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must not be the scan root"):
+        scan(source, source)
+
+
+def test_xlsx_requires_excel_ooxml_structure_for_verification(tmp_path: Path):
+    import csv
+    import zipfile
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "xlsx_structure_source"
+    source.mkdir()
+    fake = source / "fake.xlsx"
+    with zipfile.ZipFile(fake, "w") as archive:
+        archive.writestr("notes.txt", "not an Excel workbook")
+
+    output = tmp_path / "xlsx_structure_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "ZIP"
+    assert row["container_type"] == "ZIP archive"
+    assert row["signature_status"] == "unverified: expected OOXML Excel structure"
+    assert row["confidence"] == "LOW"
+
+
+def test_xlsx_with_excel_ooxml_structure_is_verified(tmp_path: Path):
+    import csv
+    import zipfile
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "xlsx_valid_source"
+    source.mkdir()
+    book = source / "book.xlsx"
+    with zipfile.ZipFile(book, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    output = tmp_path / "xlsx_valid_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["container_type"] == "OOXML Excel"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_empty_zip_archive_is_recognized(tmp_path: Path):
+    import csv
+    import zipfile
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "empty_zip_source"
+    source.mkdir()
+    archive_path = source / "empty.zip"
+    with zipfile.ZipFile(archive_path, "w"):
+        pass
+
+    output = tmp_path / "empty_zip_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "ZIP"
+    assert row["signature_status"] == "verified"
+    assert row["container_type"] == "ZIP archive"
+
+
+def test_xls_generic_ole_container_does_not_claim_high_confidence(tmp_path: Path):
+    import csv
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "ole_confidence_source"
+    source.mkdir()
+    header = bytearray(512)
+    header[:8] = bytes.fromhex("D0CF11E0A1B11AE1")
+    header[28:30] = (0xFFFE).to_bytes(2, "little")
+    header[30:32] = (9).to_bytes(2, "little")
+    (source / "generic.xls").write_bytes(header)
+
+    output = tmp_path / "ole_confidence_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "OLE"
+    assert row["container_type"] == "OLE Compound File (512-byte sectors)"
+    assert row["signature_status"] == "container-only: OLE"
+    assert row["confidence"] == "MEDIUM"
+
+
+def test_iter_files_forwards_walk_errors(tmp_path: Path, monkeypatch):
+    import labvault_scout.scanner as scanner
+
+    source = tmp_path / "walk_error_source"
+    source.mkdir()
+    seen = []
+
+    def fake_walk(root, followlinks=False, onerror=None):
+        exc = PermissionError("blocked")
+        exc.filename = str(Path(root) / "blocked")
+        assert onerror is not None
+        onerror(exc)
+        return []
+
+    monkeypatch.setattr(scanner.os, "walk", fake_walk)
+    paths = list(scanner.iter_files(source, on_error=lambda path, exc: seen.append((path, exc))))
+
+    assert paths == []
+    assert len(seen) == 1
+    assert seen[0][0].name == "blocked"
+    assert isinstance(seen[0][1], PermissionError)
+
+
+def test_scan_json_records_directory_traversal_errors(tmp_path: Path, monkeypatch):
+    import json
+    import labvault_scout.cli as cli
+
+    source = tmp_path / "scan_walk_error_source"
+    source.mkdir()
+    output = tmp_path / "scan_walk_error_report"
+
+    def fake_iter(root, excluded=None, on_error=None):
+        assert on_error is not None
+        on_error(Path(root) / "blocked", PermissionError("blocked"))
+        return iter(())
+
+    monkeypatch.setattr(cli, "iter_files", fake_iter)
+    assert cli.scan(source, output) == 0
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert payload["errors"] == [{"path": "blocked", "error": "PermissionError"}]
+
+
+def test_iter_files_reports_file_metadata_errors(tmp_path: Path, monkeypatch):
+    import labvault_scout.scanner as scanner
+
+    source = tmp_path / "metadata_error_source"
+    source.mkdir()
+    blocked = source / "blocked.bin"
+    blocked.write_bytes(b"x")
+    seen = []
+
+    original_lstat = Path.lstat
+
+    def fake_lstat(self):
+        if self.name == "blocked.bin":
+            raise PermissionError("blocked metadata")
+        return original_lstat(self)
+
+    monkeypatch.setattr(Path, "lstat", fake_lstat)
+    paths = list(scanner.iter_files(source, on_error=lambda path, exc: seen.append((path, exc))))
+
+    assert paths == []
+    assert len(seen) == 1
+    assert seen[0][0].name == "blocked.bin"
+    assert isinstance(seen[0][1], PermissionError)

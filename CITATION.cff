@@ -1,8 +1,10 @@
 cff-version: 1.2.0
 message: "If you use LabVault Scout in research, please cite this software."
+authors:
+  - name: "LabVault Scout contributors"
 title: "LabVault Scout"
 type: software
-version: 0.2.0-rc2
+version: 0.2.0
 date-released: 2026-09-19
 license: MIT
 repository-code: "https://github.com/edwardsage419/Labvault-Scout"

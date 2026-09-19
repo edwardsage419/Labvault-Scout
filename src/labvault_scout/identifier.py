@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import zipfile
 from pathlib import Path
+from typing import BinaryIO
 
 ZIP_MAGIC = bytes.fromhex("504B0304")
+ZIP_EMPTY_MAGIC = bytes.fromhex("504B0506")
+ZIP_SPANNED_MAGIC = bytes.fromhex("504B0708")
+ZIP_MAGICS = (ZIP_MAGIC, ZIP_EMPTY_MAGIC, ZIP_SPANNED_MAGIC)
 OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
 HDF5_MAGIC = bytes.fromhex("894844460D0A1A0A")
 PDF_MAGIC = b"%PDF-"
@@ -11,7 +15,7 @@ PDF_MAGIC = b"%PDF-"
 
 def signature_from_head(head: bytes) -> str:
     """Return a coarse signature label from already-read header bytes."""
-    if head.startswith(ZIP_MAGIC):
+    if any(head.startswith(magic) for magic in ZIP_MAGICS):
         return "ZIP"
     if head.startswith(OLE_MAGIC):
         return "OLE"
@@ -22,10 +26,26 @@ def signature_from_head(head: bytes) -> str:
     return ""
 
 
+def _find_hdf5_signature_offset(handle: BinaryIO, size: int) -> int | None:
+    """Find an HDF5 signature at specification-defined user-block offsets."""
+    offset = 0
+    while offset + len(HDF5_MAGIC) <= size:
+        handle.seek(offset)
+        if handle.read(len(HDF5_MAGIC)) == HDF5_MAGIC:
+            return offset
+        offset = 512 if offset == 0 else offset * 2
+    return None
+
+
 def inspect_signature(path: Path) -> str:
     """Return a coarse container/signature label without executing file content."""
+    size = path.stat().st_size
     with path.open("rb") as handle:
-        return signature_from_head(handle.read(8))
+        head = handle.read(8)
+        signature = signature_from_head(head)
+        if signature:
+            return signature
+        return "HDF5" if _find_hdf5_signature_offset(handle, size) is not None else ""
 
 
 def hdf5_container_from_header(header: bytes) -> str:
@@ -44,9 +64,14 @@ def hdf5_container_from_header(header: bytes) -> str:
 
 
 def inspect_hdf5_container(path: Path) -> str:
-    """Validate bounded HDF5 superblock evidence without parsing datasets."""
+    """Validate HDF5 superblock evidence without parsing datasets."""
     try:
+        size = path.stat().st_size
         with path.open("rb") as handle:
+            offset = _find_hdf5_signature_offset(handle, size)
+            if offset is None:
+                return ""
+            handle.seek(offset)
             return hdf5_container_from_header(handle.read(16))
     except OSError:
         return "Unreadable HDF5 container"
@@ -68,7 +93,8 @@ def inspect_zip_container(path: Path) -> str:
                     return "OOXML PowerPoint"
             if "mimetype" in names:
                 try:
-                    media_type = archive.read("mimetype").decode("ascii", errors="strict").strip()
+                    with archive.open("mimetype") as member:
+                        media_type = member.read(256).decode("ascii", errors="strict").strip()
                 except (KeyError, UnicodeDecodeError, RuntimeError, OSError):
                     media_type = ""
                 odf_types = {
@@ -85,11 +111,11 @@ def inspect_zip_container(path: Path) -> str:
             if "META-INF/MANIFEST.MF" in names:
                 return "JAR compatible ZIP"
             return "ZIP archive"
-    except (OSError, zipfile.BadZipFile, RuntimeError):
+    except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError):
         return "Invalid ZIP container"
 
 
-def extension_signature_status(path: Path, signature: str) -> str:
+def extension_signature_status(path: Path, signature: str, container_type: str = "") -> str:
     """Flag strong contradictions for formats whose outer container is predictable."""
     ext = path.suffix.lower()
     expected = {
@@ -107,6 +133,15 @@ def extension_signature_status(path: Path, signature: str) -> str:
     if expected and not signature:
         return f"unverified: expected {expected}"
     if expected == signature:
+        if ext == ".xls":
+            return "container-only: OLE"
+        expected_container = {
+            ".xlsx": "OOXML Excel",
+            ".docx": "OOXML Word",
+            ".pptx": "OOXML PowerPoint",
+        }.get(ext)
+        if expected_container and container_type and container_type != expected_container:
+            return f"unverified: expected {expected_container} structure"
         return "verified"
     return ""
 

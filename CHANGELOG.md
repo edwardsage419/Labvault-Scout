@@ -1,8 +1,6 @@
 # Changelog
 
-## Unreleased 0.2.0
-
-RC2 hardening continues on `develop-v0.2.0-post-rc1`. See `ROADMAP_0_2_0.md`.
+## 0.2.0 — 2026-09-19
 
 ### Added
 
@@ -15,9 +13,25 @@ RC2 hardening continues on `develop-v0.2.0-post-rc1`. See `ROADMAP_0_2_0.md`.
 ### Changed
 
 * Structural container warnings add preservation priority and recommend `REVIEW_CONTAINER`
-
 * SHA-256 hashing and the 512-byte identification header are collected in one sequential file read
 * HDF5 and OLE structural checks reuse the shared bounded header
+
+### Fixed
+
+* Runtime `__version__` now matches package metadata
+* Scan error paths remain relative to the source root
+* Output paths outside the source no longer exclude the entire scan; using the scan root itself as output is rejected
+* Scanner traversal skips non-regular filesystem entries
+* Same-directory relationship matching preserves actual directory identity
+* OpenDocument `mimetype` inspection uses a bounded read
+* HDF5 signatures after specification-defined user blocks are recognized
+* OOXML files require matching internal structure before receiving verified/high-confidence evidence
+* Build metadata now requires setuptools 77+ for SPDX license metadata and ships the complete standard MIT license
+* Duplicate test names were removed so all intended regressions are collected
+* CITATION.cff now includes required CFF 1.2.0 authors metadata
+* Empty ZIP archives are recognized as ZIP instead of being marked unverified
+* Generic OLE evidence for `.xls` no longer claims high-confidence Excel identification
+* Directory traversal and file-metadata failures are reported instead of being silently skipped
 
 ## 0.1.0
 
