@@ -311,9 +311,44 @@
         "unchanged_count",
         "change_count"
       ],
-      "additionalProperties": {
-        "type": "integer",
-        "minimum": 0
+      "additionalProperties": false,
+      "properties": {
+        "added_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "moved_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content_changed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "assessment_changed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "priority_escalated_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "priority_deescalated_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unchanged_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "change_count": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "changes": {
