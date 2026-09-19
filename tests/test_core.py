@@ -803,3 +803,25 @@ def test_scanner_skips_fifo_entries_when_supported(tmp_path: Path):
 
     paths = list(iter_files(source))
     assert [path.name for path in paths] == ["data.csv"]
+
+
+def test_output_ancestor_does_not_exclude_scan_root(tmp_path: Path):
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "ancestor_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+
+    assert scan(source, tmp_path) == 1
+
+
+def test_output_equal_to_scan_root_is_rejected(tmp_path: Path):
+    import pytest
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "same_root"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must not be the scan root"):
+        scan(source, source)
