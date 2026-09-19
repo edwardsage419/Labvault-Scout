@@ -29,6 +29,7 @@
 * OOXML files require matching internal structure before receiving verified/high-confidence evidence
 * Build metadata now requires setuptools 77+ for SPDX license metadata and ships the complete standard MIT license
 * Duplicate test names were removed so all intended regressions are collected
+* CITATION.cff now includes required CFF 1.2.0 authors metadata
 
 ## 0.1.0
 
