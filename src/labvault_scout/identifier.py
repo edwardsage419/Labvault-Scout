@@ -22,6 +22,7 @@ TIFF_CLASSIC_MAGICS = (bytes.fromhex("49492A00"), bytes.fromhex("4D4D002A"))
 TIFF_BIG_MAGICS = (bytes.fromhex("49492B00"), bytes.fromhex("4D4D002B"))
 TIFF_MAGICS = TIFF_CLASSIC_MAGICS + TIFF_BIG_MAGICS
 FITS_SIMPLE_PREFIX = b"SIMPLE  ="
+MATLAB5_PREFIX = b"MATLAB 5.0 MAT-file"
 
 
 def signature_from_head(head: bytes) -> str:
@@ -42,6 +43,8 @@ def signature_from_head(head: bytes) -> str:
         return "TIFF"
     if head.startswith(FITS_SIMPLE_PREFIX):
         return "FITS"
+    if head.startswith(MATLAB5_PREFIX):
+        return "MAT5"
     return ""
 
 
@@ -104,6 +107,21 @@ def fits_container_from_header(header: bytes, size: int) -> str:
     if second[:8] != b"BITPIX  " or third[:8] != b"NAXIS   ":
         return "Invalid FITS mandatory header order"
     return "FITS primary HDU (SIMPLE=T)"
+
+
+def matlab5_container_from_header(header: bytes) -> str:
+    """Validate bounded MATLAB Level 5 MAT-file header evidence."""
+    if not header.startswith(MATLAB5_PREFIX):
+        return ""
+    if len(header) < 128:
+        return "Truncated MATLAB Level 5 header"
+
+    endian = header[126:128]
+    if endian == b"IM":
+        return "MATLAB Level 5 MAT-file (little-endian)"
+    if endian == b"MI":
+        return "MATLAB Level 5 MAT-file (big-endian)"
+    return "Invalid MATLAB Level 5 endian marker"
 
 
 def _find_hdf5_signature_offset(handle: BinaryIO, size: int) -> int | None:
@@ -254,6 +272,15 @@ def extension_signature_status(path: Path, signature: str, container_type: str =
         if signature:
             return f"mismatch: expected FITS, detected {signature}"
         return "unverified: expected FITS"
+
+    if ext == ".mat":
+        if signature == "MAT5":
+            return "verified" if container_type.startswith("MATLAB Level 5 MAT-file") else "unverified: expected MATLAB Level 5 structure"
+        if signature == "HDF5":
+            return "container-only: HDF5"
+        if signature:
+            return f"mismatch: expected MATLAB Level 5/HDF5, detected {signature}"
+        return "unverified: expected MATLAB Level 5/HDF5"
 
     expected = {
         ".zip": "ZIP",

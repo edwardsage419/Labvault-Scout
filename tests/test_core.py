@@ -2333,3 +2333,89 @@ def test_fits_disguised_file_is_mismatch(tmp_path: Path):
     assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected FITS, detected PDF"
     assert row["confidence"] == "LOW"
+
+
+def _matlab5_header(endian: bytes = b"IM") -> bytes:
+    header = bytearray(b" " * 128)
+    text = b"MATLAB 5.0 MAT-file, Platform: GLNXA64, Created by LabVault Scout test"
+    header[:len(text)] = text
+    header[124:126] = b"\x00\x01"
+    header[126:128] = endian
+    return bytes(header)
+
+
+def test_matlab5_header_evidence():
+    from labvault_scout.identifier import matlab5_container_from_header, signature_from_head
+
+    little = _matlab5_header(b"IM")
+    big = _matlab5_header(b"MI")
+
+    assert signature_from_head(little) == "MAT5"
+    assert matlab5_container_from_header(little) == "MATLAB Level 5 MAT-file (little-endian)"
+    assert matlab5_container_from_header(big) == "MATLAB Level 5 MAT-file (big-endian)"
+
+
+def test_matlab5_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "mat5_source"
+    source.mkdir()
+    (source / "experiment.mat").write_bytes(_matlab5_header() + b"\x00" * 64)
+    output = tmp_path / "mat5_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "MATLAB Data"
+    assert row["signature"] == "MAT5"
+    assert row["container_type"] == "MATLAB Level 5 MAT-file (little-endian)"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_matlab_hdf5_container_remains_conservative(tmp_path: Path):
+    source = tmp_path / "mat_hdf5_source"
+    source.mkdir()
+    header = bytes.fromhex("894844460D0A1A0A") + bytes([2]) + b"\x00" * 64
+    (source / "modern.mat").write_bytes(header)
+    output = tmp_path / "mat_hdf5_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "HDF5"
+    assert row["container_type"] == "HDF5 superblock v2"
+    assert row["signature_status"] == "container-only: HDF5"
+    assert row["confidence"] == "MEDIUM"
+
+
+def test_matlab_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "bad_mat_source"
+    source.mkdir()
+    (source / "fake.mat").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "bad_mat_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["signature_status"] == "mismatch: expected MATLAB Level 5/HDF5, detected PDF"
+    assert row["confidence"] == "LOW"
+
+
+def test_truncated_matlab5_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_mat_source"
+    source.mkdir()
+    (source / "broken.mat").write_bytes(b"MATLAB 5.0 MAT-file")
+    output = tmp_path / "truncated_mat_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "MAT5"
+    assert row["container_type"] == "Truncated MATLAB Level 5 header"
+    assert row["signature_status"] == "unverified: expected MATLAB Level 5 structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"

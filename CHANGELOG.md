@@ -33,6 +33,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Bounded NetCDF CDF-1/CDF-2/CDF-5 header evidence for `.nc`
 * Bounded classic TIFF and BigTIFF header evidence for `.tif` / `.tiff`
 * Bounded FITS primary-header evidence with mandatory keyword order and 2880-byte block checks
+* Bounded MATLAB Level 5 MAT-file header evidence with endian-marker validation
 
 ### Changed
 
@@ -42,6 +43,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Move detection requires the matching SHA-256 to be globally unique in both source reports
 * Pre-schema v0.2 Windows backslash paths are normalized for cross-platform comparison; ambiguous normalization collisions are rejected
 * NetCDF-4/HDF5 containers remain conservative `container-only` evidence unless NetCDF-specific structure is proven
+* HDF5-based `.mat` files remain conservative `container-only` evidence unless MATLAB-specific structure is proven
 * FITS `SIMPLE=F` is treated as nonconforming structural evidence and routed to `REVIEW_CONTAINER`
 
 ## 0.2.0 — 2026-09-19
