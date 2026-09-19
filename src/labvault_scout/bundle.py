@@ -38,7 +38,7 @@ def build_bundle_manifest(output_dir: Path) -> dict:
     entries = []
     for name in sorted(BUNDLE_FILES):
         path = output_dir / name
-        if not path.is_file():
+        if path.is_symlink() or not path.is_file():
             raise ValueError(f"Report artifact is not a regular file: {name}")
         stat = path.stat()
         entries.append({
@@ -79,6 +79,8 @@ def _canonical_manifest_path(value: object) -> str:
 
 def load_bundle_manifest(output_dir: Path) -> dict:
     manifest_path = output_dir / BUNDLE_MANIFEST_NAME
+    if manifest_path.is_symlink():
+        raise ValueError("Bundle manifest must not be a symlink")
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -141,6 +143,9 @@ def verify_bundle(output_dir: Path) -> dict:
         path = output_dir.joinpath(*PurePosixPath(member).parts)
         if not path.exists():
             problems.append({"path": member, "issue": "MISSING"})
+            continue
+        if path.is_symlink():
+            problems.append({"path": member, "issue": "SYMLINK"})
             continue
         if not path.is_file():
             problems.append({"path": member, "issue": "NOT_REGULAR_FILE"})
