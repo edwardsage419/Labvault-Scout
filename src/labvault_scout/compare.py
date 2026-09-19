@@ -73,6 +73,8 @@ def report_identity(payload: dict) -> dict:
         tool = {}
     errors = payload.get("errors")
     error_count = len(errors) if isinstance(errors, list) else 0
+    summary = payload.get("summary")
+    inventory = summary.get("inventory_sha256", "") if isinstance(summary, dict) else ""
     return {
         "schema_version": str(payload.get("schema_version", "legacy")),
         "tool": {
@@ -80,6 +82,7 @@ def report_identity(payload: dict) -> dict:
             "version": str(tool.get("version", "unknown")),
         },
         "error_count": error_count,
+        "inventory_sha256": str(inventory),
     }
 
 

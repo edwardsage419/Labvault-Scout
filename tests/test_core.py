@@ -752,7 +752,7 @@ def test_scan_error_paths_are_relative(tmp_path: Path, monkeypatch):
     assert cli.scan(source, output) == 0
 
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
-    assert payload["errors"] == [{"path": str(Path("nested") / "broken.bin"), "error": "OSError"}]
+    assert payload["errors"] == [{"path": "nested/broken.bin", "error": "OSError"}]
     assert str(source) not in payload["errors"][0]["path"]
 
 
@@ -1375,3 +1375,59 @@ def test_compare_marks_results_partial_when_source_scan_has_errors(tmp_path: Pat
     page = (output / "comparison.html").read_text(encoding="utf-8")
     assert "Status: PARTIAL" in page
     assert "path additions/removals may be incomplete" in page
+
+
+def test_scan_paths_use_posix_separators_in_reports(tmp_path: Path):
+    source = tmp_path / "posix_source"
+    nested = source / "nested"
+    nested.mkdir(parents=True)
+    (nested / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "posix_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    assert payload["files"][0]["path"] == "nested/data.csv"
+    assert "\\" not in payload["files"][0]["path"]
+
+
+def test_inventory_fingerprint_is_stable_and_content_sensitive(tmp_path: Path):
+    source = tmp_path / "fingerprint_source"
+    source.mkdir()
+    (source / "b.csv").write_text("b\n", encoding="utf-8")
+    (source / "a.csv").write_text("a\n", encoding="utf-8")
+
+    first = tmp_path / "fingerprint_first"
+    second = tmp_path / "fingerprint_second"
+    scan(source, first)
+    scan(source, second)
+
+    first_payload = json.loads((first / "scan.json").read_text(encoding="utf-8"))
+    second_payload = json.loads((second / "scan.json").read_text(encoding="utf-8"))
+    first_hash = first_payload["summary"]["inventory_sha256"]
+    second_hash = second_payload["summary"]["inventory_sha256"]
+
+    assert len(first_hash) == 64
+    assert first_hash == second_hash
+
+    (source / "a.csv").write_text("changed\n", encoding="utf-8")
+    third = tmp_path / "fingerprint_third"
+    scan(source, third)
+    third_payload = json.loads((third / "scan.json").read_text(encoding="utf-8"))
+    assert third_payload["summary"]["inventory_sha256"] != first_hash
+
+
+def test_comparison_carries_inventory_fingerprints(tmp_path: Path):
+    from labvault_scout.compare import compare_reports
+
+    source = tmp_path / "fingerprint_compare_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    before_dir = tmp_path / "fingerprint_compare_before"
+    after_dir = tmp_path / "fingerprint_compare_after"
+    scan(source, before_dir)
+    scan(source, after_dir)
+
+    result = compare_reports(before_dir / "scan.json", after_dir / "scan.json")
+    assert result["before"]["inventory_sha256"]
+    assert result["before"]["inventory_sha256"] == result["after"]["inventory_sha256"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import html
 import json
 from collections import defaultdict
@@ -28,6 +29,15 @@ def duplicate_groups(rows: list[dict]) -> list[dict]:
     return output
 
 
+def inventory_sha256(rows: list[dict]) -> str:
+    """Return a deterministic fingerprint of relative paths, sizes, and content hashes."""
+    digest = hashlib.sha256()
+    for row in sorted(rows, key=lambda item: item["path"]):
+        record = f"{row['path']}\0{row['size']}\0{row['sha256']}\n".encode("utf-8")
+        digest.update(record)
+    return digest.hexdigest()
+
+
 def build_summary(rows: list[dict], errors: list[dict], duplicates: list[dict]) -> dict:
     """Build deterministic project-level scan summary counts."""
     risk_counts: dict[str, int] = {}
@@ -41,6 +51,7 @@ def build_summary(rows: list[dict], errors: list[dict], duplicates: list[dict]) 
     return {
         "file_count": len(rows),
         "total_bytes": sum(int(row["size"]) for row in rows),
+        "inventory_sha256": inventory_sha256(rows),
         "error_count": len(errors),
         "risk_counts": dict(sorted(risk_counts.items())),
         "priority_counts": dict(sorted(priority_counts.items())),

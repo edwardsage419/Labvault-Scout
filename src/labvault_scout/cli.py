@@ -33,7 +33,7 @@ def scan(root: Path, output: Path) -> int:
 
     def record_error(path: Path, exc: OSError) -> None:
         try:
-            error_path = str(path.relative_to(root))
+            error_path = path.relative_to(root).as_posix()
         except ValueError:
             error_path = path.name
         errors.append({"path": error_path, "error": type(exc).__name__})
@@ -62,7 +62,7 @@ def scan(root: Path, output: Path) -> int:
                 container_type = ""
             signature_status = extension_signature_status(path, signature, container_type)
             rows.append({
-                "path": str(path.relative_to(root)),
+                "path": path.relative_to(root).as_posix(),
                 "size": stat.st_size,
                 "sha256": digest,
                 "format": rule["name"],
