@@ -7,7 +7,8 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from . import __version__\nfrom .bundle import write_bundle_manifest
+from . import __version__
+from .bundle import write_bundle_manifest
 
 REPORT_SCHEMA_VERSION = "1"
 
