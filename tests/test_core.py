@@ -1968,3 +1968,151 @@ def test_verify_unknown_schema_takes_precedence_over_checksum_mismatch(tmp_path:
     assert result["exit_code"] == 2
     assert result["schema_supported"] is False
     assert result["integrity_status"] == "MISMATCH"
+
+
+def test_schema1_loader_rejects_noncanonical_and_parent_paths(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+
+    source = tmp_path / "strict_path_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_path_report"
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    for bad_path in ("/absolute/data.csv", "../escape.csv", "nested/../escape.csv", "./data.csv", "nested//data.csv"):
+        mutated = json.loads(json.dumps(payload))
+        mutated["files"][0]["path"] = bad_path
+        report = tmp_path / ("bad-path-" + str(abs(hash(bad_path))) + ".json")
+        report.write_text(json.dumps(mutated), encoding="utf-8")
+        with pytest.raises(ValueError, match="Report path|canonical POSIX"):
+            load_scan_report(report)
+
+
+def test_schema1_loader_rejects_invalid_hash_size_and_required_fields(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+
+    source = tmp_path / "strict_fields_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_fields_report"
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    cases = []
+    bad_hash = json.loads(json.dumps(payload))
+    bad_hash["files"][0]["sha256"] = "not-a-sha256"
+    cases.append((bad_hash, "invalid sha256"))
+
+    bad_size = json.loads(json.dumps(payload))
+    bad_size["files"][0]["size"] = -1
+    cases.append((bad_size, "invalid size"))
+
+    missing = json.loads(json.dumps(payload))
+    del missing["files"][0]["risk"]
+    cases.append((missing, "missing fields"))
+
+    bad_priority = json.loads(json.dumps(payload))
+    bad_priority["files"][0]["priority_score"] = 101
+    cases.append((bad_priority, "invalid priority_score"))
+
+    for index, (case, message) in enumerate(cases):
+        report = tmp_path / f"bad-fields-{index}.json"
+        report.write_text(json.dumps(case), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            load_scan_report(report)
+
+
+def test_schema1_loader_rejects_invalid_error_paths(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+
+    source = tmp_path / "strict_error_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_error_report"
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["errors"] = [{"path": "../outside", "error": "PermissionError"}]
+
+    report = tmp_path / "bad-error-path.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="must not traverse parents"):
+        load_scan_report(report)
+
+
+def test_legacy_loader_remains_lenient_for_minimal_rows(tmp_path: Path):
+    from labvault_scout.compare import load_scan_report
+
+    report = tmp_path / "legacy-minimal.json"
+    report.write_text(json.dumps({
+        "files": [{"path": "data.csv", "sha256": "legacy"}],
+        "errors": [],
+    }), encoding="utf-8")
+
+    payload = load_scan_report(report)
+    assert payload["files"][0]["sha256"] == "legacy"
+
+
+def test_unknown_future_schema_uses_minimum_validation_only(tmp_path: Path):
+    from labvault_scout.compare import load_scan_report, verify_report
+
+    report = tmp_path / "future.json"
+    report.write_text(json.dumps({
+        "schema_version": "99",
+        "files": [{"path": "data.csv", "future_field": {"anything": True}}],
+        "errors": [],
+    }), encoding="utf-8")
+
+    payload = load_scan_report(report)
+    result = verify_report(payload)
+    assert result["status"] == "UNSUPPORTED"
+    assert result["exit_code"] == 2
+
+
+def test_cli_verify_invalid_report_is_concise_and_json_capable(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    bad = tmp_path / "invalid-report.json"
+    bad.write_text('{"schema_version":"1","files":[]}', encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+
+
+def test_cli_compare_invalid_report_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    bad = tmp_path / "bad-compare.json"
+    good = tmp_path / "good-legacy.json"
+    bad.write_text('{"schema_version":"1","files":[]}', encoding="utf-8")
+    good.write_text(json.dumps({"files": [{"path": "data.csv", "sha256": "x"}], "errors": []}), encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "compare", str(bad), str(good)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err

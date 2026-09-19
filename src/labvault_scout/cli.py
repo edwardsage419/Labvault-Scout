@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from . import __version__
@@ -124,13 +125,24 @@ def main() -> None:
         count = scan(args.directory, args.output)
         print(f"Scanned {count} files. Report: {args.output / 'report.html'}")
     elif args.command == "compare":
-        result = compare_reports(args.before, args.after)
+        try:
+            result = compare_reports(args.before, args.after)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(2) from None
         write_comparison(result, args.output)
         print(f"Compared reports. Changes: {result['summary']['change_count']}. Report: {args.output / 'comparison.html'}")
         if args.exit_code:
             raise SystemExit(comparison_exit_code(result))
     elif args.command == "verify":
-        result = verify_report(load_scan_report(args.report))
+        try:
+            result = verify_report(load_scan_report(args.report))
+        except ValueError as exc:
+            if args.json_output:
+                print(json.dumps({"status": "INVALID", "exit_code": 2, "error": str(exc)}, ensure_ascii=False, sort_keys=True))
+            else:
+                print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(2) from None
         if args.json_output:
             print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         else:

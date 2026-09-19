@@ -167,3 +167,18 @@ Recorded scan errors are reported separately. They indicate incomplete source ac
 Unsupported schema status takes precedence in standalone verification. A future schema may also invalidate the current checksum interpretation, so `verify` reports `UNSUPPORTED` rather than claiming `FAILED` for an unknown schema.
 
 独立验证中，不受支持的 schema 状态优先。未来 schema 也可能改变当前校验和语义，因此 `verify` 会报告 `UNSUPPORTED`，而不会对未知 schema 直接声称 `FAILED`。
+
+
+## Structural validation / 结构校验
+
+Schema 1 reports are validated before verification or comparison. LabVault Scout checks required top-level metadata, required file-row fields, non-negative sizes, lowercase 64-character SHA-256 values, priority-score bounds, known risk/confidence/priority values, provenance semantics, and relative paths that do not contain parent traversal.
+
+schema 1 报告会在验证或比较前执行结构校验。LabVault Scout 会检查必需的顶层元数据、文件记录字段、非负文件大小、小写 64 位 SHA-256、优先级分数范围、已知风险/置信度/优先级值、provenance 语义，以及不包含父目录穿越的相对路径。
+
+Legacy v0.2 reports remain intentionally lenient because they predate schema 1. Unknown future schema versions receive only minimum parsing sufficient to identify them as unsupported; current schema rules are not imposed on future formats.
+
+v0.2 旧报告因为早于 schema 1，继续采用有意宽松的兼容读取。未知未来 schema 只执行足以识别为不受支持格式的最低限度解析，不会把当前 schema 规则强加给未来格式。
+
+Malformed report inputs produce a concise CLI error and exit code 2 instead of a Python traceback. With `verify --json`, malformed input returns a machine-readable `INVALID` result.
+
+格式错误的报告输入会得到简洁 CLI 错误和退出码 2，而不是 Python traceback。使用 `verify --json` 时，格式错误输入会返回机器可读的 `INVALID` 结果。

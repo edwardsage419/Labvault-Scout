@@ -3,14 +3,19 @@ from __future__ import annotations
 import csv
 import html
 import json
+import re
 from collections import defaultdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from . import __version__
-from .report import inventory_sha256, report_payload_sha256
+from .report import FIELDS, inventory_sha256, report_payload_sha256
 
 COMPARISON_SCHEMA_VERSION = "1"
 SUPPORTED_SCAN_SCHEMA_VERSIONS = {"1"}
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+SCHEMA1_RISKS = {"SAFE", "WATCH", "RESCUE", "UNKNOWN"}
+SCHEMA1_CONFIDENCE = {"LOW", "MEDIUM", "HIGH"}
+SCHEMA1_PRIORITY = {"LOW", "MEDIUM", "HIGH"}
 ASSESSMENT_FIELDS = (
     "format",
     "signature",
@@ -50,8 +55,86 @@ CSV_FIELDS = (
 )
 
 
+def _validate_report_path(value: object, *, allow_root: bool = False) -> str:
+    if not isinstance(value, str) or not value or "\\x00" in value:
+        raise ValueError("Report path must be a non-empty string")
+    path = PurePosixPath(value)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"Report path must be relative and must not traverse parents: {value}")
+    if value != path.as_posix():
+        raise ValueError(f"Report path is not canonical POSIX form: {value}")
+    if not allow_root and value == ".":
+        raise ValueError("File path must not be the report root")
+    return value
+
+
+def _validate_schema1_payload(payload: dict) -> None:
+    required_top = {"schema_version", "tool", "provenance", "summary", "files", "errors", "report_sha256"}
+    missing_top = sorted(required_top - set(payload))
+    if missing_top:
+        raise ValueError(f"Schema 1 report is missing top-level fields: {', '.join(missing_top)}")
+
+    tool = payload["tool"]
+    if not isinstance(tool, dict) or tool.get("name") != "LabVault Scout":
+        raise ValueError("Schema 1 report has invalid tool metadata")
+    if not isinstance(tool.get("version"), str) or not tool["version"]:
+        raise ValueError("Schema 1 report has invalid tool version")
+
+    provenance = payload["provenance"]
+    required_provenance = {"hash_algorithm", "path_style", "rules_sha256", "rules_count", "source_access"}
+    if not isinstance(provenance, dict) or not required_provenance.issubset(provenance):
+        raise ValueError("Schema 1 report has invalid provenance metadata")
+    if provenance["hash_algorithm"] != "sha256" or provenance["path_style"] != "relative-posix":
+        raise ValueError("Schema 1 report has unsupported hash/path semantics")
+    if provenance["source_access"] != "read-only":
+        raise ValueError("Schema 1 report has invalid source-access semantics")
+    if not isinstance(provenance["rules_count"], int) or isinstance(provenance["rules_count"], bool) or provenance["rules_count"] < 0:
+        raise ValueError("Schema 1 report has invalid rules_count")
+    if not isinstance(provenance["rules_sha256"], str) or not SHA256_RE.fullmatch(provenance["rules_sha256"]):
+        raise ValueError("Schema 1 report has invalid rules_sha256")
+
+    if not isinstance(payload["summary"], dict):
+        raise ValueError("Schema 1 report has invalid summary")
+    if not isinstance(payload["errors"], list):
+        raise ValueError("Schema 1 report has invalid errors list")
+    if not isinstance(payload["report_sha256"], str) or not SHA256_RE.fullmatch(payload["report_sha256"]):
+        raise ValueError("Schema 1 report has invalid report_sha256")
+
+    required_file_fields = set(FIELDS)
+    string_fields = required_file_fields - {"size", "priority_score"}
+    for row in payload["files"]:
+        if not isinstance(row, dict):
+            raise ValueError("Schema 1 report contains a non-object file row")
+        missing = sorted(required_file_fields - set(row))
+        if missing:
+            raise ValueError(f"Schema 1 file row is missing fields: {', '.join(missing)}")
+        _validate_report_path(row["path"])
+        if not isinstance(row["size"], int) or isinstance(row["size"], bool) or row["size"] < 0:
+            raise ValueError(f"Schema 1 file row has invalid size: {row['path']}")
+        if not isinstance(row["sha256"], str) or not SHA256_RE.fullmatch(row["sha256"]):
+            raise ValueError(f"Schema 1 file row has invalid sha256: {row['path']}")
+        if not isinstance(row["priority_score"], int) or isinstance(row["priority_score"], bool) or not 0 <= row["priority_score"] <= 100:
+            raise ValueError(f"Schema 1 file row has invalid priority_score: {row['path']}")
+        if row["risk"] not in SCHEMA1_RISKS:
+            raise ValueError(f"Schema 1 file row has invalid risk: {row['path']}")
+        if row["confidence"] not in SCHEMA1_CONFIDENCE:
+            raise ValueError(f"Schema 1 file row has invalid confidence: {row['path']}")
+        if row["priority"] not in SCHEMA1_PRIORITY:
+            raise ValueError(f"Schema 1 file row has invalid priority: {row['path']}")
+        for field in string_fields:
+            if not isinstance(row[field], str):
+                raise ValueError(f"Schema 1 file row has non-string {field}: {row['path']}")
+
+    for error in payload["errors"]:
+        if not isinstance(error, dict):
+            raise ValueError("Schema 1 report contains a non-object error row")
+        _validate_report_path(error.get("path"), allow_root=True)
+        if not isinstance(error.get("error"), str) or not error["error"]:
+            raise ValueError("Schema 1 report contains an invalid error type")
+
+
 def load_scan_report(path: Path) -> dict:
-    """Load a LabVault Scout scan report without requiring a specific tool version."""
+    """Load a LabVault Scout scan report with version-aware validation."""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -59,6 +142,10 @@ def load_scan_report(path: Path) -> dict:
 
     if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
         raise ValueError(f"Invalid scan report: {path}")
+
+    schema_version = str(payload.get("schema_version", "legacy"))
+    if schema_version == "1":
+        _validate_schema1_payload(payload)
 
     seen: set[str] = set()
     for row in payload["files"]:

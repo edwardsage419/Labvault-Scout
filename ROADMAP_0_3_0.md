@@ -15,6 +15,8 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 比较前会验证内嵌 inventory 指纹、摘要计数和完整报告校验和；如果不匹配，结果降级为 PARTIAL。
    - Standalone `verify` checks one `scan.json` without requiring a second report.
    - 独立 `verify` 命令可以直接检查单份 `scan.json`，无需第二份报告。
+   - Schema 1 inputs use strict version-aware structural validation while legacy v0.2 stays compatible and unknown future schemas are not forced into current rules.
+   - schema 1 输入采用严格的版本感知结构校验；v0.2 旧报告继续兼容，未知未来 schema 不会被强套当前规则。
 
 2. Compound and compressed scientific formats / 复合扩展名与压缩科研格式
    - Prefer the longest configured extension so formats such as `.nii.gz` are not reduced to generic `.gz`.
