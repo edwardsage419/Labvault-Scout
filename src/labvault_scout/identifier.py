@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import BinaryIO
 
 ZIP_MAGIC = bytes.fromhex("504B0304")
+ZIP_EMPTY_MAGIC = bytes.fromhex("504B0506")
+ZIP_SPANNED_MAGIC = bytes.fromhex("504B0708")
+ZIP_MAGICS = (ZIP_MAGIC, ZIP_EMPTY_MAGIC, ZIP_SPANNED_MAGIC)
 OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
 HDF5_MAGIC = bytes.fromhex("894844460D0A1A0A")
 PDF_MAGIC = b"%PDF-"
@@ -12,7 +15,7 @@ PDF_MAGIC = b"%PDF-"
 
 def signature_from_head(head: bytes) -> str:
     """Return a coarse signature label from already-read header bytes."""
-    if head.startswith(ZIP_MAGIC):
+    if any(head.startswith(magic) for magic in ZIP_MAGICS):
         return "ZIP"
     if head.startswith(OLE_MAGIC):
         return "OLE"
@@ -108,7 +111,7 @@ def inspect_zip_container(path: Path) -> str:
             if "META-INF/MANIFEST.MF" in names:
                 return "JAR compatible ZIP"
             return "ZIP archive"
-    except (OSError, zipfile.BadZipFile, RuntimeError):
+    except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError):
         return "Invalid ZIP container"
 
 
@@ -130,6 +133,8 @@ def extension_signature_status(path: Path, signature: str, container_type: str =
     if expected and not signature:
         return f"unverified: expected {expected}"
     if expected == signature:
+        if ext == ".xls":
+            return "container-only: OLE"
         expected_container = {
             ".xlsx": "OOXML Excel",
             ".docx": "OOXML Word",
