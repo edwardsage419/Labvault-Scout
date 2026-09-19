@@ -16,10 +16,10 @@ LabVault Scout runs locally. It does not upload research data, require an accoun
 
 ## Quick start
 
-Python 3.10 or newer is required. The command below installs the frozen v0.2.0-rc1 tag rather than the moving development branch.
+Python 3.10 or newer is required. The command below installs the frozen v0.2.0-rc2 tag rather than the moving development branch.
 
 ```bash
-git clone https://github.com/edwardsage419/Labvault-Scout.git
+git clone --branch v0.2.0-rc2 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
 cd Labvault-Scout
 python -m pip install .
 labvault-scout scan /path/to/research
@@ -62,11 +62,11 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 
 ## Roadmap
 
-v0.2.0-rc1 adds conservative derivative file families, relationship strength, machine-readable priority reasons, preservation actions, stronger structural evidence, and reduced repeated file reads.
+v0.2.0-rc2 adds conservative derivative file families, relationship strength, machine-readable priority reasons, preservation actions, stronger structural evidence, and reduced repeated file reads.
 
 ## Release notes
 
-See [v0.2.0-rc1 release notes](RELEASE_NOTES_0_2_0_RC1.md) and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
+See [v0.2.0-rc2 release notes](RELEASE_NOTES_0_2_0_RC2.md) and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
 
 ## License
 
