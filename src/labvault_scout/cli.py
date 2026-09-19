@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from . import __version__
-from .compare import compare_reports, write_comparison
+from .compare import compare_reports, comparison_exit_code, write_comparison
 from .evidence import build_evidence
 from .hashing import sha256_with_head
 from .identifier import extension_signature_status, hdf5_container_from_header, inspect_gzip_nifti, inspect_hdf5_container, inspect_signature, inspect_zip_container, nifti1_container_from_header, ole_container_from_header, signature_from_head
@@ -96,6 +96,11 @@ def main() -> None:
     compare_parser.add_argument("before", type=Path)
     compare_parser.add_argument("after", type=Path)
     compare_parser.add_argument("-o", "--output", type=Path, default=Path("labvault-comparison"))
+    compare_parser.add_argument(
+        "--exit-code",
+        action="store_true",
+        help="Exit 0 for no changes, 1 for changes, or 2 for a partial comparison",
+    )
 
     args = parser.parse_args()
     if args.command == "scan":
@@ -105,6 +110,8 @@ def main() -> None:
         result = compare_reports(args.before, args.after)
         write_comparison(result, args.output)
         print(f"Compared reports. Changes: {result['summary']['change_count']}. Report: {args.output / 'comparison.html'}")
+        if args.exit_code:
+            raise SystemExit(comparison_exit_code(result))
 
 
 if __name__ == "__main__":

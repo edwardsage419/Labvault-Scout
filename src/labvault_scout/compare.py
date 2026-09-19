@@ -68,6 +68,47 @@ def load_scan_report(path: Path) -> dict:
     return payload
 
 
+def scan_metrics(payload: dict) -> dict:
+    """Derive comparable aggregate metrics, including for legacy reports."""
+    risk_counts: dict[str, int] = {}
+    priority_counts: dict[str, int] = {}
+    total_bytes = 0
+    for row in payload["files"]:
+        try:
+            total_bytes += int(row.get("size", 0))
+        except (TypeError, ValueError):
+            pass
+
+        risk = str(row.get("risk", ""))
+        if risk:
+            risk_counts[risk] = risk_counts.get(risk, 0) + 1
+        priority = str(row.get("priority", ""))
+        if priority:
+            priority_counts[priority] = priority_counts.get(priority, 0) + 1
+
+    return {
+        "file_count": len(payload["files"]),
+        "total_bytes": total_bytes,
+        "risk_counts": dict(sorted(risk_counts.items())),
+        "priority_counts": dict(sorted(priority_counts.items())),
+    }
+
+
+def _count_deltas(before: dict[str, int], after: dict[str, int]) -> dict[str, int]:
+    keys = sorted(set(before) | set(after))
+    return {key: after.get(key, 0) - before.get(key, 0) for key in keys}
+
+
+def metrics_delta(before: dict, after: dict) -> dict:
+    """Return after-minus-before aggregate scan deltas."""
+    return {
+        "file_count": after["file_count"] - before["file_count"],
+        "total_bytes": after["total_bytes"] - before["total_bytes"],
+        "risk_counts": _count_deltas(before["risk_counts"], after["risk_counts"]),
+        "priority_counts": _count_deltas(before["priority_counts"], after["priority_counts"]),
+    }
+
+
 def report_identity(payload: dict) -> dict:
     """Return non-sensitive compatibility metadata for a source report."""
     tool = payload.get("tool")
@@ -85,6 +126,7 @@ def report_identity(payload: dict) -> dict:
         },
         "error_count": error_count,
         "inventory_sha256": str(inventory),
+        "metrics": scan_metrics(payload),
     }
 
 
@@ -237,6 +279,7 @@ def compare_payloads(before: dict, after: dict) -> dict:
         "warnings": warnings,
         "before": before_identity,
         "after": after_identity,
+        "metrics_delta": metrics_delta(before_identity["metrics"], after_identity["metrics"]),
         "summary": {
             "added_count": counts["ADDED"],
             "removed_count": counts["REMOVED"],
@@ -254,6 +297,15 @@ def compare_payloads(before: dict, after: dict) -> dict:
 
 def compare_reports(before_path: Path, after_path: Path) -> dict:
     return compare_payloads(load_scan_report(before_path), load_scan_report(after_path))
+
+
+def comparison_exit_code(result: dict) -> int:
+    """Return an opt-in automation exit code for a comparison result."""
+    if result.get("comparison_status") == "PARTIAL":
+        return 2
+    if result.get("summary", {}).get("change_count", 0):
+        return 1
+    return 0
 
 
 def _csv_row(item: dict) -> dict:
@@ -305,6 +357,9 @@ def write_comparison(result: dict, output_dir: Path) -> None:
         for item in result["changes"]
     )
     summary = result["summary"]
+    delta = result["metrics_delta"]
+    risk_delta = " | ".join(f"{html.escape(key)}: {value:+d}" for key, value in delta["risk_counts"].items()) or "none"
+    priority_delta = " | ".join(f"{html.escape(key)}: {value:+d}" for key, value in delta["priority_counts"].items()) or "none"
     warning_html = "".join(
         f"<p><strong>Warning:</strong> {html.escape(message)}</p>"
         for message in result.get("warnings", [])
@@ -316,5 +371,8 @@ def write_comparison(result: dict, output_dir: Path) -> None:
 <p>Tool version: {html.escape(__version__)} | Comparison schema: {COMPARISON_SCHEMA_VERSION} | Status: {html.escape(result.get("comparison_status", "COMPLETE"))}</p>
 {warning_html}
 <p>Changes: {summary['change_count']} | Added: {summary['added_count']} | Removed: {summary['removed_count']} | Moved: {summary['moved_count']} | Content changed: {summary['content_changed_count']} | Assessment changed: {summary['assessment_changed_count']} | Priority escalated: {summary['priority_escalated_count']} | Priority deescalated: {summary['priority_deescalated_count']} | Unchanged: {summary['unchanged_count']}</p>
+<p>File count delta: {delta['file_count']:+d} | Total bytes delta: {delta['total_bytes']:+d}</p>
+<p>Risk deltas: {risk_delta}</p>
+<p>Priority deltas: {priority_delta}</p>
 <table><thead><tr><th>change_type</th><th>before_path</th><th>after_path</th><th>priority_direction</th><th>priority_delta</th><th>changed_fields</th></tr></thead><tbody>{rows}</tbody></table></html>"""
     (output_dir / "comparison.html").write_text(page, encoding="utf-8")

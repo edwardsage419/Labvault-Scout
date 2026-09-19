@@ -21,8 +21,10 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
 3. Stronger project summaries / 更强项目级摘要
    - Implemented: deterministic project summaries and local comparison of repeated `scan.json` reports.
    - 已实现：确定性的项目摘要，以及本地比较多次 `scan.json` 报告。
-   - Comparison distinguishes additions, removals, unique-hash moves, content changes, preservation-assessment changes, and priority escalation/de-escalation.
-   - 比较结果区分新增、删除、唯一哈希移动、内容变化、保存评估变化，以及优先级上升/下降。
+   - Comparison distinguishes additions, removals, unique-hash moves, content changes, preservation-assessment changes, priority escalation/de-escalation, and aggregate risk/priority deltas.
+   - 比较结果区分新增、删除、唯一哈希移动、内容变化、保存评估变化、优先级上升/下降，以及风险/优先级汇总差异。
+   - Optional exit-code mode supports local automation without changing default interactive behavior.
+   - 可选退出码模式支持本地自动化，同时保持默认交互行为不变。
 
 4. Scale and determinism / 规模与确定性
    - Implemented: deterministic traversal, cross-platform POSIX report paths, and an inventory SHA-256 fingerprint.

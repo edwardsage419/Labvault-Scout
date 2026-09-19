@@ -1456,3 +1456,99 @@ def test_compare_reports_priority_escalation_and_deescalation():
     assert by_path["up.jnb"]["priority_delta"] == 20
     assert by_path["down.jnb"]["priority_direction"] == "DEESCALATED"
     assert by_path["down.jnb"]["priority_delta"] == -40
+
+
+def test_compare_metrics_delta_for_legacy_and_current_rows():
+    from labvault_scout.compare import compare_payloads
+
+    before = {"files": [
+        {"path": "a.csv", "sha256": "a", "size": 10, "risk": "SAFE", "priority": "LOW"},
+        {"path": "b.jnb", "sha256": "b", "size": 20, "risk": "RESCUE", "priority": "HIGH"},
+    ]}
+    after = {"files": [
+        {"path": "a.csv", "sha256": "a", "size": 15, "risk": "WATCH", "priority": "MEDIUM"},
+        {"path": "c.csv", "sha256": "c", "size": 30, "risk": "SAFE", "priority": "LOW"},
+        {"path": "d.csv", "sha256": "d", "size": 5, "risk": "SAFE", "priority": "LOW"},
+    ]}
+
+    result = compare_payloads(before, after)
+    assert result["before"]["metrics"] == {
+        "file_count": 2,
+        "total_bytes": 30,
+        "risk_counts": {"RESCUE": 1, "SAFE": 1},
+        "priority_counts": {"HIGH": 1, "LOW": 1},
+    }
+    assert result["metrics_delta"] == {
+        "file_count": 1,
+        "total_bytes": 20,
+        "risk_counts": {"RESCUE": -1, "SAFE": 1, "WATCH": 1},
+        "priority_counts": {"HIGH": -1, "LOW": 1, "MEDIUM": 1},
+    }
+
+
+def test_comparison_exit_codes():
+    from labvault_scout.compare import comparison_exit_code
+
+    assert comparison_exit_code({
+        "comparison_status": "COMPLETE",
+        "summary": {"change_count": 0},
+    }) == 0
+    assert comparison_exit_code({
+        "comparison_status": "COMPLETE",
+        "summary": {"change_count": 3},
+    }) == 1
+    assert comparison_exit_code({
+        "comparison_status": "PARTIAL",
+        "summary": {"change_count": 0},
+    }) == 2
+
+
+def test_cli_compare_exit_code_is_opt_in(tmp_path: Path, monkeypatch):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    before = tmp_path / "before-exit.json"
+    after = tmp_path / "after-exit.json"
+    output = tmp_path / "compare-exit-output"
+    before.write_text(json.dumps({"files": [{"path": "a.csv", "sha256": "a"}]}), encoding="utf-8")
+    after.write_text(json.dumps({"files": [{"path": "a.csv", "sha256": "b"}]}), encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", [
+        "labvault-scout", "compare", str(before), str(after), "-o", str(output), "--exit-code"
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+
+    monkeypatch.setattr(sys, "argv", [
+        "labvault-scout", "compare", str(after), str(after), "-o", str(output), "--exit-code"
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+
+
+def test_cli_compare_partial_exit_code_is_two(tmp_path: Path, monkeypatch):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    before = tmp_path / "partial-before.json"
+    after = tmp_path / "partial-after.json"
+    output = tmp_path / "partial-exit-output"
+    before.write_text(json.dumps({
+        "files": [{"path": "a.csv", "sha256": "a"}],
+        "errors": [{"path": "blocked", "error": "PermissionError"}],
+    }), encoding="utf-8")
+    after.write_text(json.dumps({
+        "files": [{"path": "a.csv", "sha256": "a"}],
+        "errors": [],
+    }), encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", [
+        "labvault-scout", "compare", str(before), str(after), "-o", str(output), "--exit-code"
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2

@@ -11,6 +11,8 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Offline `compare` command for added, removed, moved, content-changed, and assessment-changed files
 * Deterministic `comparison.json`, `changes.csv`, and `comparison.html` outputs
 * Explicit priority escalation/de-escalation direction and score deltas in repeated-scan comparisons
+* Aggregate comparison deltas for file count, total bytes, risk counts, and priority counts
+* Optional `compare --exit-code` automation mode: 0=no changes, 1=changes, 2=partial comparison
 * Comparison output is marked `PARTIAL` when either source scan contains recorded errors
 * CLI `--version`
 * Compound-extension matching with `.nii.gz` NIfTI coverage

@@ -45,7 +45,7 @@ v0.3 开发线可以完全在本地比较两份 LabVault Scout `scan.json`：
 labvault-scout compare old-report/scan.json new-report/scan.json -o labvault-comparison
 ```
 
-比较会生成 `comparison.html`、`comparison.json` 和 `changes.csv`。移动/重命名识别采用保守规则：只有匹配的 SHA-256 在两份完整源报告中都只出现一次时，才报告为移动。如果任一源扫描存在已记录错误，比较状态会标记为 `PARTIAL`，因为新增/删除路径可能并不完整。
+比较会生成 `comparison.html`、`comparison.json` 和 `changes.csv`，并提供文件数、总字节、风险/优先级汇总差异以及优先级上升/下降。移动/重命名识别采用保守规则：只有匹配的 SHA-256 在两份完整源报告中都只出现一次时，才报告为移动。如果任一源扫描存在已记录错误，比较状态会标记为 `PARTIAL`，因为新增/删除路径可能并不完整。脚本自动化可增加 `--exit-code`：0 表示无变化，1 表示检测到变化，2 表示比较不完整。
 
 ## 当前状态
 

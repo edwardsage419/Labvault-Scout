@@ -58,7 +58,7 @@ The v0.3 development line can compare two LabVault Scout `scan.json` reports loc
 labvault-scout compare old-report/scan.json new-report/scan.json -o labvault-comparison
 ```
 
-The comparison produces `comparison.html`, `comparison.json`, and `changes.csv`. Move/rename detection is deliberately conservative: it is reported only when the matching SHA-256 occurs exactly once in each complete source report. If either source scan contains recorded errors, the comparison is marked `PARTIAL` because path additions/removals may be incomplete.
+The comparison produces `comparison.html`, `comparison.json`, and `changes.csv`, including aggregate file/byte/risk/priority deltas and priority escalation/de-escalation. Move/rename detection is deliberately conservative: it is reported only when the matching SHA-256 occurs exactly once in each complete source report. If either source scan contains recorded errors, the comparison is marked `PARTIAL` because path additions/removals may be incomplete. For scripts, add `--exit-code`: 0 means no changes, 1 means changes were detected, and 2 means the comparison is partial.
 
 ## Development
 
