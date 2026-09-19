@@ -69,6 +69,10 @@ labvault-scout schema verification
 
 参见 [docs/SCHEMAS.md](docs/SCHEMAS.md)。
 
+## 格式结构证据
+
+v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5 与 TIFF/BigTIFF 的有界只读文件头检查。对于基于 HDF5 的 NetCDF-4，当前只报告保守的容器证据，不声称已经验证 NetCDF 专用结构。
+
 ## 当前状态
 
 v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理，以及有界 NIfTI-1 结构证据。

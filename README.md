@@ -48,7 +48,7 @@ Risk labels are triage signals. They are not guarantees of future readability an
 
 The initial rules include common research and scientific formats such as CSV, TSV, TIFF, HDF5, NetCDF, MATLAB, SigmaPlot JNB, Origin OPJ and OPJU, GraphPad Prism PZF, SPSS SAV, Stata DTA, Igor IBW, SPC spectroscopy, FCS, NIfTI and DICOM.
 
-Identification combines extension rules with read-only signature checks for ZIP, OLE, HDF5, and PDF. ZIP structures for OOXML, OpenDocument, RO-Crate, and BagIt are inspected without extracting or executing file content; HDF5 detection also recognizes specification-defined user-block offsets.
+Identification combines extension rules with read-only signature checks for ZIP, OLE, HDF5, PDF, NetCDF CDF-1/CDF-2/CDF-5, TIFF/BigTIFF, and NIfTI. ZIP structures for OOXML, OpenDocument, RO-Crate, and BagIt are inspected without extracting or executing file content; HDF5 detection also recognizes specification-defined user-block offsets.
 
 ## Compare scans
 

@@ -2149,3 +2149,111 @@ def test_all_schema_registry_entries_load():
     assert set(SCHEMA_FILES) == {"scan", "comparison", "verification"}
     for kind in SCHEMA_FILES:
         assert json.loads(load_schema_text(kind))["$schema"].endswith("/2020-12/schema")
+
+
+def test_netcdf_classic_family_header_evidence():
+    from labvault_scout.identifier import netcdf_container_from_header, signature_from_head
+
+    cases = {
+        b"CDF\x01" + b"\x00" * 4: "NetCDF CDF-1",
+        b"CDF\x02" + b"\x00" * 4: "NetCDF CDF-2",
+        b"CDF\x05" + b"\x00" * 4: "NetCDF CDF-5",
+    }
+    for header, label in cases.items():
+        assert signature_from_head(header) == "NETCDF"
+        assert netcdf_container_from_header(header) == label
+
+
+def test_netcdf_classic_scan_is_verified(tmp_path: Path):
+    source = tmp_path / "netcdf_source"
+    source.mkdir()
+    (source / "climate.nc").write_bytes(b"CDF\x01" + b"\x00" * 32)
+    output = tmp_path / "netcdf_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "NetCDF"
+    assert row["signature"] == "NETCDF"
+    assert row["container_type"] == "NetCDF CDF-1"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_netcdf_hdf5_container_is_conservative(tmp_path: Path):
+    source = tmp_path / "netcdf4_source"
+    source.mkdir()
+    header = bytes.fromhex("894844460D0A1A0A") + bytes([2]) + b"\x00" * 64
+    (source / "modern.nc").write_bytes(header)
+    output = tmp_path / "netcdf4_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "HDF5"
+    assert row["container_type"] == "HDF5 superblock v2"
+    assert row["signature_status"] == "container-only: HDF5"
+    assert row["confidence"] == "MEDIUM"
+
+
+def test_netcdf_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "bad_netcdf_source"
+    source.mkdir()
+    (source / "fake.nc").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "bad_netcdf_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["signature_status"] == "mismatch: expected NetCDF/HDF5, detected PDF"
+    assert row["confidence"] == "LOW"
+
+
+def test_tiff_classic_and_bigtiff_header_evidence():
+    from labvault_scout.identifier import signature_from_head, tiff_container_from_header
+
+    classic_le = bytes.fromhex("49492A00") + (8).to_bytes(4, "little")
+    classic_be = bytes.fromhex("4D4D002A") + (8).to_bytes(4, "big")
+    big_le = bytes.fromhex("49492B00") + (8).to_bytes(2, "little") + b"\x00\x00" + (16).to_bytes(8, "little")
+
+    assert signature_from_head(classic_le) == "TIFF"
+    assert tiff_container_from_header(classic_le) == "TIFF classic (little-endian)"
+    assert tiff_container_from_header(classic_be) == "TIFF classic (big-endian)"
+    assert tiff_container_from_header(big_le) == "BigTIFF (little-endian)"
+
+
+def test_tiff_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "tiff_source"
+    source.mkdir()
+    (source / "image.tif").write_bytes(bytes.fromhex("49492A00") + (8).to_bytes(4, "little") + b"\x00" * 32)
+    output = tmp_path / "tiff_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "TIFF classic (little-endian)"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_truncated_bigtiff_is_reviewed(tmp_path: Path):
+    source = tmp_path / "bad_tiff_source"
+    source.mkdir()
+    (source / "broken.tiff").write_bytes(bytes.fromhex("49492B00"))
+    output = tmp_path / "bad_tiff_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "Truncated BigTIFF container"
+    assert row["signature_status"] == "unverified: expected TIFF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"

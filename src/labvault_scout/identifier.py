@@ -13,6 +13,14 @@ OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
 HDF5_MAGIC = bytes.fromhex("894844460D0A1A0A")
 PDF_MAGIC = b"%PDF-"
 GZIP_MAGIC = bytes.fromhex("1F8B")
+NETCDF_MAGICS = {
+    b"CDF\x01": "NetCDF CDF-1",
+    b"CDF\x02": "NetCDF CDF-2",
+    b"CDF\x05": "NetCDF CDF-5",
+}
+TIFF_CLASSIC_MAGICS = (bytes.fromhex("49492A00"), bytes.fromhex("4D4D002A"))
+TIFF_BIG_MAGICS = (bytes.fromhex("49492B00"), bytes.fromhex("4D4D002B"))
+TIFF_MAGICS = TIFF_CLASSIC_MAGICS + TIFF_BIG_MAGICS
 
 
 def signature_from_head(head: bytes) -> str:
@@ -27,7 +35,49 @@ def signature_from_head(head: bytes) -> str:
         return "PDF"
     if head.startswith(GZIP_MAGIC):
         return "GZIP"
+    if any(head.startswith(magic) for magic in NETCDF_MAGICS):
+        return "NETCDF"
+    if any(head.startswith(magic) for magic in TIFF_MAGICS):
+        return "TIFF"
     return ""
+
+
+def netcdf_container_from_header(header: bytes) -> str:
+    """Validate bounded NetCDF classic-family header evidence."""
+    if signature_from_head(header) != "NETCDF":
+        return ""
+    if len(header) < 8:
+        return "Truncated NetCDF container"
+    for magic, label in NETCDF_MAGICS.items():
+        if header.startswith(magic):
+            return label
+    return "Invalid NetCDF container"
+
+
+def tiff_container_from_header(header: bytes) -> str:
+    """Validate classic TIFF and BigTIFF header structure."""
+    if signature_from_head(header) != "TIFF":
+        return ""
+    little = header[:2] == b"II"
+    endian = "little" if little else "big"
+    byteorder = "little" if little else "big"
+    version = int.from_bytes(header[2:4], byteorder)
+
+    if version == 42:
+        if len(header) < 8:
+            return "Truncated TIFF container"
+        return f"TIFF classic ({endian}-endian)"
+
+    if version == 43:
+        if len(header) < 16:
+            return "Truncated BigTIFF container"
+        offset_size = int.from_bytes(header[4:6], byteorder)
+        reserved = int.from_bytes(header[6:8], byteorder)
+        if offset_size != 8 or reserved != 0:
+            return "Invalid BigTIFF header"
+        return f"BigTIFF ({endian}-endian)"
+
+    return "Invalid TIFF version"
 
 
 def _find_hdf5_signature_offset(handle: BinaryIO, size: int) -> int | None:
@@ -153,6 +203,25 @@ def extension_signature_status(path: Path, signature: str, container_type: str =
     """Flag strong contradictions for formats whose outer container is predictable."""
     lower_name = path.name.lower()
     ext = ".nii.gz" if lower_name.endswith(".nii.gz") else path.suffix.lower()
+
+    if ext == ".nc":
+        if signature == "NETCDF":
+            return "verified" if container_type.startswith("NetCDF CDF-") else "unverified: expected NetCDF structure"
+        if signature == "HDF5":
+            return "container-only: HDF5"
+        if signature:
+            return f"mismatch: expected NetCDF/HDF5, detected {signature}"
+        return "unverified: expected NetCDF/HDF5"
+
+    if ext in {".tif", ".tiff"}:
+        if signature == "TIFF":
+            if container_type.startswith("TIFF classic") or container_type.startswith("BigTIFF"):
+                return "verified"
+            return "unverified: expected TIFF structure"
+        if signature:
+            return f"mismatch: expected TIFF, detected {signature}"
+        return "unverified: expected TIFF"
+
     expected = {
         ".zip": "ZIP",
         ".xlsx": "ZIP",

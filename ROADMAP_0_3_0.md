@@ -25,8 +25,10 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 使用最长匹配扩展名，避免 `.nii.gz` 被错误降级为普通 `.gz`。
    - Implemented: bounded NIfTI-1 header evidence for `.nii` and `.nii.gz` using only the standard library.
    - 已实现：仅使用标准库，对 `.nii` 与 `.nii.gz` 的 NIfTI-1 头进行有界结构检查。
-   - Expand bounded, read-only evidence for additional compressed formats where standard-library inspection is safe.
-   - 在标准库能够安全执行有界只读检查的范围内继续增强其他压缩格式证据。
+   - Implemented: bounded NetCDF CDF-1/CDF-2/CDF-5 and TIFF/BigTIFF header evidence with no third-party dependency.
+   - 已实现：无需第三方依赖的 NetCDF CDF-1/CDF-2/CDF-5 与 TIFF/BigTIFF 有界文件头证据。
+   - Expand bounded, read-only evidence for additional formats where standard-library inspection is safe.
+   - 在标准库能够安全执行有界只读检查的范围内继续增强其他格式证据。
 
 3. Stronger project summaries / 更强项目级摘要
    - Implemented: deterministic project summaries and local comparison of repeated `scan.json` reports.
