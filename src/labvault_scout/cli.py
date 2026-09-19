@@ -29,7 +29,14 @@ def scan(root: Path, output: Path) -> int:
     else:
         excluded_output = output
 
-    for path in iter_files(root, excluded=excluded_output):
+    def record_error(path: Path, exc: OSError) -> None:
+        try:
+            error_path = str(path.relative_to(root))
+        except ValueError:
+            error_path = path.name
+        errors.append({"path": error_path, "error": type(exc).__name__})
+
+    for path in iter_files(root, excluded=excluded_output, on_error=record_error):
         try:
             stat = path.stat()
             rule = classify(path, rules)
@@ -58,7 +65,7 @@ def scan(root: Path, output: Path) -> int:
                 "reason": rule["reason"],
             })
         except OSError as exc:
-            errors.append({"path": str(path.relative_to(root)), "error": type(exc).__name__})
+            record_error(path, exc)
     detect_open_copies(rows)
     for row in rows:
         row["evidence"], row["confidence"] = build_evidence(row)
