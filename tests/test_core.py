@@ -1332,3 +1332,46 @@ def test_cli_compare_command(tmp_path: Path, monkeypatch, capsys):
 
     assert (output / "comparison.json").exists()
     assert "Changes: 1" in capsys.readouterr().out
+
+
+def test_compare_does_not_call_duplicate_content_a_move():
+    from labvault_scout.compare import compare_payloads
+
+    before = {"files": [
+        {"path": "stable.csv", "sha256": "same"},
+        {"path": "old.csv", "sha256": "same"},
+    ]}
+    after = {"files": [
+        {"path": "stable.csv", "sha256": "same"},
+        {"path": "new.csv", "sha256": "same"},
+    ]}
+
+    result = compare_payloads(before, after)
+    assert result["summary"]["moved_count"] == 0
+    assert result["summary"]["added_count"] == 1
+    assert result["summary"]["removed_count"] == 1
+
+
+def test_compare_marks_results_partial_when_source_scan_has_errors(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads, write_comparison
+
+    before = {
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [{"path": "blocked", "error": "PermissionError"}],
+    }
+    after = {
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+
+    result = compare_payloads(before, after)
+    assert result["comparison_status"] == "PARTIAL"
+    assert result["before"]["error_count"] == 1
+    assert result["after"]["error_count"] == 0
+    assert result["warnings"]
+
+    output = tmp_path / "partial-comparison"
+    write_comparison(result, output)
+    page = (output / "comparison.html").read_text(encoding="utf-8")
+    assert "Status: PARTIAL" in page
+    assert "path additions/removals may be incomplete" in page

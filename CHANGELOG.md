@@ -10,6 +10,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Project-level JSON summary for file bytes, scan errors, risk/priority counts, open copies, and duplicate groups
 * Offline `compare` command for added, removed, moved, content-changed, and assessment-changed files
 * Deterministic `comparison.json`, `changes.csv`, and `comparison.html` outputs
+* Comparison output is marked `PARTIAL` when either source scan contains recorded errors
 * CLI `--version`
 * Compound-extension matching with `.nii.gz` NIfTI coverage
 * Bounded NIfTI-1 header evidence for both `.nii` and `.nii.gz` using the standard 348-byte header and magic field
@@ -18,6 +19,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 
 * Development package version advances to `0.3.0.dev0`
 * Directory and file traversal order is deterministic for more stable report diffs
+* Move detection requires the matching SHA-256 to be globally unique in both source reports
 
 ## 0.2.0 — 2026-09-19
 

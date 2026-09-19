@@ -71,12 +71,15 @@ def report_identity(payload: dict) -> dict:
     tool = payload.get("tool")
     if not isinstance(tool, dict):
         tool = {}
+    errors = payload.get("errors")
+    error_count = len(errors) if isinstance(errors, list) else 0
     return {
         "schema_version": str(payload.get("schema_version", "legacy")),
         "tool": {
             "name": str(tool.get("name", "LabVault Scout")),
             "version": str(tool.get("version", "unknown")),
         },
+        "error_count": error_count,
     }
 
 
@@ -106,6 +109,17 @@ def compare_payloads(before: dict, after: dict) -> dict:
     removed_paths = before_paths - after_paths
     added_paths = after_paths - before_paths
 
+    before_hash_counts: dict[str, int] = defaultdict(int)
+    after_hash_counts: dict[str, int] = defaultdict(int)
+    for row in before_rows.values():
+        digest = str(row.get("sha256", ""))
+        if digest:
+            before_hash_counts[digest] += 1
+    for row in after_rows.values():
+        digest = str(row.get("sha256", ""))
+        if digest:
+            after_hash_counts[digest] += 1
+
     removed_by_hash: dict[str, list[str]] = defaultdict(list)
     added_by_hash: dict[str, list[str]] = defaultdict(list)
     for path in removed_paths:
@@ -123,7 +137,12 @@ def compare_payloads(before: dict, after: dict) -> dict:
     for digest in sorted(set(removed_by_hash) & set(added_by_hash)):
         old_paths = sorted(removed_by_hash[digest])
         new_paths = sorted(added_by_hash[digest])
-        if len(old_paths) == 1 and len(new_paths) == 1:
+        if (
+            len(old_paths) == 1
+            and len(new_paths) == 1
+            and before_hash_counts[digest] == 1
+            and after_hash_counts[digest] == 1
+        ):
             old_path, new_path = old_paths[0], new_paths[0]
             changes.append(_change("MOVED", before_rows[old_path], after_rows[new_path]))
             moved_before.add(old_path)
@@ -158,11 +177,22 @@ def compare_payloads(before: dict, after: dict) -> dict:
     for item in changes:
         counts[item["change_type"]] += 1
 
+    before_identity = report_identity(before)
+    after_identity = report_identity(after)
+    partial = bool(before_identity["error_count"] or after_identity["error_count"])
+    warnings = []
+    if partial:
+        warnings.append(
+            "One or both source scans contain errors; path additions/removals may be incomplete."
+        )
+
     return {
         "schema_version": COMPARISON_SCHEMA_VERSION,
         "tool": {"name": "LabVault Scout", "version": __version__},
-        "before": report_identity(before),
-        "after": report_identity(after),
+        "comparison_status": "PARTIAL" if partial else "COMPLETE",
+        "warnings": warnings,
+        "before": before_identity,
+        "after": after_identity,
         "summary": {
             "added_count": counts["ADDED"],
             "removed_count": counts["REMOVED"],
@@ -225,11 +255,16 @@ def write_comparison(result: dict, output_dir: Path) -> None:
         for item in result["changes"]
     )
     summary = result["summary"]
+    warning_html = "".join(
+        f"<p><strong>Warning:</strong> {html.escape(message)}</p>"
+        for message in result.get("warnings", [])
+    )
     page = f"""<!doctype html><html lang="en"><meta charset="utf-8">
 <title>LabVault Scout Comparison</title>
 <style>body{{font-family:system-ui;max-width:1100px;margin:40px auto;padding:0 20px}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ddd;padding:7px;text-align:left}}th{{background:#f5f5f5}}</style>
 <h1>LabVault Scout Comparison</h1>
-<p>Tool version: {html.escape(__version__)} | Comparison schema: {COMPARISON_SCHEMA_VERSION}</p>
+<p>Tool version: {html.escape(__version__)} | Comparison schema: {COMPARISON_SCHEMA_VERSION} | Status: {html.escape(result.get("comparison_status", "COMPLETE"))}</p>
+{warning_html}
 <p>Changes: {summary['change_count']} | Added: {summary['added_count']} | Removed: {summary['removed_count']} | Moved: {summary['moved_count']} | Content changed: {summary['content_changed_count']} | Assessment changed: {summary['assessment_changed_count']} | Unchanged: {summary['unchanged_count']}</p>
 <table><thead><tr><th>change_type</th><th>before_path</th><th>after_path</th><th>changed_fields</th></tr></thead><tbody>{rows}</tbody></table></html>"""
     (output_dir / "comparison.html").write_text(page, encoding="utf-8")
