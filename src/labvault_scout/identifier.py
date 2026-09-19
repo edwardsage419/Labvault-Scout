@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import zipfile
 from pathlib import Path
+from typing import BinaryIO
 
 ZIP_MAGIC = bytes.fromhex("504B0304")
 OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
@@ -22,10 +23,26 @@ def signature_from_head(head: bytes) -> str:
     return ""
 
 
+def _find_hdf5_signature_offset(handle: BinaryIO, size: int) -> int | None:
+    """Find an HDF5 signature at specification-defined user-block offsets."""
+    offset = 0
+    while offset + len(HDF5_MAGIC) <= size:
+        handle.seek(offset)
+        if handle.read(len(HDF5_MAGIC)) == HDF5_MAGIC:
+            return offset
+        offset = 512 if offset == 0 else offset * 2
+    return None
+
+
 def inspect_signature(path: Path) -> str:
     """Return a coarse container/signature label without executing file content."""
+    size = path.stat().st_size
     with path.open("rb") as handle:
-        return signature_from_head(handle.read(8))
+        head = handle.read(8)
+        signature = signature_from_head(head)
+        if signature:
+            return signature
+        return "HDF5" if _find_hdf5_signature_offset(handle, size) is not None else ""
 
 
 def hdf5_container_from_header(header: bytes) -> str:
@@ -44,9 +61,14 @@ def hdf5_container_from_header(header: bytes) -> str:
 
 
 def inspect_hdf5_container(path: Path) -> str:
-    """Validate bounded HDF5 superblock evidence without parsing datasets."""
+    """Validate HDF5 superblock evidence without parsing datasets."""
     try:
+        size = path.stat().st_size
         with path.open("rb") as handle:
+            offset = _find_hdf5_signature_offset(handle, size)
+            if offset is None:
+                return ""
+            handle.seek(offset)
             return hdf5_container_from_header(handle.read(16))
     except OSError:
         return "Unreadable HDF5 container"
