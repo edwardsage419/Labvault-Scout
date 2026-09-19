@@ -37,7 +37,6 @@ def scan(root: Path, output: Path) -> int:
             signature = signature_from_head(header)
             if not signature and path.suffix.lower() in {".h5", ".hdf5", ".mat"}:
                 signature = inspect_signature(path)
-            signature_status = extension_signature_status(path, signature)
             if signature == "ZIP":
                 container_type = inspect_zip_container(path)
             elif signature == "OLE":
@@ -46,6 +45,7 @@ def scan(root: Path, output: Path) -> int:
                 container_type = hdf5_container_from_header(header) or inspect_hdf5_container(path)
             else:
                 container_type = ""
+            signature_status = extension_signature_status(path, signature, container_type)
             rows.append({
                 "path": str(path.relative_to(root)),
                 "size": stat.st_size,
