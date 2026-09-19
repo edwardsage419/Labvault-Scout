@@ -25,6 +25,8 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 比较结果区分新增、删除、唯一哈希移动、内容变化、保存评估变化、优先级上升/下降，以及风险/优先级汇总差异。
    - Optional exit-code mode supports local automation without changing default interactive behavior.
    - 可选退出码模式支持本地自动化，同时保持默认交互行为不变。
+   - Legacy v0.2 Windows path separators are normalized conservatively for cross-platform comparisons.
+   - 对旧版 v0.2 Windows 路径分隔符进行保守规范化，支持跨平台比较。
 
 4. Scale and determinism / 规模与确定性
    - Implemented: deterministic traversal, cross-platform POSIX report paths, and an inventory SHA-256 fingerprint.

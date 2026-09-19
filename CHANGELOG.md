@@ -24,6 +24,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Directory and file traversal order is deterministic for more stable report diffs
 * Reported relative paths use POSIX `/` separators on every supported operating system
 * Move detection requires the matching SHA-256 to be globally unique in both source reports
+* Pre-schema v0.2 Windows backslash paths are normalized for cross-platform comparison; ambiguous normalization collisions are rejected
 
 ## 0.2.0 — 2026-09-19
 

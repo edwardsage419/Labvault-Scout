@@ -1552,3 +1552,41 @@ def test_cli_compare_partial_exit_code_is_two(tmp_path: Path, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         main()
     assert exc.value.code == 2
+
+
+def test_compare_normalizes_legacy_windows_paths_against_v03_paths():
+    from labvault_scout.compare import compare_payloads
+
+    before = {
+        "files": [{"path": "nested\\data.csv", "sha256": "same", "size": 1}],
+        "errors": [],
+    }
+    after = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.0.dev0"},
+        "files": [{"path": "nested/data.csv", "sha256": "same", "size": 1}],
+        "errors": [],
+    }
+
+    result = compare_payloads(before, after)
+    assert result["summary"]["change_count"] == 0
+    assert result["summary"]["unchanged_count"] == 1
+    assert result["before"]["legacy_paths_normalized"] is True
+    assert result["after"]["legacy_paths_normalized"] is False
+    assert any("backslash paths" in warning for warning in result["warnings"])
+
+
+def test_compare_rejects_ambiguous_legacy_path_normalization():
+    import pytest
+    from labvault_scout.compare import compare_payloads
+
+    before = {
+        "files": [
+            {"path": "nested\\data.csv", "sha256": "a"},
+            {"path": "nested/data.csv", "sha256": "b"},
+        ]
+    }
+    after = {"schema_version": "1", "files": []}
+
+    with pytest.raises(ValueError, match="Path collision after legacy normalization"):
+        compare_payloads(before, after)

@@ -68,6 +68,24 @@ def load_scan_report(path: Path) -> dict:
     return payload
 
 
+def _file_index(payload: dict) -> tuple[dict[str, dict], bool]:
+    """Index rows by path, normalizing pre-schema Windows separators conservatively."""
+    legacy = "schema_version" not in payload
+    indexed: dict[str, dict] = {}
+    normalized = False
+    for source_row in payload["files"]:
+        path = source_row["path"]
+        canonical = path.replace("\\", "/") if legacy else path
+        if canonical in indexed:
+            raise ValueError(f"Path collision after legacy normalization: {canonical}")
+        row = dict(source_row)
+        if canonical != path:
+            row["path"] = canonical
+            normalized = True
+        indexed[canonical] = row
+    return indexed, normalized
+
+
 def scan_metrics(payload: dict) -> dict:
     """Derive comparable aggregate metrics, including for legacy reports."""
     risk_counts: dict[str, int] = {}
@@ -118,6 +136,7 @@ def report_identity(payload: dict) -> dict:
     error_count = len(errors) if isinstance(errors, list) else 0
     summary = payload.get("summary")
     inventory = summary.get("inventory_sha256", "") if isinstance(summary, dict) else ""
+    _, legacy_paths_normalized = _file_index(payload)
     return {
         "schema_version": str(payload.get("schema_version", "legacy")),
         "tool": {
@@ -126,6 +145,7 @@ def report_identity(payload: dict) -> dict:
         },
         "error_count": error_count,
         "inventory_sha256": str(inventory),
+        "legacy_paths_normalized": legacy_paths_normalized,
         "metrics": scan_metrics(payload),
     }
 
@@ -181,8 +201,8 @@ def _change(change_type: str, before: dict | None, after: dict | None) -> dict:
 
 def compare_payloads(before: dict, after: dict) -> dict:
     """Compare two scan payloads using relative paths and SHA-256 content identity."""
-    before_rows = {row["path"]: row for row in before["files"]}
-    after_rows = {row["path"]: row for row in after["files"]}
+    before_rows, before_paths_normalized = _file_index(before)
+    after_rows, after_paths_normalized = _file_index(after)
 
     before_paths = set(before_rows)
     after_paths = set(after_rows)
@@ -270,6 +290,10 @@ def compare_payloads(before: dict, after: dict) -> dict:
     if partial:
         warnings.append(
             "One or both source scans contain errors; path additions/removals may be incomplete."
+        )
+    if before_paths_normalized or after_paths_normalized:
+        warnings.append(
+            "Legacy pre-schema backslash paths were normalized to POSIX separators for comparison."
         )
 
     return {
