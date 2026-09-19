@@ -11,8 +11,17 @@ def load_rules() -> dict[str, dict]:
     return {item["extension"].lower(): item for item in rules}
 
 
+def matched_extension(path: Path, rules: dict[str, dict]) -> str:
+    """Return the longest configured extension matching the file name."""
+    name = path.name.lower()
+    matches = [extension for extension in rules if name.endswith(extension)]
+    if matches:
+        return max(matches, key=len)
+    return path.suffix.lower()
+
+
 def classify(path: Path, rules: dict[str, dict]) -> dict:
-    ext = path.suffix.lower()
+    ext = matched_extension(path, rules)
     rule = rules.get(ext)
     if rule:
         return rule

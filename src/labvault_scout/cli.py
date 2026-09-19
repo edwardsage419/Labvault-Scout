@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from . import __version__
 from .evidence import build_evidence
 from .hashing import sha256_with_head
 from .identifier import extension_signature_status, hdf5_container_from_header, inspect_hdf5_container, inspect_signature, inspect_zip_container, ole_container_from_header, signature_from_head
@@ -78,6 +79,7 @@ def scan(root: Path, output: Path) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="labvault-scout")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
     scan_parser = sub.add_parser("scan", help="Scan a directory read-only")
     scan_parser.add_argument("directory", type=Path)

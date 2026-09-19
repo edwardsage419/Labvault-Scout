@@ -985,3 +985,59 @@ def test_iter_files_reports_file_metadata_errors(tmp_path: Path, monkeypatch):
     assert len(seen) == 1
     assert seen[0][0].name == "blocked.bin"
     assert isinstance(seen[0][1], PermissionError)
+
+
+def test_compound_extension_prefers_longest_rule():
+    rules = load_rules()
+    lower = classify(Path("subject01.nii.gz"), rules)
+    upper = classify(Path("SUBJECT01.NII.GZ"), rules)
+
+    assert lower["name"] == "NIfTI (Gzip compressed)"
+    assert lower["risk"] == "WATCH"
+    assert upper["name"] == "NIfTI (Gzip compressed)"
+
+
+def test_compound_extension_scan_is_not_unknown(tmp_path: Path):
+    source = tmp_path / "compound_source"
+    source.mkdir()
+    (source / "brain.nii.gz").write_bytes(b"not-a-real-nifti")
+    output = tmp_path / "compound_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "NIfTI (Gzip compressed)"
+    assert row["risk"] == "WATCH"
+
+
+def test_scan_json_is_self_describing(tmp_path: Path):
+    import labvault_scout
+    from labvault_scout.report import REPORT_SCHEMA_VERSION
+
+    source = tmp_path / "schema_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "schema_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == REPORT_SCHEMA_VERSION
+    assert payload["tool"] == {"name": "LabVault Scout", "version": labvault_scout.__version__}
+    assert "files" in payload
+    assert "errors" in payload
+
+
+def test_cli_version_reports_runtime_version(monkeypatch, capsys):
+    import sys
+    import pytest
+    import labvault_scout
+    from labvault_scout.cli import main
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "--version"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+
+    assert exc.value.code == 0
+    assert capsys.readouterr().out.strip() == f"labvault-scout {labvault_scout.__version__}"

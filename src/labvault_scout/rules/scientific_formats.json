@@ -236,6 +236,14 @@
     "preferred_exports": []
   },
   {
+    "extension": ".nii.gz",
+    "name": "NIfTI (Gzip compressed)",
+    "category": "scientific_data",
+    "risk": "WATCH",
+    "reason": "Gzip-compressed NIfTI is widely used but requires decompression and specialized interpretation.",
+    "preferred_exports": []
+  },
+  {
     "extension": ".dcm",
     "name": "DICOM",
     "category": "scientific_data",
