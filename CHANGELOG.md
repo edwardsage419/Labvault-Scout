@@ -10,6 +10,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Project-level JSON summary for file bytes, scan errors, risk/priority counts, open copies, duplicate groups, and a deterministic inventory SHA-256 fingerprint
 * Offline `compare` command for added, removed, moved, content-changed, and assessment-changed files
 * Deterministic `comparison.json`, `changes.csv`, and `comparison.html` outputs
+* Explicit priority escalation/de-escalation direction and score deltas in repeated-scan comparisons
 * Comparison output is marked `PARTIAL` when either source scan contains recorded errors
 * CLI `--version`
 * Compound-extension matching with `.nii.gz` NIfTI coverage

@@ -1237,6 +1237,8 @@ def test_compare_reports_tracks_content_assessment_add_remove_and_move(tmp_path:
         "moved_count": 1,
         "content_changed_count": 1,
         "assessment_changed_count": 1,
+        "priority_escalated_count": 1,
+        "priority_deescalated_count": 0,
         "unchanged_count": 1,
         "change_count": 5,
     }
@@ -1431,3 +1433,26 @@ def test_comparison_carries_inventory_fingerprints(tmp_path: Path):
     result = compare_reports(before_dir / "scan.json", after_dir / "scan.json")
     assert result["before"]["inventory_sha256"]
     assert result["before"]["inventory_sha256"] == result["after"]["inventory_sha256"]
+
+
+def test_compare_reports_priority_escalation_and_deescalation():
+    from labvault_scout.compare import compare_payloads
+
+    before = {"files": [
+        {"path": "up.jnb", "sha256": "a", "priority": "MEDIUM", "priority_score": 60},
+        {"path": "down.jnb", "sha256": "b", "priority": "HIGH", "priority_score": 90},
+    ]}
+    after = {"files": [
+        {"path": "up.jnb", "sha256": "a", "priority": "HIGH", "priority_score": 80},
+        {"path": "down.jnb", "sha256": "b", "priority": "MEDIUM", "priority_score": 50},
+    ]}
+
+    result = compare_payloads(before, after)
+    assert result["summary"]["priority_escalated_count"] == 1
+    assert result["summary"]["priority_deescalated_count"] == 1
+
+    by_path = {item["after_path"]: item for item in result["changes"]}
+    assert by_path["up.jnb"]["priority_direction"] == "ESCALATED"
+    assert by_path["up.jnb"]["priority_delta"] == 20
+    assert by_path["down.jnb"]["priority_direction"] == "DEESCALATED"
+    assert by_path["down.jnb"]["priority_delta"] == -40

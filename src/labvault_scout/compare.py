@@ -42,6 +42,8 @@ CSV_FIELDS = (
     "after_priority_score",
     "before_action",
     "after_action",
+    "priority_direction",
+    "priority_delta",
     "changed_fields",
 )
 
@@ -90,12 +92,45 @@ def _changed_fields(before: dict, after: dict) -> list[str]:
     return [field for field in ASSESSMENT_FIELDS if before.get(field) != after.get(field)]
 
 
+def _priority_change(before: dict | None, after: dict | None) -> tuple[str, int | None]:
+    if not before or not after:
+        return "", None
+
+    before_score = before.get("priority_score")
+    after_score = after.get("priority_score")
+    try:
+        delta = int(after_score) - int(before_score)
+    except (TypeError, ValueError):
+        delta = None
+
+    if delta is not None:
+        if delta > 0:
+            return "ESCALATED", delta
+        if delta < 0:
+            return "DEESCALATED", delta
+        return "UNCHANGED", 0
+
+    rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+    before_rank = rank.get(str(before.get("priority", "")))
+    after_rank = rank.get(str(after.get("priority", "")))
+    if before_rank is None or after_rank is None:
+        return "", None
+    if after_rank > before_rank:
+        return "ESCALATED", None
+    if after_rank < before_rank:
+        return "DEESCALATED", None
+    return "UNCHANGED", None
+
+
 def _change(change_type: str, before: dict | None, after: dict | None) -> dict:
     changed_fields = _changed_fields(before or {}, after or {}) if before and after else []
+    priority_direction, priority_delta = _priority_change(before, after)
     return {
         "change_type": change_type,
         "before_path": before.get("path", "") if before else "",
         "after_path": after.get("path", "") if after else "",
+        "priority_direction": priority_direction,
+        "priority_delta": priority_delta,
         "changed_fields": changed_fields,
         "before": before,
         "after": after,
@@ -177,8 +212,14 @@ def compare_payloads(before: dict, after: dict) -> dict:
     ))
 
     counts = {name: 0 for name in ("ADDED", "REMOVED", "MOVED", "CONTENT_CHANGED", "ASSESSMENT_CHANGED")}
+    priority_escalated_count = 0
+    priority_deescalated_count = 0
     for item in changes:
         counts[item["change_type"]] += 1
+        if item["priority_direction"] == "ESCALATED":
+            priority_escalated_count += 1
+        elif item["priority_direction"] == "DEESCALATED":
+            priority_deescalated_count += 1
 
     before_identity = report_identity(before)
     after_identity = report_identity(after)
@@ -202,6 +243,8 @@ def compare_payloads(before: dict, after: dict) -> dict:
             "moved_count": counts["MOVED"],
             "content_changed_count": counts["CONTENT_CHANGED"],
             "assessment_changed_count": counts["ASSESSMENT_CHANGED"],
+            "priority_escalated_count": priority_escalated_count,
+            "priority_deescalated_count": priority_deescalated_count,
             "unchanged_count": unchanged_count,
             "change_count": len(changes),
         },
@@ -232,6 +275,8 @@ def _csv_row(item: dict) -> dict:
         "after_priority_score": after.get("priority_score", ""),
         "before_action": before.get("recommended_action", ""),
         "after_action": after.get("recommended_action", ""),
+        "priority_direction": item.get("priority_direction", ""),
+        "priority_delta": "" if item.get("priority_delta") is None else item["priority_delta"],
         "changed_fields": ";".join(item.get("changed_fields", [])),
     }
 
@@ -253,6 +298,8 @@ def write_comparison(result: dict, output_dir: Path) -> None:
         f"<td>{html.escape(item['change_type'])}</td>"
         f"<td>{html.escape(item['before_path'])}</td>"
         f"<td>{html.escape(item['after_path'])}</td>"
+        f"<td>{html.escape(item.get('priority_direction', ''))}</td>"
+        f"<td>{html.escape(str(item.get('priority_delta', '') if item.get('priority_delta') is not None else ''))}</td>"
         f"<td>{html.escape(';'.join(item.get('changed_fields', [])))}</td>"
         "</tr>"
         for item in result["changes"]
@@ -268,6 +315,6 @@ def write_comparison(result: dict, output_dir: Path) -> None:
 <h1>LabVault Scout Comparison</h1>
 <p>Tool version: {html.escape(__version__)} | Comparison schema: {COMPARISON_SCHEMA_VERSION} | Status: {html.escape(result.get("comparison_status", "COMPLETE"))}</p>
 {warning_html}
-<p>Changes: {summary['change_count']} | Added: {summary['added_count']} | Removed: {summary['removed_count']} | Moved: {summary['moved_count']} | Content changed: {summary['content_changed_count']} | Assessment changed: {summary['assessment_changed_count']} | Unchanged: {summary['unchanged_count']}</p>
-<table><thead><tr><th>change_type</th><th>before_path</th><th>after_path</th><th>changed_fields</th></tr></thead><tbody>{rows}</tbody></table></html>"""
+<p>Changes: {summary['change_count']} | Added: {summary['added_count']} | Removed: {summary['removed_count']} | Moved: {summary['moved_count']} | Content changed: {summary['content_changed_count']} | Assessment changed: {summary['assessment_changed_count']} | Priority escalated: {summary['priority_escalated_count']} | Priority deescalated: {summary['priority_deescalated_count']} | Unchanged: {summary['unchanged_count']}</p>
+<table><thead><tr><th>change_type</th><th>before_path</th><th>after_path</th><th>priority_direction</th><th>priority_delta</th><th>changed_fields</th></tr></thead><tbody>{rows}</tbody></table></html>"""
     (output_dir / "comparison.html").write_text(page, encoding="utf-8")
