@@ -71,7 +71,7 @@ labvault-scout schema verification
 
 ## 格式结构证据
 
-v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5 与 TIFF/BigTIFF 的有界只读文件头检查。对于基于 HDF5 的 NetCDF-4，当前只报告保守的容器证据，不声称已经验证 NetCDF 专用结构。
+v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5、TIFF/BigTIFF 与 FITS primary header 的有界只读检查。对于基于 HDF5 的 NetCDF-4，当前只报告保守的容器证据，不声称已经验证 NetCDF 专用结构；FITS `SIMPLE=F` 会明确标记为 nonconforming 并进入容器复核。
 
 ## 当前状态
 

@@ -6,7 +6,7 @@ PRESERVATION_PACKAGE_CREDIT = {
     "RO-Crate Research Object": 10,
     "BagIt Research Package": 10,
 }
-STRUCTURAL_WARNING_PREFIXES = ("Invalid ", "Truncated ", "Unreadable ", "Unknown ")
+STRUCTURAL_WARNING_PREFIXES = ("Invalid ", "Truncated ", "Unreadable ", "Unknown ", "Nonconforming ")
 STRUCTURAL_WARNING_PENALTY = 10
 
 

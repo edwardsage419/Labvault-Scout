@@ -21,6 +21,7 @@ NETCDF_MAGICS = {
 TIFF_CLASSIC_MAGICS = (bytes.fromhex("49492A00"), bytes.fromhex("4D4D002A"))
 TIFF_BIG_MAGICS = (bytes.fromhex("49492B00"), bytes.fromhex("4D4D002B"))
 TIFF_MAGICS = TIFF_CLASSIC_MAGICS + TIFF_BIG_MAGICS
+FITS_SIMPLE_PREFIX = b"SIMPLE  ="
 
 
 def signature_from_head(head: bytes) -> str:
@@ -39,6 +40,8 @@ def signature_from_head(head: bytes) -> str:
         return "NETCDF"
     if any(head.startswith(magic) for magic in TIFF_MAGICS):
         return "TIFF"
+    if head.startswith(FITS_SIMPLE_PREFIX):
+        return "FITS"
     return ""
 
 
@@ -78,6 +81,29 @@ def tiff_container_from_header(header: bytes) -> str:
         return f"BigTIFF ({endian}-endian)"
 
     return "Invalid TIFF version"
+
+
+def fits_container_from_header(header: bytes, size: int) -> str:
+    """Validate bounded FITS primary-header structure."""
+    if signature_from_head(header) != "FITS":
+        return ""
+    if size < 2880 or len(header) < 240:
+        return "Truncated FITS container"
+    if size % 2880 != 0:
+        return "Invalid FITS block size"
+
+    first = header[0:80]
+    second = header[80:160]
+    third = header[160:240]
+    if first[:8] != b"SIMPLE  " or first[8:10] != b"= ":
+        return "Invalid FITS SIMPLE card"
+    if first[29:30] == b"F":
+        return "Nonconforming FITS (SIMPLE=F)"
+    if first[29:30] != b"T":
+        return "Invalid FITS SIMPLE value"
+    if second[:8] != b"BITPIX  " or third[:8] != b"NAXIS   ":
+        return "Invalid FITS mandatory header order"
+    return "FITS primary HDU (SIMPLE=T)"
 
 
 def _find_hdf5_signature_offset(handle: BinaryIO, size: int) -> int | None:
@@ -221,6 +247,13 @@ def extension_signature_status(path: Path, signature: str, container_type: str =
         if signature:
             return f"mismatch: expected TIFF, detected {signature}"
         return "unverified: expected TIFF"
+
+    if ext == ".fits":
+        if signature == "FITS":
+            return "verified" if container_type.startswith("FITS primary HDU") else "unverified: expected FITS structure"
+        if signature:
+            return f"mismatch: expected FITS, detected {signature}"
+        return "unverified: expected FITS"
 
     expected = {
         ".zip": "ZIP",

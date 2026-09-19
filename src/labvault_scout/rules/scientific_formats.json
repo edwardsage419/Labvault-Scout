@@ -136,6 +136,14 @@
     "preferred_exports": []
   },
   {
+    "extension": ".fits",
+    "name": "FITS",
+    "category": "scientific_data",
+    "risk": "SAFE",
+    "reason": "Open standardized astronomy data format with self-describing headers; preserve domain metadata and conventions.",
+    "preferred_exports": []
+  },
+  {
     "extension": ".jnb",
     "name": "SigmaPlot Notebook",
     "category": "scientific_project",

@@ -2257,3 +2257,79 @@ def test_truncated_bigtiff_is_reviewed(tmp_path: Path):
     assert row["signature_status"] == "unverified: expected TIFF structure"
     assert row["confidence"] == "LOW"
     assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def _valid_fits_bytes(simple_value: bytes = b"T") -> bytes:
+    block = bytearray(b" " * 2880)
+    block[0:30] = b"SIMPLE  =                    " + simple_value
+    block[80:110] = b"BITPIX  =                    8"
+    block[160:190] = b"NAXIS   =                    0"
+    block[240:243] = b"END"
+    return bytes(block)
+
+
+def test_fits_primary_header_is_verified(tmp_path: Path):
+    source = tmp_path / "fits_source"
+    source.mkdir()
+    (source / "spectrum.fits").write_bytes(_valid_fits_bytes())
+    output = tmp_path / "fits_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "FITS"
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "FITS primary HDU (SIMPLE=T)"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+    assert row["recommended_action"] == "KEEP"
+
+
+def test_fits_simple_false_is_nonconforming_and_reviewed(tmp_path: Path):
+    source = tmp_path / "fits_false_source"
+    source.mkdir()
+    (source / "nonconforming.fits").write_bytes(_valid_fits_bytes(b"F"))
+    output = tmp_path / "fits_false_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "Nonconforming FITS (SIMPLE=F)"
+    assert row["signature_status"] == "unverified: expected FITS structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fits_invalid_block_size_is_reviewed(tmp_path: Path):
+    source = tmp_path / "fits_bad_block_source"
+    source.mkdir()
+    data = bytearray(_valid_fits_bytes())
+    data.extend(b"x")
+    (source / "badblock.fits").write_bytes(data)
+    output = tmp_path / "fits_bad_block_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["container_type"] == "Invalid FITS block size"
+    assert row["signature_status"] == "unverified: expected FITS structure"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fits_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "fake_fits_source"
+    source.mkdir()
+    (source / "fake.fits").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "fake_fits_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["signature_status"] == "mismatch: expected FITS, detected PDF"
+    assert row["confidence"] == "LOW"
