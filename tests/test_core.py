@@ -825,3 +825,49 @@ def test_output_equal_to_scan_root_is_rejected(tmp_path: Path):
 
     with pytest.raises(ValueError, match="must not be the scan root"):
         scan(source, source)
+
+
+def test_xlsx_requires_excel_ooxml_structure_for_verification(tmp_path: Path):
+    import csv
+    import zipfile
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "xlsx_structure_source"
+    source.mkdir()
+    fake = source / "fake.xlsx"
+    with zipfile.ZipFile(fake, "w") as archive:
+        archive.writestr("notes.txt", "not an Excel workbook")
+
+    output = tmp_path / "xlsx_structure_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "ZIP"
+    assert row["container_type"] == "ZIP archive"
+    assert row["signature_status"] == "unverified: expected OOXML Excel structure"
+    assert row["confidence"] == "LOW"
+
+
+def test_xlsx_with_excel_ooxml_structure_is_verified(tmp_path: Path):
+    import csv
+    import zipfile
+    from labvault_scout.cli import scan
+
+    source = tmp_path / "xlsx_valid_source"
+    source.mkdir()
+    book = source / "book.xlsx"
+    with zipfile.ZipFile(book, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    output = tmp_path / "xlsx_valid_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["container_type"] == "OOXML Excel"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
