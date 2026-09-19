@@ -11,7 +11,7 @@ def _is_within(path: Path, excluded: Path | None) -> bool:
     try:
         path.resolve().relative_to(excluded)
         return True
-    except ValueError:
+    except (ValueError, OSError):
         return False
 
 
@@ -32,7 +32,7 @@ def iter_files(root: Path, excluded: Path | None = None) -> Iterator[Path]:
         for name in files:
             path = current_path / name
             try:
-                if not path.is_symlink() and not _is_within(path, excluded):
+                if not path.is_symlink() and path.is_file() and not _is_within(path, excluded):
                     yield path
             except OSError:
                 continue
