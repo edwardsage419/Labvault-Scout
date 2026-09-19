@@ -26,7 +26,7 @@ def detect_open_copies(rows: list[dict]) -> None:
 
     for row in rows:
         path = Path(row["path"])
-        parent = str(path.parent).lower()
+        parent = str(path.parent)
         exact[(parent, path.stem.lower())].append(row)
         family, derivative = _family_stem(path)
         families[(parent, family)].append((row, derivative))
@@ -39,7 +39,7 @@ def detect_open_copies(rows: list[dict]) -> None:
             continue
 
         path = Path(row["path"])
-        parent = str(path.parent).lower()
+        parent = str(path.parent)
         exact_candidates = exact[(parent, path.stem.lower())]
         exact_matches = [
             item["path"]
