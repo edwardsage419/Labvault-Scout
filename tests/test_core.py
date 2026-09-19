@@ -1740,3 +1740,48 @@ def test_compare_legacy_rule_context_is_unknown():
     )
 
     assert result["rules_status"] == "UNKNOWN"
+
+
+def test_report_integrity_status_verifies_v03_inventory(tmp_path: Path):
+    from labvault_scout.compare import load_scan_report, report_integrity_status
+
+    source = tmp_path / "integrity_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "integrity_report"
+    scan(source, output)
+
+    payload = load_scan_report(output / "scan.json")
+    assert report_integrity_status(payload) == "VERIFIED"
+
+
+def test_compare_marks_tampered_inventory_partial(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads, comparison_exit_code
+
+    source = tmp_path / "tamper_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "tamper_report"
+    scan(source, output)
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    tampered = json.loads(json.dumps(original))
+    tampered["files"][0]["sha256"] = "0" * 64
+
+    result = compare_payloads(original, tampered)
+    assert result["before"]["integrity_status"] == "VERIFIED"
+    assert result["after"]["integrity_status"] == "MISMATCH"
+    assert result["comparison_status"] == "PARTIAL"
+    assert any("fingerprint validation" in warning for warning in result["warnings"])
+    assert comparison_exit_code(result) == 2
+
+
+def test_legacy_report_integrity_is_unknown_not_failure():
+    from labvault_scout.compare import compare_payloads
+
+    legacy = {
+        "files": [{"path": "data.csv", "size": 1, "sha256": "same"}],
+        "errors": [],
+    }
+    result = compare_payloads(legacy, legacy)
+    assert result["before"]["integrity_status"] == "UNKNOWN"
+    assert result["comparison_status"] == "COMPLETE"

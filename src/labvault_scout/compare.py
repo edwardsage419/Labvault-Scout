@@ -7,6 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from . import __version__
+from .report import inventory_sha256
 
 COMPARISON_SCHEMA_VERSION = "1"
 SUPPORTED_SCAN_SCHEMA_VERSIONS = {"1"}
@@ -128,6 +129,21 @@ def metrics_delta(before: dict, after: dict) -> dict:
     }
 
 
+def report_integrity_status(payload: dict) -> str:
+    """Validate the embedded inventory fingerprint when the report provides one."""
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        return "UNKNOWN"
+    expected = summary.get("inventory_sha256")
+    if not isinstance(expected, str) or not expected:
+        return "UNKNOWN"
+    try:
+        actual = inventory_sha256(payload["files"])
+    except (KeyError, TypeError, ValueError):
+        return "MISMATCH"
+    return "VERIFIED" if actual == expected else "MISMATCH"
+
+
 def report_identity(payload: dict) -> dict:
     """Return non-sensitive compatibility metadata for a source report."""
     tool = payload.get("tool")
@@ -152,6 +168,7 @@ def report_identity(payload: dict) -> dict:
         },
         "error_count": error_count,
         "inventory_sha256": str(inventory),
+        "integrity_status": report_integrity_status(payload),
         "rules_sha256": str(provenance.get("rules_sha256", "")),
         "hash_algorithm": str(provenance.get("hash_algorithm", "")),
         "path_style": str(provenance.get("path_style", "")),
@@ -297,6 +314,10 @@ def compare_payloads(before: dict, after: dict) -> dict:
     after_identity = report_identity(after)
     has_scan_errors = bool(before_identity["error_count"] or after_identity["error_count"])
     unsupported_schema = not before_identity["schema_supported"] or not after_identity["schema_supported"]
+    integrity_mismatch = (
+        before_identity["integrity_status"] == "MISMATCH"
+        or after_identity["integrity_status"] == "MISMATCH"
+    )
     before_rules = before_identity["rules_sha256"]
     after_rules = after_identity["rules_sha256"]
     if before_rules and after_rules:
@@ -304,7 +325,7 @@ def compare_payloads(before: dict, after: dict) -> dict:
     else:
         rules_status = "UNKNOWN"
 
-    partial = has_scan_errors or unsupported_schema
+    partial = has_scan_errors or unsupported_schema or integrity_mismatch
     warnings = []
     if has_scan_errors:
         warnings.append(
@@ -313,6 +334,10 @@ def compare_payloads(before: dict, after: dict) -> dict:
     if unsupported_schema:
         warnings.append(
             "One or both source reports use an unsupported scan schema; comparison semantics may be incomplete."
+        )
+    if integrity_mismatch:
+        warnings.append(
+            "One or both source reports fail inventory fingerprint validation; report contents may have been modified or truncated."
         )
     if before_paths_normalized or after_paths_normalized:
         warnings.append(

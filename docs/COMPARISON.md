@@ -115,3 +115,24 @@ Comparison reports one of three rule states:
 `CHANGED` does not make the file inventory comparison partial. Instead, it adds a warning that `ASSESSMENT_CHANGED` results may reflect rule evolution rather than file-content changes.
 
 `CHANGED` 不会让文件清单比较变成 PARTIAL；它会增加警告，提示 `ASSESSMENT_CHANGED` 可能来自规则演进，而不是文件内容变化。
+
+
+## Report integrity / 报告完整性
+
+v0.3 scan reports embed `summary.inventory_sha256`. Before comparison, LabVault Scout recomputes that fingerprint from the report's own file rows.
+
+v0.3 扫描报告内嵌 `summary.inventory_sha256`。比较前，LabVault Scout 会根据报告中的文件记录重新计算该指纹。
+
+Integrity states / 完整性状态：
+
+- `VERIFIED`: the embedded fingerprint matches the file rows / 内嵌指纹与文件记录匹配
+- `MISMATCH`: the fingerprint does not match; the report may have been modified or truncated / 指纹不匹配；报告可能被修改或截断
+- `UNKNOWN`: no embedded fingerprint is available, typically a legacy v0.2 report / 没有可用内嵌指纹，通常是 v0.2 旧报告
+
+A `MISMATCH` makes the comparison `PARTIAL` and produces automation exit code 2. `UNKNOWN` alone does not make a legacy comparison partial.
+
+`MISMATCH` 会把比较状态降级为 `PARTIAL`，自动化退出码为 2。单独的 `UNKNOWN` 不会让旧版报告比较自动变成 PARTIAL。
+
+The inventory fingerprint is an internal consistency check, not a cryptographic signature of authorship or provenance.
+
+inventory 指纹属于内部一致性检查，不是用于证明作者身份或来源真实性的数字签名。

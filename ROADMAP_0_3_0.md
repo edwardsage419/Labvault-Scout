@@ -11,6 +11,8 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 已实现：在不暴露源目录绝对路径的前提下，记录明确的报告 schema、工具版本、哈希/路径语义和确定性的规则集指纹。
    - Repeated-scan comparison reports whether preservation rules are the same, changed, or unavailable in legacy reports.
    - 重复扫描比较会明确显示保存规则相同、已变化，或旧报告中不可用。
+   - Embedded inventory fingerprints are validated before comparisons; mismatches downgrade the result to PARTIAL.
+   - 比较前会验证内嵌 inventory 指纹；如果不匹配，结果降级为 PARTIAL。
 
 2. Compound and compressed scientific formats / 复合扩展名与压缩科研格式
    - Prefer the longest configured extension so formats such as `.nii.gz` are not reduced to generic `.gz`.

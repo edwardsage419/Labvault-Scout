@@ -13,10 +13,12 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Explicit priority escalation/de-escalation direction and score deltas in repeated-scan comparisons
 * Aggregate comparison deltas for file count, total bytes, risk counts, and priority counts
 * Rule-context comparison (`SAME`, `CHANGED`, or `UNKNOWN`) so assessment drift can be distinguished from content drift
+* Embedded inventory fingerprint validation (`VERIFIED`, `MISMATCH`, or `UNKNOWN`) for scan reports
 * Optional `compare --exit-code` automation mode: 0=no changes, 1=changes, 2=partial comparison
 * Thousand-file repeated-scan comparison regression coverage without timing thresholds
 * Comparison output is marked `PARTIAL` when either source scan contains recorded errors
 * Unsupported future scan schemas mark comparisons as `PARTIAL` instead of silently assuming compatibility
+* Comparisons become `PARTIAL` when a source report's embedded inventory fingerprint validation fails
 * CLI `--version`
 * Compound-extension matching with `.nii.gz` NIfTI coverage
 * Bounded NIfTI-1 header evidence for both `.nii` and `.nii.gz` using the standard 348-byte header and magic field
