@@ -31,7 +31,7 @@
 * CITATION.cff now includes required CFF 1.2.0 authors metadata
 * Empty ZIP archives are recognized as ZIP instead of being marked unverified
 * Generic OLE evidence for `.xls` no longer claims high-confidence Excel identification
-* Directory traversal failures are reported instead of being silently skipped
+* Directory traversal and file-metadata failures are reported instead of being silently skipped
 
 ## 0.1.0
 
