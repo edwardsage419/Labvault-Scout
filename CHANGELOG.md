@@ -13,7 +13,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Explicit priority escalation/de-escalation direction and score deltas in repeated-scan comparisons
 * Aggregate comparison deltas for file count, total bytes, risk counts, and priority counts
 * Rule-context comparison (`SAME`, `CHANGED`, or `UNKNOWN`) so assessment drift can be distinguished from content drift
-* Embedded inventory fingerprint validation (`VERIFIED`, `MISMATCH`, or `UNKNOWN`) for scan reports
+* Embedded report integrity validation (`VERIFIED`, `MISMATCH`, or `UNKNOWN`) covering inventory fingerprint and summary consistency
 * Optional `compare --exit-code` automation mode: 0=no changes, 1=changes, 2=partial comparison
 * Thousand-file repeated-scan comparison regression coverage without timing thresholds
 * Comparison output is marked `PARTIAL` when either source scan contains recorded errors

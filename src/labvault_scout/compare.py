@@ -130,18 +130,36 @@ def metrics_delta(before: dict, after: dict) -> dict:
 
 
 def report_integrity_status(payload: dict) -> str:
-    """Validate the embedded inventory fingerprint when the report provides one."""
+    """Validate embedded inventory and summary consistency when available."""
     summary = payload.get("summary")
     if not isinstance(summary, dict):
         return "UNKNOWN"
     expected = summary.get("inventory_sha256")
     if not isinstance(expected, str) or not expected:
         return "UNKNOWN"
+
     try:
         actual = inventory_sha256(payload["files"])
+        metrics = scan_metrics(payload)
+        errors = payload.get("errors")
+        error_count = len(errors) if isinstance(errors, list) else 0
     except (KeyError, TypeError, ValueError):
         return "MISMATCH"
-    return "VERIFIED" if actual == expected else "MISMATCH"
+
+    if actual != expected:
+        return "MISMATCH"
+
+    required_summary = {
+        "file_count": metrics["file_count"],
+        "total_bytes": metrics["total_bytes"],
+        "risk_counts": metrics["risk_counts"],
+        "priority_counts": metrics["priority_counts"],
+        "error_count": error_count,
+    }
+    for key, value in required_summary.items():
+        if summary.get(key) != value:
+            return "MISMATCH"
+    return "VERIFIED"
 
 
 def report_identity(payload: dict) -> dict:

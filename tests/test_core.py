@@ -1785,3 +1785,36 @@ def test_legacy_report_integrity_is_unknown_not_failure():
     result = compare_payloads(legacy, legacy)
     assert result["before"]["integrity_status"] == "UNKNOWN"
     assert result["comparison_status"] == "COMPLETE"
+
+
+def test_report_integrity_detects_tampered_summary(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads
+
+    source = tmp_path / "summary_tamper_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "summary_tamper_report"
+    scan(source, output)
+
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    tampered = json.loads(json.dumps(original))
+    tampered["summary"]["file_count"] = 999
+
+    result = compare_payloads(original, tampered)
+    assert result["before"]["integrity_status"] == "VERIFIED"
+    assert result["after"]["integrity_status"] == "MISMATCH"
+    assert result["comparison_status"] == "PARTIAL"
+
+
+def test_report_integrity_detects_tampered_error_count(tmp_path: Path):
+    from labvault_scout.compare import report_integrity_status
+
+    source = tmp_path / "error_count_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "error_count_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["summary"]["error_count"] = 5
+    assert report_integrity_status(payload) == "MISMATCH"
