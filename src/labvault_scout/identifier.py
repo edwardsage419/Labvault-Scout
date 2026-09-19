@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import zipfile
 from pathlib import Path
 from typing import BinaryIO
@@ -11,6 +12,7 @@ ZIP_MAGICS = (ZIP_MAGIC, ZIP_EMPTY_MAGIC, ZIP_SPANNED_MAGIC)
 OLE_MAGIC = bytes.fromhex("D0CF11E0A1B11AE1")
 HDF5_MAGIC = bytes.fromhex("894844460D0A1A0A")
 PDF_MAGIC = b"%PDF-"
+GZIP_MAGIC = bytes.fromhex("1F8B")
 
 
 def signature_from_head(head: bytes) -> str:
@@ -23,6 +25,8 @@ def signature_from_head(head: bytes) -> str:
         return "HDF5"
     if head.startswith(PDF_MAGIC):
         return "PDF"
+    if head.startswith(GZIP_MAGIC):
+        return "GZIP"
     return ""
 
 
@@ -77,6 +81,36 @@ def inspect_hdf5_container(path: Path) -> str:
         return "Unreadable HDF5 container"
 
 
+def nifti1_container_from_header(header: bytes) -> str:
+    """Validate bounded NIfTI-1 header evidence."""
+    if len(header) < 348:
+        return "Truncated NIfTI-1 header"
+
+    little_size = int.from_bytes(header[:4], "little")
+    big_size = int.from_bytes(header[:4], "big")
+    if 348 not in (little_size, big_size):
+        return "Invalid NIfTI-1 header size"
+
+    magic = header[344:348]
+    if magic == b"n+1\x00":
+        return "NIfTI-1 single-file"
+    if magic == b"ni1\x00":
+        return "NIfTI-1 paired-file"
+    return "Invalid NIfTI-1 magic"
+
+
+def inspect_gzip_nifti(path: Path) -> str:
+    """Inspect only the decompressed NIfTI-1 header inside a gzip stream."""
+    if inspect_signature(path) != "GZIP":
+        return ""
+    try:
+        with gzip.open(path, "rb") as handle:
+            header = handle.read(348)
+        return nifti1_container_from_header(header)
+    except (OSError, EOFError):
+        return "Invalid GZIP container"
+
+
 def inspect_zip_container(path: Path) -> str:
     """Identify selected ZIP based formats from member names without extraction."""
     if inspect_signature(path) != "ZIP":
@@ -117,7 +151,8 @@ def inspect_zip_container(path: Path) -> str:
 
 def extension_signature_status(path: Path, signature: str, container_type: str = "") -> str:
     """Flag strong contradictions for formats whose outer container is predictable."""
-    ext = path.suffix.lower()
+    lower_name = path.name.lower()
+    ext = ".nii.gz" if lower_name.endswith(".nii.gz") else path.suffix.lower()
     expected = {
         ".zip": "ZIP",
         ".xlsx": "ZIP",
@@ -127,12 +162,17 @@ def extension_signature_status(path: Path, signature: str, container_type: str =
         ".hdf5": "HDF5",
         ".pdf": "PDF",
         ".xls": "OLE",
+        ".nii.gz": "GZIP",
     }.get(ext)
     if expected and signature and signature != expected:
         return f"mismatch: expected {expected}, detected {signature}"
     if expected and not signature:
         return f"unverified: expected {expected}"
     if expected == signature:
+        if ext == ".nii.gz":
+            if not container_type.startswith("NIfTI-1 "):
+                return "unverified: expected NIfTI-1 structure"
+            return "verified"
         if ext == ".xls":
             return "container-only: OLE"
         expected_container = {

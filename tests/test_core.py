@@ -1089,3 +1089,64 @@ def test_scan_json_summary_is_deterministic_and_actionable(tmp_path: Path):
     assert sum(summary["priority_counts"].values()) == 3
     assert summary["open_copy_count"] == 0
     assert summary["duplicate_group_count"] == 1
+
+
+def test_nifti1_header_evidence():
+    from labvault_scout.identifier import nifti1_container_from_header
+
+    header = bytearray(348)
+    header[:4] = (348).to_bytes(4, "little")
+    header[344:348] = b"n+1\x00"
+    assert nifti1_container_from_header(bytes(header)) == "NIfTI-1 single-file"
+
+    header[344:348] = b"ni1\x00"
+    assert nifti1_container_from_header(bytes(header)) == "NIfTI-1 paired-file"
+
+
+def test_gzip_nifti_is_structurally_verified(tmp_path: Path):
+    import gzip
+
+    source = tmp_path / "nifti_source"
+    source.mkdir()
+    header = bytearray(348)
+    header[:4] = (348).to_bytes(4, "little")
+    header[344:348] = b"n+1\x00"
+
+    path = source / "brain.nii.gz"
+    with gzip.open(path, "wb") as handle:
+        handle.write(header)
+        handle.write(b"\x00" * 64)
+
+    output = tmp_path / "nifti_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "NIfTI (Gzip compressed)"
+    assert row["signature"] == "GZIP"
+    assert row["container_type"] == "NIfTI-1 single-file"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_gzip_nifti_with_invalid_header_is_not_verified(tmp_path: Path):
+    import gzip
+
+    source = tmp_path / "bad_nifti_source"
+    source.mkdir()
+    path = source / "broken.nii.gz"
+    with gzip.open(path, "wb") as handle:
+        handle.write(b"not-nifti")
+
+    output = tmp_path / "bad_nifti_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "GZIP"
+    assert row["container_type"] == "Truncated NIfTI-1 header"
+    assert row["signature_status"] == "unverified: expected NIfTI-1 structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
