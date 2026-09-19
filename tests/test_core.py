@@ -1041,3 +1041,20 @@ def test_cli_version_reports_runtime_version(monkeypatch, capsys):
 
     assert exc.value.code == 0
     assert capsys.readouterr().out.strip() == f"labvault-scout {labvault_scout.__version__}"
+
+
+def test_html_report_identifies_tool_and_schema(tmp_path: Path):
+    import labvault_scout
+    from labvault_scout.report import REPORT_SCHEMA_VERSION
+
+    source = tmp_path / "html_metadata_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "html_metadata_report"
+
+    scan(source, output)
+    page = (output / "report.html").read_text(encoding="utf-8")
+
+    assert f"Tool version: {labvault_scout.__version__}" in page
+    assert f"Report schema: {REPORT_SCHEMA_VERSION}" in page
+    assert "Tool version: $" not in page
