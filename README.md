@@ -31,7 +31,7 @@ By default the scanner creates `labvault-report/` containing:
 * `files.csv` for spreadsheet analysis
 * `scan.json` for programmatic use
 * `duplicates.csv` for exact SHA-256 duplicate groups
-* `migration_plan.csv` for prioritized preservation actions
+* `migration_plan.csv` for prioritized preservation actions\n* `bundle_manifest.json` with SHA-256/size records for all core report artifacts
 
 ## Risk levels
 
@@ -70,6 +70,17 @@ labvault-scout verify labvault-report/scan.json
 
 Exit code 0 means verified, 1 means integrity is unavailable (typically legacy v0.2), and 2 means integrity failed or the scan schema is unsupported. Add `--json` for machine-readable output.
 
+## Verify the whole report bundle
+
+v0.3 also verifies the generated HTML/CSV/JSON report artifacts as one bundle:
+
+```bash
+labvault-scout verify-bundle labvault-report
+labvault-scout verify-bundle labvault-report --json
+```
+
+The manifest covers `scan.json`, `files.csv`, `duplicates.csv`, `migration_plan.csv`, and `report.html`. Extra files are ignored; a missing or modified core artifact fails verification.
+
 ## Machine-readable schemas
 
 v0.3 packages JSON Schema Draft 2020-12 definitions for scan, comparison, and verification outputs:
@@ -77,7 +88,7 @@ v0.3 packages JSON Schema Draft 2020-12 definitions for scan, comparison, and ve
 ```bash
 labvault-scout schema scan
 labvault-scout schema comparison
-labvault-scout schema verification
+labvault-scout schema verification\nlabvault-scout schema bundle
 ```
 
 See [docs/SCHEMAS.md](docs/SCHEMAS.md).

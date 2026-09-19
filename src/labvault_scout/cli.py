@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import __version__\nfrom .bundle import verify_bundle
 from .compare import compare_reports, comparison_exit_code, load_scan_report, verify_report, write_comparison
 from .evidence import build_evidence
 from .hashing import sha256_with_head
@@ -133,6 +133,15 @@ def main() -> None:
         help="Print machine-readable verification result",
     )
 
+    bundle_parser = sub.add_parser("verify-bundle", help="Verify all core files in a report directory")
+    bundle_parser.add_argument("directory", type=Path)
+    bundle_parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Print machine-readable bundle verification result",
+    )
+
     schema_parser = sub.add_parser("schema", help="Print a packaged JSON Schema")
     schema_parser.add_argument("kind", choices=sorted(SCHEMA_FILES))
 
@@ -167,6 +176,24 @@ def main() -> None:
                 f"schema={result['schema_version']} | "
                 f"integrity={result['integrity_status']} | "
                 f"scan_errors={result['error_count']}"
+            )
+        raise SystemExit(result["exit_code"])
+    elif args.command == "verify-bundle":
+        try:
+            result = verify_bundle(args.directory)
+        except ValueError as exc:
+            if args.json_output:
+                print(json.dumps({"status": "INVALID", "exit_code": 2, "error": str(exc)}, ensure_ascii=False, sort_keys=True))
+            else:
+                print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(2) from None
+        if args.json_output:
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        else:
+            print(
+                f"Bundle verification: {result['status']} | "
+                f"checked_files={result['checked_files']} | "
+                f"problems={len(result['problems'])}"
             )
         raise SystemExit(result["exit_code"])
     elif args.command == "schema":

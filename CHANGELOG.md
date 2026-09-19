@@ -14,7 +14,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Aggregate comparison deltas for file count, total bytes, risk counts, and priority counts
 * Rule-context comparison (`SAME`, `CHANGED`, or `UNKNOWN`) so assessment drift can be distinguished from content drift
 * Embedded report integrity validation (`VERIFIED`, `MISMATCH`, or `UNKNOWN`) covering inventory fingerprint and summary consistency
-* Deterministic full-report SHA-256 checksum covering tool/schema metadata, provenance, summaries, file records, and errors
+* Deterministic full-report SHA-256 checksum covering tool/schema metadata, provenance, summaries, file records, and errors\n* `bundle_manifest.json` with SHA-256/size records for all core report artifacts\n* `verify-bundle` command with human-readable and `--json` output\n* Packaged Draft 2020-12 JSON Schema for the bundle manifest
 * Optional `compare --exit-code` automation mode: 0=no changes, 1=changes, 2=partial comparison
 * Thousand-file repeated-scan comparison regression coverage without timing thresholds
 * Comparison output is marked `PARTIAL` when either source scan contains recorded errors

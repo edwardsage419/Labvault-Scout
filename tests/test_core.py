@@ -2494,3 +2494,123 @@ def test_truncated_dicom_header_is_reviewed(tmp_path: Path):
     assert row["container_type"] == "Truncated DICOM Part 10 header"
     assert row["signature_status"] == "unverified: expected DICOM Part 10"
     assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_scan_writes_bundle_manifest_covering_core_outputs(tmp_path: Path):
+    from labvault_scout.bundle import BUNDLE_FILES, load_bundle_manifest
+
+    source = tmp_path / "bundle_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_report"
+
+    scan(source, output)
+    manifest = load_bundle_manifest(output)
+
+    assert (output / "bundle_manifest.json").exists()
+    assert {entry["path"] for entry in manifest["files"]} == set(BUNDLE_FILES)
+    assert len(manifest["manifest_sha256"]) == 64
+
+
+def test_verify_bundle_succeeds_and_detects_tampering(tmp_path: Path):
+    from labvault_scout.bundle import verify_bundle
+
+    source = tmp_path / "bundle_verify_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_verify_report"
+    scan(source, output)
+
+    result = verify_bundle(output)
+    assert result["status"] == "VERIFIED"
+    assert result["exit_code"] == 0
+    assert result["checked_files"] == 5
+    assert result["problems"] == []
+
+    (output / "report.html").write_text("tampered", encoding="utf-8")
+    result = verify_bundle(output)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert result["problems"][0]["path"] == "report.html"
+
+
+def test_verify_bundle_detects_missing_core_file(tmp_path: Path):
+    from labvault_scout.bundle import verify_bundle
+
+    source = tmp_path / "bundle_missing_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_missing_report"
+    scan(source, output)
+
+    (output / "duplicates.csv").unlink()
+    result = verify_bundle(output)
+    assert result["status"] == "FAILED"
+    assert {"path": "duplicates.csv", "issue": "MISSING"} in result["problems"]
+
+
+def test_bundle_manifest_checksum_detects_manifest_tampering(tmp_path: Path):
+    import pytest
+    from labvault_scout.bundle import load_bundle_manifest
+
+    source = tmp_path / "bundle_manifest_tamper_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_manifest_tamper_report"
+    scan(source, output)
+
+    path = output / "bundle_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["files"][0]["size"] += 1
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        load_bundle_manifest(output)
+
+
+def test_bundle_manifest_rejects_path_traversal(tmp_path: Path):
+    import pytest
+    from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+
+    source = tmp_path / "bundle_path_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_path_report"
+    scan(source, output)
+
+    path = output / "bundle_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["files"][0]["path"] = "../scan.json"
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsafe bundle manifest path"):
+        load_bundle_manifest(output)
+
+
+def test_cli_verify_bundle_and_json_output(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    source = tmp_path / "bundle_cli_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_cli_report"
+    scan(source, output)
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "VERIFIED"
+    assert payload["checked_files"] == 5
+
+
+def test_bundle_schema_is_packaged():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("bundle"))
+    assert schema["title"] == "LabVault Scout bundle manifest schema 1"
+    assert schema["properties"]["schema_version"]["const"] == "1"

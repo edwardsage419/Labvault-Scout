@@ -26,7 +26,7 @@ python -m pip install .
 labvault-scout scan /path/to/research
 ```
 
-报告默认写入 `labvault-report/`，包括 `report.html`、`files.csv`、`scan.json`、精确重复文件清单 `duplicates.csv`，以及按保存优先级排序的 `migration_plan.csv`。
+报告默认写入 `labvault-report/`，包括 `report.html`、`files.csv`、`scan.json`、精确重复文件清单 `duplicates.csv`、按保存优先级排序的 `migration_plan.csv`，以及记录核心报告文件 SHA-256/大小的 `bundle_manifest.json`。
 
 ## 风险等级
 
@@ -57,6 +57,17 @@ labvault-scout verify labvault-report/scan.json
 
 退出码 0 表示验证通过，1 表示无法验证内部完整性（通常是 v0.2 旧报告），2 表示完整性验证失败或扫描 schema 不受支持。增加 `--json` 可获得机器可读输出。
 
+## 验证整个报告包
+
+v0.3 还可以把生成的 HTML/CSV/JSON 报告文件作为一个整体进行校验：
+
+```bash
+labvault-scout verify-bundle labvault-report
+labvault-scout verify-bundle labvault-report --json
+```
+
+manifest 固定覆盖 `scan.json`、`files.csv`、`duplicates.csv`、`migration_plan.csv` 和 `report.html`。额外文件不会影响验证；核心文件缺失或被修改都会使验证失败。
+
 ## 机器可读 Schema
 
 v0.3 随包提供 scan、comparison 和 verification 输出的 JSON Schema Draft 2020-12 定义：
@@ -64,7 +75,7 @@ v0.3 随包提供 scan、comparison 和 verification 输出的 JSON Schema Draft
 ```bash
 labvault-scout schema scan
 labvault-scout schema comparison
-labvault-scout schema verification
+labvault-scout schema verification\nlabvault-scout schema bundle
 ```
 
 参见 [docs/SCHEMAS.md](docs/SCHEMAS.md)。
