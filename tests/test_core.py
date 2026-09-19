@@ -960,3 +960,28 @@ def test_scan_json_records_directory_traversal_errors(tmp_path: Path, monkeypatc
 
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
     assert payload["errors"] == [{"path": "blocked", "error": "PermissionError"}]
+
+
+def test_iter_files_reports_file_metadata_errors(tmp_path: Path, monkeypatch):
+    import labvault_scout.scanner as scanner
+
+    source = tmp_path / "metadata_error_source"
+    source.mkdir()
+    blocked = source / "blocked.bin"
+    blocked.write_bytes(b"x")
+    seen = []
+
+    original_lstat = Path.lstat
+
+    def fake_lstat(self):
+        if self.name == "blocked.bin":
+            raise PermissionError("blocked metadata")
+        return original_lstat(self)
+
+    monkeypatch.setattr(Path, "lstat", fake_lstat)
+    paths = list(scanner.iter_files(source, on_error=lambda path, exc: seen.append((path, exc))))
+
+    assert paths == []
+    assert len(seen) == 1
+    assert seen[0][0].name == "blocked.bin"
+    assert isinstance(seen[0][1], PermissionError)
