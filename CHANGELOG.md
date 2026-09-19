@@ -13,7 +13,6 @@
 ### Changed
 
 * Structural container warnings add preservation priority and recommend `REVIEW_CONTAINER`
-
 * SHA-256 hashing and the 512-byte identification header are collected in one sequential file read
 * HDF5 and OLE structural checks reuse the shared bounded header
 
@@ -30,6 +29,8 @@
 * Build metadata now requires setuptools 77+ for SPDX license metadata and ships the complete standard MIT license
 * Duplicate test names were removed so all intended regressions are collected
 * CITATION.cff now includes required CFF 1.2.0 authors metadata
+* Empty ZIP archives are recognized as ZIP instead of being marked unverified
+* Generic OLE evidence for `.xls` no longer claims high-confidence Excel identification
 
 ## 0.1.0
 
