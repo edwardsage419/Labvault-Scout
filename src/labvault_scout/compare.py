@@ -282,12 +282,24 @@ def report_integrity_status(payload: dict) -> str:
     if actual != expected:
         return "MISMATCH"
 
+    hash_counts: dict[str, int] = defaultdict(int)
+    open_copy_count = 0
+    for row in payload["files"]:
+        digest = str(row.get("sha256", ""))
+        if digest:
+            hash_counts[digest] += 1
+        if row.get("open_copy"):
+            open_copy_count += 1
+    duplicate_group_count = sum(1 for count in hash_counts.values() if count > 1)
+
     required_summary = {
         "file_count": metrics["file_count"],
         "total_bytes": metrics["total_bytes"],
         "risk_counts": metrics["risk_counts"],
         "priority_counts": metrics["priority_counts"],
         "error_count": error_count,
+        "open_copy_count": open_copy_count,
+        "duplicate_group_count": duplicate_group_count,
     }
     for key, value in required_summary.items():
         if summary.get(key) != value:

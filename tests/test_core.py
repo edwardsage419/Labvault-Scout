@@ -1820,6 +1820,26 @@ def test_report_integrity_detects_tampered_error_count(tmp_path: Path):
     assert report_integrity_status(payload) == "MISMATCH"
 
 
+def test_integrity_recomputes_open_copy_and_duplicate_counts(tmp_path: Path):
+    from labvault_scout.compare import report_integrity_status
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "summary_integrity_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "summary_integrity_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert report_integrity_status(payload) == "VERIFIED"
+
+    for field in ("open_copy_count", "duplicate_group_count"):
+        mutated = json.loads(json.dumps(payload))
+        mutated["summary"][field] += 1
+        mutated["report_sha256"] = report_payload_sha256(mutated)
+        assert report_integrity_status(mutated) == "MISMATCH"
+
+
 def test_verify_report_statuses(tmp_path: Path):
     from labvault_scout.compare import load_scan_report, verify_report
 
