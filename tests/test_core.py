@@ -48,17 +48,62 @@ def test_packaged_scientific_format_rules_have_valid_structure():
         assert all(isinstance(value, str) and re.fullmatch(r"[a-z0-9]+", value) for value in exports)
 
 
-def test_rule_index_rejects_duplicate_extensions_case_insensitively():
+def test_rule_index_rejects_duplicate_extensions():
     import pytest
     from labvault_scout.risk import _index_rules
 
-    items = [
-        {"extension": ".csv", "name": "CSV"},
-        {"extension": ".CSV", "name": "Duplicate CSV"},
-    ]
+    def rule(extension, name):
+        return {
+            "extension": extension,
+            "name": name,
+            "category": "open_data",
+            "risk": "SAFE",
+            "reason": "test rule",
+            "preferred_exports": [],
+        }
 
+    items = [rule(".csv", "CSV"), rule(".csv", "Duplicate CSV")]
     with pytest.raises(ValueError, match=r"Duplicate scientific format rule extension: \.csv"):
         _index_rules(items)
+
+
+def test_rule_index_rejects_malformed_rule_structure():
+    import pytest
+    from labvault_scout.risk import _index_rules
+
+    valid = {
+        "extension": ".csv",
+        "name": "CSV",
+        "category": "open_data",
+        "risk": "SAFE",
+        "reason": "test rule",
+        "preferred_exports": [],
+    }
+
+    cases = []
+
+    missing = dict(valid)
+    missing.pop("reason")
+    cases.append(missing)
+
+    uppercase_extension = dict(valid)
+    uppercase_extension["extension"] = ".CSV"
+    cases.append(uppercase_extension)
+
+    invalid_risk = dict(valid)
+    invalid_risk["risk"] = "DANGER"
+    cases.append(invalid_risk)
+
+    duplicate_export = dict(valid)
+    duplicate_export["preferred_exports"] = ["csv", "csv"]
+    cases.append(duplicate_export)
+
+    for item in cases:
+        with pytest.raises(ValueError, match="Invalid scientific format rule"):
+            _index_rules([item])
+
+    with pytest.raises(ValueError, match="must be a JSON array"):
+        _index_rules({"extension": ".csv"})
 
 
 def test_unknown(tmp_path: Path):
