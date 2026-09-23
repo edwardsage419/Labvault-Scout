@@ -26,6 +26,7 @@ MATLAB5_PREFIX = b"MATLAB 5.0 MAT-file"
 DICOM_MARKER = b"DICM"
 DICOM_MARKER_OFFSET = 128
 FCS_VERSIONS = (b"FCS2.0", b"FCS3.0", b"FCS3.1", b"FCS3.2")
+SPSS_MAGICS = (b"$FL2", b"$FL3")
 
 
 def signature_from_head(head: bytes) -> str:
@@ -52,6 +53,8 @@ def signature_from_head(head: bytes) -> str:
         return "DICOM"
     if any(head.startswith(version) for version in FCS_VERSIONS):
         return "FCS"
+    if any(head.startswith(magic) for magic in SPSS_MAGICS):
+        return "SPSS"
     return ""
 
 
@@ -191,6 +194,33 @@ def inspect_hdf5_container(path: Path) -> str:
         return "Unreadable HDF5 container"
 
 
+def spss_container_from_header(header: bytes, size: int) -> str:
+    """Validate bounded ASCII-based SPSS SAV/ZSAV fixed-header evidence."""
+    magic = next((item for item in SPSS_MAGICS if header.startswith(item)), None)
+    if magic is None:
+        return ""
+    if size < 176 or len(header) < 176:
+        return "Truncated SPSS system-file header"
+
+    little_layout = int.from_bytes(header[64:68], "little", signed=True)
+    big_layout = int.from_bytes(header[64:68], "big", signed=True)
+    if little_layout in (2, 3) and big_layout not in (2, 3):
+        byteorder = "little"
+    elif big_layout in (2, 3) and little_layout not in (2, 3):
+        byteorder = "big"
+    else:
+        return "Invalid SPSS layout code"
+
+    compression = int.from_bytes(header[72:76], byteorder, signed=True)
+    if magic == b"$FL2" and compression not in (0, 1):
+        return "Invalid SPSS SAV compression code"
+    if magic == b"$FL3" and compression != 2:
+        return "Invalid SPSS ZSAV compression code"
+
+    kind = "SPSS SAV $FL2" if magic == b"$FL2" else "SPSS ZSAV $FL3"
+    return f"{kind} fixed header ({byteorder}-endian)"
+
+
 def fcs_container_from_header(header: bytes, size: int) -> str:
     """Validate bounded Flow Cytometry Standard fixed-header evidence."""
     version = next((item for item in FCS_VERSIONS if header.startswith(item)), None)
@@ -311,6 +341,14 @@ def extension_signature_status(path: Path, signature: str, container_type: str =
         if signature:
             return f"mismatch: expected DICOM Part 10, detected {signature}"
         return "unverified: expected DICOM Part 10"
+
+    if ext in {".sav", ".zsav"}:
+        expected_marker = "$FL2" if ext == ".sav" else "$FL3"
+        if signature == "SPSS":
+            return "verified" if expected_marker in container_type and " fixed header " in container_type else f"unverified: expected SPSS {expected_marker} fixed header"
+        if signature:
+            return f"mismatch: expected SPSS {expected_marker}, detected {signature}"
+        return f"unverified: expected SPSS {expected_marker}"
 
     if ext == ".fcs":
         if signature == "FCS":

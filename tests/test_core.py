@@ -2873,3 +2873,82 @@ def test_fcs_disguised_file_is_mismatch(tmp_path: Path):
     row = payload["files"][0]
     assert row["signature_status"] == "mismatch: expected FCS, detected PDF"
 
+def _spss_header(magic: bytes = b"$FL2", byteorder: str = "little") -> bytes:
+    header = bytearray(176)
+    header[:4] = magic
+    product = b"@(#) SPSS DATA FILE LabVault Scout synthetic test"
+    header[4:4 + len(product)] = product
+    header[64:68] = (2).to_bytes(4, byteorder, signed=True)
+    header[68:72] = (1).to_bytes(4, byteorder, signed=True)
+    compression = 2 if magic == b"$FL3" else 0
+    header[72:76] = compression.to_bytes(4, byteorder, signed=True)
+    header[76:80] = (0).to_bytes(4, byteorder, signed=True)
+    header[80:84] = (1).to_bytes(4, byteorder, signed=True)
+    return bytes(header)
+
+
+def test_spss_fixed_header_evidence():
+    from labvault_scout.identifier import signature_from_head, spss_container_from_header
+
+    sav = _spss_header(b"$FL2", "little")
+    zsav = _spss_header(b"$FL3", "big")
+    assert signature_from_head(sav) == "SPSS"
+    assert signature_from_head(zsav) == "SPSS"
+    assert spss_container_from_header(sav, 176) == "SPSS SAV $FL2 fixed header (little-endian)"
+    assert spss_container_from_header(zsav, 176) == "SPSS ZSAV $FL3 fixed header (big-endian)"
+
+
+def test_spss_sav_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "spss_sav_source"
+    source.mkdir()
+    (source / "survey.sav").write_bytes(_spss_header(b"$FL2"))
+    output = tmp_path / "spss_sav_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["format"] == "SPSS Data"
+    assert row["signature"] == "SPSS"
+    assert row["container_type"] == "SPSS SAV $FL2 fixed header (little-endian)"
+    assert row["signature_status"] == "verified"
+
+
+def test_spss_zsav_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "spss_zsav_source"
+    source.mkdir()
+    (source / "survey.zsav").write_bytes(_spss_header(b"$FL3"))
+    output = tmp_path / "spss_zsav_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["format"] == "SPSS ZSAV Data"
+    assert row["signature"] == "SPSS"
+    assert row["container_type"] == "SPSS ZSAV $FL3 fixed header (little-endian)"
+    assert row["signature_status"] == "verified"
+
+
+def test_spss_wrong_magic_for_extension_is_not_verified(tmp_path: Path):
+    source = tmp_path / "spss_wrong_magic_source"
+    source.mkdir()
+    (source / "wrong.sav").write_bytes(_spss_header(b"$FL3"))
+    output = tmp_path / "spss_wrong_magic_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
+
+
+def test_truncated_spss_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "spss_truncated_source"
+    source.mkdir()
+    (source / "broken.sav").write_bytes(b"$FL2")
+    output = tmp_path / "spss_truncated_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["container_type"] == "Truncated SPSS system-file header"
+    assert row["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
+

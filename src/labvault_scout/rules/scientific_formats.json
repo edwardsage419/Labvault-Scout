@@ -195,6 +195,16 @@
     ]
   },
   {
+    "extension": ".zsav",
+    "name": "SPSS ZSAV Data",
+    "category": "statistical_data",
+    "risk": "RESCUE",
+    "reason": "ZLIB-compressed SPSS system file requiring application-specific interpretation.",
+    "preferred_exports": [
+      "csv"
+    ]
+  },
+  {
     "extension": ".dta",
     "name": "Stata Data",
     "category": "statistical_data",

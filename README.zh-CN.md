@@ -83,7 +83,7 @@ labvault-scout schema bundle
 
 ## 格式结构证据
 
-v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5、TIFF/BigTIFF、FITS primary header、MATLAB Level 5 MAT-file 与 DICOM Part 10 preamble/`DICM` 标记的有界只读检查。对于基于 HDF5 的 NetCDF-4 和 `.mat`，当前只报告保守的容器证据，不声称已经验证格式专用结构；FITS `SIMPLE=F` 会明确标记为 nonconforming 并进入容器复核。DICOM 检查只读取 Part 10 preamble/marker，不解析患者元数据或数据集内容。 FCS 检查只验证 FCS 2.0、3.0、3.1、3.2 的固定 58 字节 HEADER 结构，不读取 TEXT 或 DATA 段。
+v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5、TIFF/BigTIFF、FITS primary header、MATLAB Level 5 MAT-file 与 DICOM Part 10 preamble/`DICM` 标记的有界只读检查。对于基于 HDF5 的 NetCDF-4 和 `.mat`，当前只报告保守的容器证据，不声称已经验证格式专用结构；FITS `SIMPLE=F` 会明确标记为 nonconforming 并进入容器复核。DICOM 检查只读取 Part 10 preamble/marker，不解析患者元数据或数据集内容。 FCS 检查只验证 FCS 2.0、3.0、3.1、3.2 的固定 58 字节 HEADER 结构，不读取 TEXT 或 DATA 段。 SPSS 检查对 ASCII 系 `$FL2` SAV 与 `$FL3` ZSAV 的 176 字节固定 HEADER、字节序和压缩代码做有界验证，不读取数据记录。
 
 ## 当前状态
 
