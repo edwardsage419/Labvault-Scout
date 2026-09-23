@@ -2952,3 +2952,28 @@ def test_truncated_spss_header_is_reviewed(tmp_path: Path):
     assert row["container_type"] == "Truncated SPSS system-file header"
     assert row["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
 
+def test_modern_stata_dta_header_evidence():
+    from labvault_scout.identifier import stata_dta_container_from_header
+
+    for release in (b"117", b"118", b"119"):
+        header = (
+            b"<stata_dta><header><release>"
+            + release
+            + b"</release><byteorder>LSF</byteorder>"
+        )
+        assert stata_dta_container_from_header(header) == f"Stata DTA release {release.decode('ascii')} (LSF)"
+
+    big_endian = b"<stata_dta><header><release>118</release><byteorder>MSF</byteorder>"
+    assert stata_dta_container_from_header(big_endian) == "Stata DTA release 118 (MSF)"
+
+
+def test_modern_stata_dta_header_rejects_malformed_values():
+    from labvault_scout.identifier import stata_dta_container_from_header
+
+    assert stata_dta_container_from_header(b"not-stata") == ""
+    assert stata_dta_container_from_header(b"<stata_dta><header><release>118") == "Truncated Stata DTA release header"
+    unsupported = b"<stata_dta><header><release>999</release><byteorder>LSF</byteorder>"
+    assert stata_dta_container_from_header(unsupported) == "Unsupported modern Stata DTA release"
+    bad_order = b"<stata_dta><header><release>118</release><byteorder>XYZ</byteorder>"
+    assert stata_dta_container_from_header(bad_order) == "Invalid Stata DTA byteorder value"
+

@@ -27,6 +27,8 @@ DICOM_MARKER = b"DICM"
 DICOM_MARKER_OFFSET = 128
 FCS_VERSIONS = (b"FCS2.0", b"FCS3.0", b"FCS3.1", b"FCS3.2")
 SPSS_MAGICS = (b"$FL2", b"$FL3")
+STATA_DTA_PREFIX = b"<stata_dta><header><release>"
+STATA_DTA_RELEASES = {b"117", b"118", b"119"}
 
 
 def signature_from_head(head: bytes) -> str:
@@ -219,6 +221,34 @@ def spss_container_from_header(header: bytes, size: int) -> str:
 
     kind = "SPSS SAV $FL2" if magic == b"$FL2" else "SPSS ZSAV $FL3"
     return f"{kind} fixed header ({byteorder}-endian)"
+
+
+def stata_dta_container_from_header(header: bytes) -> str:
+    """Validate bounded modern Stata 117/118/119 DTA header evidence."""
+    if not header.startswith(STATA_DTA_PREFIX):
+        return ""
+
+    release_start = len(STATA_DTA_PREFIX)
+    release_end = header.find(b"</release>", release_start, release_start + 16)
+    if release_end < 0:
+        return "Truncated Stata DTA release header"
+    release = header[release_start:release_end]
+    if release not in STATA_DTA_RELEASES:
+        return "Unsupported modern Stata DTA release"
+
+    byteorder_tag = b"<byteorder>"
+    byteorder_start = release_end + len(b"</release>")
+    if not header.startswith(byteorder_tag, byteorder_start):
+        return "Invalid Stata DTA byteorder header"
+    value_start = byteorder_start + len(byteorder_tag)
+    value_end = header.find(b"</byteorder>", value_start, value_start + 16)
+    if value_end < 0:
+        return "Truncated Stata DTA byteorder header"
+    byteorder = header[value_start:value_end]
+    if byteorder not in {b"LSF", b"MSF"}:
+        return "Invalid Stata DTA byteorder value"
+
+    return f"Stata DTA release {release.decode('ascii')} ({byteorder.decode('ascii')})"
 
 
 def fcs_container_from_header(header: bytes, size: int) -> str:
