@@ -119,9 +119,9 @@ Comparison reports one of three rule states:
 
 ## Report integrity / 报告完整性
 
-v0.3 scan reports embed `summary.inventory_sha256`, deterministic summary counts, and a top-level `report_sha256`. Before comparison, LabVault Scout recomputes the full-report checksum, inventory fingerprint, file count, total bytes, risk/priority counts, and error count from the report contents.
+v0.3 scan reports embed `summary.inventory_sha256`, deterministic summary counts, and a top-level `report_sha256`. Before comparison, LabVault Scout recomputes the full-report checksum, inventory fingerprint, file count, total bytes, risk/priority counts, error count, open-copy count, and duplicate-group count from the report contents.
 
-v0.3 扫描报告内嵌 `summary.inventory_sha256`、确定性的摘要计数和顶层 `report_sha256`。比较前，LabVault Scout 会根据报告内容重新计算完整报告校验和、inventory 指纹、文件数量、总字节、风险/优先级计数和错误数量。
+v0.3 扫描报告内嵌 `summary.inventory_sha256`、确定性的摘要计数和顶层 `report_sha256`。比较前，LabVault Scout 会根据报告内容重新计算完整报告校验和、inventory 指纹、文件数量、总字节、风险/优先级计数、错误数量、开放副本数量和重复组数量。
 
 Integrity states / 完整性状态：
 
