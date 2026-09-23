@@ -151,11 +151,11 @@ def verify_bundle(output_dir: Path) -> dict:
     for entry in payload["files"]:
         member = entry["path"]
         path = output_dir.joinpath(*PurePosixPath(member).parts)
-        if not path.exists():
-            problems.append({"path": member, "issue": "MISSING"})
-            continue
         if path.is_symlink():
             problems.append({"path": member, "issue": "SYMLINK"})
+            continue
+        if not path.exists():
+            problems.append({"path": member, "issue": "MISSING"})
             continue
         if not path.is_file():
             problems.append({"path": member, "issue": "NOT_REGULAR_FILE"})

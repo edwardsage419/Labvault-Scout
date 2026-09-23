@@ -2957,6 +2957,33 @@ def test_verify_bundle_rejects_symlinked_core_artifact_when_supported(tmp_path: 
     assert result["status"] == "FAILED"
 
 
+def test_verify_bundle_classifies_broken_symlink_as_symlink(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.bundle import verify_bundle
+
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are not supported")
+
+    source = tmp_path / "bundle_broken_symlink_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_broken_symlink_report"
+    scan(source, output)
+
+    report = output / "report.html"
+    missing_target = tmp_path / "missing-target.html"
+    report.unlink()
+    try:
+        os.symlink(missing_target, report)
+    except OSError:
+        pytest.skip("symlink creation is unavailable in this environment")
+
+    result = verify_bundle(output)
+    assert {"path": "report.html", "issue": "SYMLINK"} in result["problems"]
+    assert result["status"] == "FAILED"
+
+
 def test_generated_machine_outputs_match_packaged_schema_field_contracts(tmp_path: Path):
     from labvault_scout.bundle import load_bundle_manifest
     from labvault_scout.compare import compare_reports, load_scan_report, verify_report
