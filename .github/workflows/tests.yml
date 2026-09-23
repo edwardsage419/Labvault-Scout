@@ -32,8 +32,17 @@ jobs:
       - name: Verify installed package resources
         shell: python
         run: |
+          import json
           from labvault_scout.risk import load_rules
+          from labvault_scout.schema_registry import SCHEMA_FILES, load_schema_text
+
           rules = load_rules()
-          assert ".jnb" in rules
-          assert ".csv" in rules
-          print(f"Loaded {len(rules)} packaged format rules")
+          for extension in (".csv", ".jnb", ".fcs", ".sav", ".zsav"):
+              assert extension in rules
+
+          assert set(SCHEMA_FILES) == {"scan", "comparison", "verification", "bundle"}
+          for kind in SCHEMA_FILES:
+              schema = json.loads(load_schema_text(kind))
+              assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+
+          print(f"Loaded {len(rules)} packaged format rules and {len(SCHEMA_FILES)} schemas")
