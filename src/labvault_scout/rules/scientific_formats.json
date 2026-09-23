@@ -136,6 +136,14 @@
     "preferred_exports": []
   },
   {
+    "extension": ".fits",
+    "name": "FITS",
+    "category": "scientific_data",
+    "risk": "SAFE",
+    "reason": "Open standardized astronomy data format with self-describing headers; preserve domain metadata and conventions.",
+    "preferred_exports": []
+  },
+  {
     "extension": ".jnb",
     "name": "SigmaPlot Notebook",
     "category": "scientific_project",
@@ -187,6 +195,16 @@
     ]
   },
   {
+    "extension": ".zsav",
+    "name": "SPSS ZSAV Data",
+    "category": "statistical_data",
+    "risk": "RESCUE",
+    "reason": "ZLIB-compressed SPSS system file requiring application-specific interpretation.",
+    "preferred_exports": [
+      "csv"
+    ]
+  },
+  {
     "extension": ".dta",
     "name": "Stata Data",
     "category": "statistical_data",
@@ -233,6 +251,14 @@
     "category": "scientific_data",
     "risk": "WATCH",
     "reason": "Domain scientific format requiring specialized viewers.",
+    "preferred_exports": []
+  },
+  {
+    "extension": ".nii.gz",
+    "name": "NIfTI (Gzip compressed)",
+    "category": "scientific_data",
+    "risk": "WATCH",
+    "reason": "Gzip-compressed NIfTI is widely used but requires decompression and specialized interpretation.",
     "preferred_exports": []
   },
   {

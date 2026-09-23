@@ -752,7 +752,7 @@ def test_scan_error_paths_are_relative(tmp_path: Path, monkeypatch):
     assert cli.scan(source, output) == 0
 
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
-    assert payload["errors"] == [{"path": str(Path("nested") / "broken.bin"), "error": "OSError"}]
+    assert payload["errors"] == [{"path": "nested/broken.bin", "error": "OSError"}]
     assert str(source) not in payload["errors"][0]["path"]
 
 
@@ -985,3 +985,1970 @@ def test_iter_files_reports_file_metadata_errors(tmp_path: Path, monkeypatch):
     assert len(seen) == 1
     assert seen[0][0].name == "blocked.bin"
     assert isinstance(seen[0][1], PermissionError)
+
+
+def test_compound_extension_prefers_longest_rule():
+    rules = load_rules()
+    lower = classify(Path("subject01.nii.gz"), rules)
+    upper = classify(Path("SUBJECT01.NII.GZ"), rules)
+
+    assert lower["name"] == "NIfTI (Gzip compressed)"
+    assert lower["risk"] == "WATCH"
+    assert upper["name"] == "NIfTI (Gzip compressed)"
+
+
+def test_compound_extension_scan_is_not_unknown(tmp_path: Path):
+    source = tmp_path / "compound_source"
+    source.mkdir()
+    (source / "brain.nii.gz").write_bytes(b"not-a-real-nifti")
+    output = tmp_path / "compound_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "NIfTI (Gzip compressed)"
+    assert row["risk"] == "WATCH"
+
+
+def test_scan_json_is_self_describing(tmp_path: Path):
+    import labvault_scout
+    from labvault_scout.report import REPORT_SCHEMA_VERSION
+
+    source = tmp_path / "schema_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "schema_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == REPORT_SCHEMA_VERSION
+    assert payload["tool"] == {"name": "LabVault Scout", "version": labvault_scout.__version__}
+    assert "files" in payload
+    assert "errors" in payload
+
+
+def test_cli_version_reports_runtime_version(monkeypatch, capsys):
+    import sys
+    import pytest
+    import labvault_scout
+    from labvault_scout.cli import main
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "--version"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+
+    assert exc.value.code == 0
+    assert capsys.readouterr().out.strip() == f"labvault-scout {labvault_scout.__version__}"
+
+
+def test_html_report_identifies_tool_and_schema(tmp_path: Path):
+    import labvault_scout
+    from labvault_scout.report import REPORT_SCHEMA_VERSION
+
+    source = tmp_path / "html_metadata_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "html_metadata_report"
+
+    scan(source, output)
+    page = (output / "report.html").read_text(encoding="utf-8")
+
+    assert f"Tool version: {labvault_scout.__version__}" in page
+    assert f"Report schema: {REPORT_SCHEMA_VERSION}" in page
+    assert "Tool version: $" not in page
+
+
+def test_scanner_orders_files_deterministically(tmp_path: Path):
+    source = tmp_path / "ordered_source"
+    source.mkdir()
+    for name in ("z.csv", "A.csv", "m.csv", "b.csv"):
+        (source / name).write_text("x\n1\n", encoding="utf-8")
+
+    names = [path.name for path in iter_files(source)]
+    assert names == sorted(names)
+
+
+def test_scan_json_summary_is_deterministic_and_actionable(tmp_path: Path):
+    source = tmp_path / "summary_source"
+    source.mkdir()
+    (source / "a.csv").write_text("x\n1\n", encoding="utf-8")
+    (source / "b.csv").write_text("x\n1\n", encoding="utf-8")
+    (source / "project.jnb").write_bytes(b"project")
+    output = tmp_path / "summary_report"
+
+    assert scan(source, output) == 3
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    summary = payload["summary"]
+
+    assert summary["file_count"] == 3
+    assert summary["total_bytes"] > 0
+    assert summary["error_count"] == 0
+    assert summary["risk_counts"] == {"RESCUE": 1, "SAFE": 2}
+    assert sum(summary["priority_counts"].values()) == 3
+    assert summary["open_copy_count"] == 0
+    assert summary["duplicate_group_count"] == 1
+
+
+def test_nifti1_header_evidence():
+    from labvault_scout.identifier import nifti1_container_from_header
+
+    header = bytearray(348)
+    header[:4] = (348).to_bytes(4, "little")
+    header[344:348] = b"n+1\x00"
+    assert nifti1_container_from_header(bytes(header)) == "NIfTI-1 single-file"
+
+    header[344:348] = b"ni1\x00"
+    assert nifti1_container_from_header(bytes(header)) == "NIfTI-1 paired-file"
+
+
+def test_gzip_nifti_is_structurally_verified(tmp_path: Path):
+    import gzip
+
+    source = tmp_path / "nifti_source"
+    source.mkdir()
+    header = bytearray(348)
+    header[:4] = (348).to_bytes(4, "little")
+    header[344:348] = b"n+1\x00"
+
+    path = source / "brain.nii.gz"
+    with gzip.open(path, "wb") as handle:
+        handle.write(header)
+        handle.write(b"\x00" * 64)
+
+    output = tmp_path / "nifti_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "NIfTI (Gzip compressed)"
+    assert row["signature"] == "GZIP"
+    assert row["container_type"] == "NIfTI-1 single-file"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_gzip_nifti_with_invalid_header_is_not_verified(tmp_path: Path):
+    import gzip
+
+    source = tmp_path / "bad_nifti_source"
+    source.mkdir()
+    path = source / "broken.nii.gz"
+    with gzip.open(path, "wb") as handle:
+        handle.write(b"not-nifti")
+
+    output = tmp_path / "bad_nifti_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "GZIP"
+    assert row["container_type"] == "Truncated NIfTI-1 header"
+    assert row["signature_status"] == "unverified: expected NIfTI-1 structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_uncompressed_nifti_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "nii_source"
+    source.mkdir()
+    header = bytearray(348)
+    header[:4] = (348).to_bytes(4, "little")
+    header[344:348] = b"n+1\x00"
+    (source / "brain.nii").write_bytes(header + b"\x00" * 64)
+
+    output = tmp_path / "nii_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "NIfTI"
+    assert row["signature"] == "NIFTI1"
+    assert row["container_type"] == "NIfTI-1 single-file"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_uncompressed_nifti_invalid_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "bad_nii_source"
+    source.mkdir()
+    (source / "broken.nii").write_bytes(b"not-nifti")
+
+    output = tmp_path / "bad_nii_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["container_type"] == "Truncated NIfTI-1 header"
+    assert row["signature_status"] == "unverified: expected NIFTI1"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_compare_reports_tracks_content_assessment_add_remove_and_move(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads
+
+    def row(path, digest, risk="SAFE", priority="LOW", score=0, action="KEEP"):
+        return {
+            "path": path,
+            "size": 10,
+            "sha256": digest,
+            "format": "CSV",
+            "signature": "",
+            "signature_status": "",
+            "container_type": "",
+            "risk": risk,
+            "confidence": "MEDIUM",
+            "priority_score": score,
+            "priority": priority,
+            "priority_reason": f"base={score}",
+            "recommended_action": action,
+            "open_copy": "",
+            "relationship_strength": "",
+            "relationship_evidence": "",
+            "evidence": "extension rule: CSV",
+            "reason": "test",
+        }
+
+    before = {"files": [
+        row("same.csv", "same"),
+        row("content.csv", "old"),
+        row("assessment.csv", "assessment", risk="SAFE", priority="LOW", score=0),
+        row("removed.csv", "removed"),
+        row("old/name.csv", "moved"),
+    ]}
+    after = {"files": [
+        row("same.csv", "same"),
+        row("content.csv", "new"),
+        row("assessment.csv", "assessment", risk="WATCH", priority="MEDIUM", score=40, action="REVIEW_FORMAT"),
+        row("added.csv", "added"),
+        row("new/name.csv", "moved"),
+    ]}
+
+    result = compare_payloads(before, after)
+    assert result["summary"] == {
+        "added_count": 1,
+        "removed_count": 1,
+        "moved_count": 1,
+        "content_changed_count": 1,
+        "assessment_changed_count": 1,
+        "priority_escalated_count": 1,
+        "priority_deescalated_count": 0,
+        "unchanged_count": 1,
+        "change_count": 5,
+    }
+    types = [item["change_type"] for item in result["changes"]]
+    assert types == ["MOVED", "CONTENT_CHANGED", "ASSESSMENT_CHANGED", "ADDED", "REMOVED"]
+    assessment = next(item for item in result["changes"] if item["change_type"] == "ASSESSMENT_CHANGED")
+    assert "risk" in assessment["changed_fields"]
+    assert "priority" in assessment["changed_fields"]
+    assert "recommended_action" in assessment["changed_fields"]
+
+
+def test_compare_move_detection_is_conservative_for_duplicate_hashes():
+    from labvault_scout.compare import compare_payloads
+
+    before = {"files": [
+        {"path": "old/a.csv", "sha256": "same"},
+        {"path": "old/b.csv", "sha256": "same"},
+    ]}
+    after = {"files": [
+        {"path": "new/a.csv", "sha256": "same"},
+        {"path": "new/b.csv", "sha256": "same"},
+    ]}
+
+    result = compare_payloads(before, after)
+    assert result["summary"]["moved_count"] == 0
+    assert result["summary"]["added_count"] == 2
+    assert result["summary"]["removed_count"] == 2
+
+
+def test_compare_accepts_legacy_v02_scan_json(tmp_path: Path):
+    from labvault_scout.compare import compare_reports
+
+    before = tmp_path / "before.json"
+    after = tmp_path / "after.json"
+    before.write_text(json.dumps({"files": [{"path": "data.csv", "sha256": "a"}], "errors": []}), encoding="utf-8")
+    after.write_text(json.dumps({"files": [{"path": "data.csv", "sha256": "a"}], "errors": []}), encoding="utf-8")
+
+    result = compare_reports(before, after)
+    assert result["before"]["schema_version"] == "legacy"
+    assert result["after"]["schema_version"] == "legacy"
+    assert result["summary"]["unchanged_count"] == 1
+    assert result["summary"]["change_count"] == 0
+
+
+def test_compare_rejects_duplicate_paths(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+
+    report = tmp_path / "bad.json"
+    report.write_text(json.dumps({"files": [
+        {"path": "data.csv", "sha256": "a"},
+        {"path": "data.csv", "sha256": "b"},
+    ]}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Duplicate path"):
+        load_scan_report(report)
+
+
+def test_write_comparison_outputs_json_csv_and_html(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads, write_comparison
+
+    result = compare_payloads(
+        {"files": [{"path": "old.csv", "sha256": "a", "risk": "SAFE"}]},
+        {"files": [{"path": "new.csv", "sha256": "a", "risk": "SAFE"}]},
+    )
+    output = tmp_path / "comparison"
+    write_comparison(result, output)
+
+    assert (output / "comparison.json").exists()
+    assert (output / "changes.csv").exists()
+    assert (output / "comparison.html").exists()
+    payload = json.loads((output / "comparison.json").read_text(encoding="utf-8"))
+    assert payload["summary"]["moved_count"] == 1
+    with (output / "changes.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+    assert row["change_type"] == "MOVED"
+    assert row["before_path"] == "old.csv"
+    assert row["after_path"] == "new.csv"
+
+
+def test_cli_compare_command(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    from labvault_scout.cli import main
+
+    before = tmp_path / "before.json"
+    after = tmp_path / "after.json"
+    output = tmp_path / "compare-output"
+    before.write_text(json.dumps({"files": [{"path": "a.csv", "sha256": "a"}]}), encoding="utf-8")
+    after.write_text(json.dumps({"files": [{"path": "a.csv", "sha256": "b"}]}), encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "compare", str(before), str(after), "-o", str(output)])
+    main()
+
+    assert (output / "comparison.json").exists()
+    assert "Changes: 1" in capsys.readouterr().out
+
+
+def test_compare_does_not_call_duplicate_content_a_move():
+    from labvault_scout.compare import compare_payloads
+
+    before = {"files": [
+        {"path": "stable.csv", "sha256": "same"},
+        {"path": "old.csv", "sha256": "same"},
+    ]}
+    after = {"files": [
+        {"path": "stable.csv", "sha256": "same"},
+        {"path": "new.csv", "sha256": "same"},
+    ]}
+
+    result = compare_payloads(before, after)
+    assert result["summary"]["moved_count"] == 0
+    assert result["summary"]["added_count"] == 1
+    assert result["summary"]["removed_count"] == 1
+
+
+def test_compare_marks_results_partial_when_source_scan_has_errors(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads, write_comparison
+
+    before = {
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [{"path": "blocked", "error": "PermissionError"}],
+    }
+    after = {
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+
+    result = compare_payloads(before, after)
+    assert result["comparison_status"] == "PARTIAL"
+    assert result["before"]["error_count"] == 1
+    assert result["after"]["error_count"] == 0
+    assert result["warnings"]
+
+    output = tmp_path / "partial-comparison"
+    write_comparison(result, output)
+    page = (output / "comparison.html").read_text(encoding="utf-8")
+    assert "Status: PARTIAL" in page
+    assert "path additions/removals may be incomplete" in page
+
+
+def test_scan_paths_use_posix_separators_in_reports(tmp_path: Path):
+    source = tmp_path / "posix_source"
+    nested = source / "nested"
+    nested.mkdir(parents=True)
+    (nested / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "posix_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    assert payload["files"][0]["path"] == "nested/data.csv"
+    assert "\\" not in payload["files"][0]["path"]
+
+
+def test_inventory_fingerprint_is_stable_and_content_sensitive(tmp_path: Path):
+    source = tmp_path / "fingerprint_source"
+    source.mkdir()
+    (source / "b.csv").write_text("b\n", encoding="utf-8")
+    (source / "a.csv").write_text("a\n", encoding="utf-8")
+
+    first = tmp_path / "fingerprint_first"
+    second = tmp_path / "fingerprint_second"
+    scan(source, first)
+    scan(source, second)
+
+    first_payload = json.loads((first / "scan.json").read_text(encoding="utf-8"))
+    second_payload = json.loads((second / "scan.json").read_text(encoding="utf-8"))
+    first_hash = first_payload["summary"]["inventory_sha256"]
+    second_hash = second_payload["summary"]["inventory_sha256"]
+
+    assert len(first_hash) == 64
+    assert first_hash == second_hash
+
+    (source / "a.csv").write_text("changed\n", encoding="utf-8")
+    third = tmp_path / "fingerprint_third"
+    scan(source, third)
+    third_payload = json.loads((third / "scan.json").read_text(encoding="utf-8"))
+    assert third_payload["summary"]["inventory_sha256"] != first_hash
+
+
+def test_comparison_carries_inventory_fingerprints(tmp_path: Path):
+    from labvault_scout.compare import compare_reports
+
+    source = tmp_path / "fingerprint_compare_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    before_dir = tmp_path / "fingerprint_compare_before"
+    after_dir = tmp_path / "fingerprint_compare_after"
+    scan(source, before_dir)
+    scan(source, after_dir)
+
+    result = compare_reports(before_dir / "scan.json", after_dir / "scan.json")
+    assert result["before"]["inventory_sha256"]
+    assert result["before"]["inventory_sha256"] == result["after"]["inventory_sha256"]
+
+
+def test_compare_reports_priority_escalation_and_deescalation():
+    from labvault_scout.compare import compare_payloads
+
+    before = {"files": [
+        {"path": "up.jnb", "sha256": "a", "priority": "MEDIUM", "priority_score": 60},
+        {"path": "down.jnb", "sha256": "b", "priority": "HIGH", "priority_score": 90},
+    ]}
+    after = {"files": [
+        {"path": "up.jnb", "sha256": "a", "priority": "HIGH", "priority_score": 80},
+        {"path": "down.jnb", "sha256": "b", "priority": "MEDIUM", "priority_score": 50},
+    ]}
+
+    result = compare_payloads(before, after)
+    assert result["summary"]["priority_escalated_count"] == 1
+    assert result["summary"]["priority_deescalated_count"] == 1
+
+    by_path = {item["after_path"]: item for item in result["changes"]}
+    assert by_path["up.jnb"]["priority_direction"] == "ESCALATED"
+    assert by_path["up.jnb"]["priority_delta"] == 20
+    assert by_path["down.jnb"]["priority_direction"] == "DEESCALATED"
+    assert by_path["down.jnb"]["priority_delta"] == -40
+
+
+def test_compare_metrics_delta_for_legacy_and_current_rows():
+    from labvault_scout.compare import compare_payloads
+
+    before = {"files": [
+        {"path": "a.csv", "sha256": "a", "size": 10, "risk": "SAFE", "priority": "LOW"},
+        {"path": "b.jnb", "sha256": "b", "size": 20, "risk": "RESCUE", "priority": "HIGH"},
+    ]}
+    after = {"files": [
+        {"path": "a.csv", "sha256": "a", "size": 15, "risk": "WATCH", "priority": "MEDIUM"},
+        {"path": "c.csv", "sha256": "c", "size": 30, "risk": "SAFE", "priority": "LOW"},
+        {"path": "d.csv", "sha256": "d", "size": 5, "risk": "SAFE", "priority": "LOW"},
+    ]}
+
+    result = compare_payloads(before, after)
+    assert result["before"]["metrics"] == {
+        "file_count": 2,
+        "total_bytes": 30,
+        "risk_counts": {"RESCUE": 1, "SAFE": 1},
+        "priority_counts": {"HIGH": 1, "LOW": 1},
+    }
+    assert result["metrics_delta"] == {
+        "file_count": 1,
+        "total_bytes": 20,
+        "risk_counts": {"RESCUE": -1, "SAFE": 1, "WATCH": 1},
+        "priority_counts": {"HIGH": -1, "LOW": 1, "MEDIUM": 1},
+    }
+
+
+def test_comparison_exit_codes():
+    from labvault_scout.compare import comparison_exit_code
+
+    assert comparison_exit_code({
+        "comparison_status": "COMPLETE",
+        "summary": {"change_count": 0},
+    }) == 0
+    assert comparison_exit_code({
+        "comparison_status": "COMPLETE",
+        "summary": {"change_count": 3},
+    }) == 1
+    assert comparison_exit_code({
+        "comparison_status": "PARTIAL",
+        "summary": {"change_count": 0},
+    }) == 2
+
+
+def test_cli_compare_exit_code_is_opt_in(tmp_path: Path, monkeypatch):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    before = tmp_path / "before-exit.json"
+    after = tmp_path / "after-exit.json"
+    output = tmp_path / "compare-exit-output"
+    before.write_text(json.dumps({"files": [{"path": "a.csv", "sha256": "a"}]}), encoding="utf-8")
+    after.write_text(json.dumps({"files": [{"path": "a.csv", "sha256": "b"}]}), encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", [
+        "labvault-scout", "compare", str(before), str(after), "-o", str(output), "--exit-code"
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+
+    monkeypatch.setattr(sys, "argv", [
+        "labvault-scout", "compare", str(after), str(after), "-o", str(output), "--exit-code"
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+
+
+def test_cli_compare_partial_exit_code_is_two(tmp_path: Path, monkeypatch):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    before = tmp_path / "partial-before.json"
+    after = tmp_path / "partial-after.json"
+    output = tmp_path / "partial-exit-output"
+    before.write_text(json.dumps({
+        "files": [{"path": "a.csv", "sha256": "a"}],
+        "errors": [{"path": "blocked", "error": "PermissionError"}],
+    }), encoding="utf-8")
+    after.write_text(json.dumps({
+        "files": [{"path": "a.csv", "sha256": "a"}],
+        "errors": [],
+    }), encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", [
+        "labvault-scout", "compare", str(before), str(after), "-o", str(output), "--exit-code"
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+
+
+def test_compare_normalizes_legacy_windows_paths_against_v03_paths():
+    from labvault_scout.compare import compare_payloads
+
+    before = {
+        "files": [{"path": "nested\\data.csv", "sha256": "same", "size": 1}],
+        "errors": [],
+    }
+    after = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.0.dev0"},
+        "files": [{"path": "nested/data.csv", "sha256": "same", "size": 1}],
+        "errors": [],
+    }
+
+    result = compare_payloads(before, after)
+    assert result["summary"]["change_count"] == 0
+    assert result["summary"]["unchanged_count"] == 1
+    assert result["before"]["legacy_paths_normalized"] is True
+    assert result["after"]["legacy_paths_normalized"] is False
+    assert any("backslash paths" in warning for warning in result["warnings"])
+
+
+def test_compare_rejects_ambiguous_legacy_path_normalization():
+    import pytest
+    from labvault_scout.compare import compare_payloads
+
+    before = {
+        "files": [
+            {"path": "nested\\data.csv", "sha256": "a"},
+            {"path": "nested/data.csv", "sha256": "b"},
+        ]
+    }
+    after = {"schema_version": "1", "files": []}
+
+    with pytest.raises(ValueError, match="Path collision after legacy normalization"):
+        compare_payloads(before, after)
+
+
+def test_compare_large_inventory_is_deterministic_without_timing_threshold():
+    from labvault_scout.compare import compare_payloads
+
+    before_rows = [
+        {
+            "path": f"data/file_{index:04d}.csv",
+            "sha256": f"hash-{index:04d}",
+            "size": index + 1,
+            "risk": "SAFE",
+            "priority": "LOW",
+            "priority_score": 0,
+        }
+        for index in range(1000)
+    ]
+    after_rows = [dict(row) for row in before_rows]
+
+    after_rows[500]["sha256"] = "changed-hash"
+    moved = after_rows.pop(999)
+    moved["path"] = "archive/file_0999.csv"
+    after_rows.append(moved)
+
+    first = compare_payloads({"files": before_rows}, {"files": after_rows})
+    second = compare_payloads(
+        {"files": list(reversed(before_rows))},
+        {"files": list(reversed(after_rows))},
+    )
+
+    assert first == second
+    assert first["summary"]["content_changed_count"] == 1
+    assert first["summary"]["moved_count"] == 1
+    assert first["summary"]["unchanged_count"] == 998
+    assert first["summary"]["change_count"] == 2
+
+
+def test_compare_unknown_scan_schema_is_partial_and_exit_code_two():
+    from labvault_scout.compare import compare_payloads, comparison_exit_code
+
+    before = {
+        "schema_version": "99",
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+    after = {
+        "schema_version": "1",
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+
+    result = compare_payloads(before, after)
+    assert result["comparison_status"] == "PARTIAL"
+    assert result["before"]["schema_supported"] is False
+    assert result["after"]["schema_supported"] is True
+    assert any("unsupported scan schema" in warning for warning in result["warnings"])
+    assert comparison_exit_code(result) == 2
+
+
+def test_compare_legacy_schema_remains_supported():
+    from labvault_scout.compare import compare_payloads
+
+    result = compare_payloads(
+        {"files": [{"path": "data.csv", "sha256": "same"}], "errors": []},
+        {"files": [{"path": "data.csv", "sha256": "same"}], "errors": []},
+    )
+
+    assert result["comparison_status"] == "COMPLETE"
+    assert result["before"]["schema_version"] == "legacy"
+    assert result["before"]["schema_supported"] is True
+
+
+def test_rules_fingerprint_is_deterministic_and_sensitive():
+    from labvault_scout.risk import rules_sha256
+
+    first = {
+        ".csv": {"risk": "SAFE", "name": "CSV"},
+        ".jnb": {"risk": "RESCUE", "name": "SigmaPlot"},
+    }
+    reordered = {
+        ".jnb": {"name": "SigmaPlot", "risk": "RESCUE"},
+        ".csv": {"name": "CSV", "risk": "SAFE"},
+    }
+    changed = {
+        ".csv": {"risk": "WATCH", "name": "CSV"},
+        ".jnb": {"risk": "RESCUE", "name": "SigmaPlot"},
+    }
+
+    assert rules_sha256(first) == rules_sha256(reordered)
+    assert rules_sha256(first) != rules_sha256(changed)
+
+
+def test_scan_json_records_non_sensitive_provenance(tmp_path: Path):
+    source = tmp_path / "provenance_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "provenance_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    provenance = payload["provenance"]
+
+    assert provenance["hash_algorithm"] == "sha256"
+    assert provenance["path_style"] == "relative-posix"
+    assert provenance["source_access"] == "read-only"
+    assert provenance["rules_count"] > 0
+    assert len(provenance["rules_sha256"]) == 64
+    assert str(source) not in json.dumps(provenance)
+
+
+def test_compare_reports_rule_context_status():
+    from labvault_scout.compare import compare_payloads
+
+    base = {
+        "schema_version": "1",
+        "provenance": {"rules_sha256": "a" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+    same = {
+        "schema_version": "1",
+        "provenance": {"rules_sha256": "a" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+    changed = {
+        "schema_version": "1",
+        "provenance": {"rules_sha256": "b" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
+        "files": [{"path": "data.csv", "sha256": "same"}],
+        "errors": [],
+    }
+
+    same_result = compare_payloads(base, same)
+    assert same_result["rules_status"] == "SAME"
+    assert not any("Rule-set fingerprint changed" in warning for warning in same_result["warnings"])
+
+    changed_result = compare_payloads(base, changed)
+    assert changed_result["comparison_status"] == "COMPLETE"
+    assert changed_result["rules_status"] == "CHANGED"
+    assert any("Rule-set fingerprint changed" in warning for warning in changed_result["warnings"])
+
+
+def test_compare_legacy_rule_context_is_unknown():
+    from labvault_scout.compare import compare_payloads
+
+    result = compare_payloads(
+        {"files": [{"path": "data.csv", "sha256": "same"}], "errors": []},
+        {"files": [{"path": "data.csv", "sha256": "same"}], "errors": []},
+    )
+
+    assert result["rules_status"] == "UNKNOWN"
+
+
+def test_report_integrity_status_verifies_v03_inventory(tmp_path: Path):
+    from labvault_scout.compare import load_scan_report, report_integrity_status
+
+    source = tmp_path / "integrity_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "integrity_report"
+    scan(source, output)
+
+    payload = load_scan_report(output / "scan.json")
+    assert report_integrity_status(payload) == "VERIFIED"
+
+
+def test_compare_marks_tampered_inventory_partial(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads, comparison_exit_code
+
+    source = tmp_path / "tamper_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "tamper_report"
+    scan(source, output)
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    tampered = json.loads(json.dumps(original))
+    tampered["files"][0]["sha256"] = "0" * 64
+
+    result = compare_payloads(original, tampered)
+    assert result["before"]["integrity_status"] == "VERIFIED"
+    assert result["after"]["integrity_status"] == "MISMATCH"
+    assert result["comparison_status"] == "PARTIAL"
+    assert any("fingerprint validation" in warning for warning in result["warnings"])
+    assert comparison_exit_code(result) == 2
+
+
+def test_legacy_report_integrity_is_unknown_not_failure():
+    from labvault_scout.compare import compare_payloads
+
+    legacy = {
+        "files": [{"path": "data.csv", "size": 1, "sha256": "same"}],
+        "errors": [],
+    }
+    result = compare_payloads(legacy, legacy)
+    assert result["before"]["integrity_status"] == "UNKNOWN"
+    assert result["comparison_status"] == "COMPLETE"
+
+
+def test_report_integrity_detects_tampered_summary(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads
+
+    source = tmp_path / "summary_tamper_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "summary_tamper_report"
+    scan(source, output)
+
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    tampered = json.loads(json.dumps(original))
+    tampered["summary"]["file_count"] = 999
+
+    result = compare_payloads(original, tampered)
+    assert result["before"]["integrity_status"] == "VERIFIED"
+    assert result["after"]["integrity_status"] == "MISMATCH"
+    assert result["comparison_status"] == "PARTIAL"
+
+
+def test_report_integrity_detects_tampered_error_count(tmp_path: Path):
+    from labvault_scout.compare import report_integrity_status
+
+    source = tmp_path / "error_count_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "error_count_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["summary"]["error_count"] = 5
+    assert report_integrity_status(payload) == "MISMATCH"
+
+
+def test_verify_report_statuses(tmp_path: Path):
+    from labvault_scout.compare import load_scan_report, verify_report
+
+    source = tmp_path / "verify_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "verify_report"
+    scan(source, output)
+
+    payload = load_scan_report(output / "scan.json")
+    verified = verify_report(payload)
+    assert verified["status"] == "VERIFIED"
+    assert verified["exit_code"] == 0
+
+    legacy = verify_report({
+        "files": [{"path": "data.csv", "size": 1, "sha256": "same"}],
+        "errors": [],
+    })
+    assert legacy["status"] == "UNKNOWN"
+    assert legacy["exit_code"] == 1
+
+    tampered = json.loads(json.dumps(payload))
+    tampered["summary"]["file_count"] = 999
+    failed = verify_report(tampered)
+    assert failed["status"] == "FAILED"
+    assert failed["exit_code"] == 2
+
+    future = json.loads(json.dumps(payload))
+    future["schema_version"] = "99"
+    unsupported = verify_report(future)
+    assert unsupported["status"] == "UNSUPPORTED"
+    assert unsupported["exit_code"] == 2
+
+
+def test_cli_verify_report_exit_codes(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    source = tmp_path / "verify_cli_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "verify_cli_report"
+    scan(source, output)
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(output / "scan.json")])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+    assert "Report verification: VERIFIED" in capsys.readouterr().out
+
+    legacy_path = tmp_path / "legacy.json"
+    legacy_path.write_text(json.dumps({
+        "files": [{"path": "data.csv", "size": 1, "sha256": "same"}],
+        "errors": [],
+    }), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(legacy_path)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+
+
+def test_scan_json_has_deterministic_full_report_checksum(tmp_path: Path):
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "checksum_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "checksum_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert len(payload["report_sha256"]) == 64
+    assert payload["report_sha256"] == report_payload_sha256(payload)
+
+
+def test_report_checksum_detects_assessment_field_tampering(tmp_path: Path):
+    from labvault_scout.compare import report_integrity_status
+
+    source = tmp_path / "assessment_tamper_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "assessment_tamper_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert report_integrity_status(payload) == "VERIFIED"
+
+    payload["files"][0]["risk"] = "RESCUE"
+    assert report_integrity_status(payload) == "MISMATCH"
+
+
+def test_report_checksum_detects_provenance_tampering(tmp_path: Path):
+    from labvault_scout.compare import report_integrity_status
+
+    source = tmp_path / "provenance_tamper_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "provenance_tamper_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["provenance"]["rules_sha256"] = "0" * 64
+    assert report_integrity_status(payload) == "MISMATCH"
+
+
+def test_cli_verify_json_output(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    source = tmp_path / "verify_json_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "verify_json_report"
+    scan(source, output)
+
+    monkeypatch.setattr(sys, "argv", [
+        "labvault-scout", "verify", str(output / "scan.json"), "--json"
+    ])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "VERIFIED"
+    assert payload["integrity_status"] == "VERIFIED"
+    assert payload["schema_supported"] is True
+    assert len(payload["report_sha256"]) == 64
+
+
+def test_verify_unknown_schema_takes_precedence_over_checksum_mismatch(tmp_path: Path):
+    from labvault_scout.compare import verify_report
+
+    source = tmp_path / "schema_precedence_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "schema_precedence_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["schema_version"] = "99"
+    result = verify_report(payload)
+
+    assert result["status"] == "UNSUPPORTED"
+    assert result["exit_code"] == 2
+    assert result["schema_supported"] is False
+    assert result["integrity_status"] == "MISMATCH"
+
+
+def test_schema1_loader_rejects_noncanonical_and_parent_paths(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+
+    source = tmp_path / "strict_path_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_path_report"
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    for bad_path in ("/absolute/data.csv", "../escape.csv", "nested/../escape.csv", "./data.csv", "nested//data.csv"):
+        mutated = json.loads(json.dumps(payload))
+        mutated["files"][0]["path"] = bad_path
+        report = tmp_path / ("bad-path-" + str(abs(hash(bad_path))) + ".json")
+        report.write_text(json.dumps(mutated), encoding="utf-8")
+        with pytest.raises(ValueError, match="Report path|canonical POSIX"):
+            load_scan_report(report)
+
+
+def test_schema1_loader_rejects_invalid_hash_size_and_required_fields(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+
+    source = tmp_path / "strict_fields_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_fields_report"
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    cases = []
+    bad_hash = json.loads(json.dumps(payload))
+    bad_hash["files"][0]["sha256"] = "not-a-sha256"
+    cases.append((bad_hash, "invalid sha256"))
+
+    bad_size = json.loads(json.dumps(payload))
+    bad_size["files"][0]["size"] = -1
+    cases.append((bad_size, "invalid size"))
+
+    missing = json.loads(json.dumps(payload))
+    del missing["files"][0]["risk"]
+    cases.append((missing, "missing fields"))
+
+    bad_priority = json.loads(json.dumps(payload))
+    bad_priority["files"][0]["priority_score"] = 101
+    cases.append((bad_priority, "invalid priority_score"))
+
+    for index, (case, message) in enumerate(cases):
+        report = tmp_path / f"bad-fields-{index}.json"
+        report.write_text(json.dumps(case), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            load_scan_report(report)
+
+
+def test_schema1_loader_rejects_invalid_error_paths(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+
+    source = tmp_path / "strict_error_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_error_report"
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["errors"] = [{"path": "../outside", "error": "PermissionError"}]
+
+    report = tmp_path / "bad-error-path.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="must not traverse parents"):
+        load_scan_report(report)
+
+
+def test_legacy_loader_remains_lenient_for_minimal_rows(tmp_path: Path):
+    from labvault_scout.compare import load_scan_report
+
+    report = tmp_path / "legacy-minimal.json"
+    report.write_text(json.dumps({
+        "files": [{"path": "data.csv", "sha256": "legacy"}],
+        "errors": [],
+    }), encoding="utf-8")
+
+    payload = load_scan_report(report)
+    assert payload["files"][0]["sha256"] == "legacy"
+
+
+def test_unknown_future_schema_uses_minimum_validation_only(tmp_path: Path):
+    from labvault_scout.compare import load_scan_report, verify_report
+
+    report = tmp_path / "future.json"
+    report.write_text(json.dumps({
+        "schema_version": "99",
+        "files": [{"path": "data.csv", "future_field": {"anything": True}}],
+        "errors": [],
+    }), encoding="utf-8")
+
+    payload = load_scan_report(report)
+    result = verify_report(payload)
+    assert result["status"] == "UNSUPPORTED"
+    assert result["exit_code"] == 2
+
+
+def test_cli_verify_invalid_report_is_concise_and_json_capable(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    bad = tmp_path / "invalid-report.json"
+    bad.write_text('{"schema_version":"1","files":[]}', encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+
+
+def test_cli_compare_invalid_report_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    bad = tmp_path / "bad-compare.json"
+    good = tmp_path / "good-legacy.json"
+    bad.write_text('{"schema_version":"1","files":[]}', encoding="utf-8")
+    good.write_text(json.dumps({"files": [{"path": "data.csv", "sha256": "x"}], "errors": []}), encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "compare", str(bad), str(good)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+
+def test_packaged_json_schemas_are_available_and_parseable():
+    from labvault_scout.schema_registry import load_schema_text
+    from labvault_scout.report import FIELDS
+
+    scan_schema = json.loads(load_schema_text("scan"))
+    comparison_schema = json.loads(load_schema_text("comparison"))
+    verification_schema = json.loads(load_schema_text("verification"))
+
+    assert scan_schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert scan_schema["properties"]["schema_version"]["const"] == "1"
+    assert set(scan_schema["properties"]["files"]["items"]["required"]) == set(FIELDS)
+    assert comparison_schema["properties"]["schema_version"]["const"] == "1"
+    assert verification_schema["oneOf"]
+
+
+def test_cli_schema_outputs_packaged_schema(monkeypatch, capsys):
+    import sys
+    from labvault_scout.cli import main
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "schema", "scan"])
+    main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["title"] == "LabVault Scout scan report schema 1"
+
+
+def test_all_schema_registry_entries_load():
+    from labvault_scout.schema_registry import SCHEMA_FILES, load_schema_text
+
+    assert set(SCHEMA_FILES) == {"scan", "comparison", "verification", "bundle"}
+    for kind in SCHEMA_FILES:
+        assert json.loads(load_schema_text(kind))["$schema"].endswith("/2020-12/schema")
+
+
+def test_netcdf_classic_family_header_evidence():
+    from labvault_scout.identifier import netcdf_container_from_header, signature_from_head
+
+    cases = {
+        b"CDF\x01" + b"\x00" * 4: "NetCDF CDF-1",
+        b"CDF\x02" + b"\x00" * 4: "NetCDF CDF-2",
+        b"CDF\x05" + b"\x00" * 4: "NetCDF CDF-5",
+    }
+    for header, label in cases.items():
+        assert signature_from_head(header) == "NETCDF"
+        assert netcdf_container_from_header(header) == label
+
+
+def test_netcdf_classic_scan_is_verified(tmp_path: Path):
+    source = tmp_path / "netcdf_source"
+    source.mkdir()
+    (source / "climate.nc").write_bytes(b"CDF\x01" + b"\x00" * 32)
+    output = tmp_path / "netcdf_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "NetCDF"
+    assert row["signature"] == "NETCDF"
+    assert row["container_type"] == "NetCDF CDF-1"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_netcdf_hdf5_container_is_conservative(tmp_path: Path):
+    source = tmp_path / "netcdf4_source"
+    source.mkdir()
+    header = bytes.fromhex("894844460D0A1A0A") + bytes([2]) + b"\x00" * 64
+    (source / "modern.nc").write_bytes(header)
+    output = tmp_path / "netcdf4_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "HDF5"
+    assert row["container_type"] == "HDF5 superblock v2"
+    assert row["signature_status"] == "container-only: HDF5"
+    assert row["confidence"] == "MEDIUM"
+
+
+def test_netcdf_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "bad_netcdf_source"
+    source.mkdir()
+    (source / "fake.nc").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "bad_netcdf_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["signature_status"] == "mismatch: expected NetCDF/HDF5, detected PDF"
+    assert row["confidence"] == "LOW"
+
+
+def test_tiff_classic_and_bigtiff_header_evidence():
+    from labvault_scout.identifier import signature_from_head, tiff_container_from_header
+
+    classic_le = bytes.fromhex("49492A00") + (8).to_bytes(4, "little")
+    classic_be = bytes.fromhex("4D4D002A") + (8).to_bytes(4, "big")
+    big_le = bytes.fromhex("49492B00") + (8).to_bytes(2, "little") + b"\x00\x00" + (16).to_bytes(8, "little")
+
+    assert signature_from_head(classic_le) == "TIFF"
+    assert tiff_container_from_header(classic_le) == "TIFF classic (little-endian)"
+    assert tiff_container_from_header(classic_be) == "TIFF classic (big-endian)"
+    assert tiff_container_from_header(big_le) == "BigTIFF (little-endian)"
+
+
+def test_tiff_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "tiff_source"
+    source.mkdir()
+    (source / "image.tif").write_bytes(bytes.fromhex("49492A00") + (8).to_bytes(4, "little") + b"\x00" * 32)
+    output = tmp_path / "tiff_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "TIFF classic (little-endian)"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_truncated_bigtiff_is_reviewed(tmp_path: Path):
+    source = tmp_path / "bad_tiff_source"
+    source.mkdir()
+    (source / "broken.tiff").write_bytes(bytes.fromhex("49492B00"))
+    output = tmp_path / "bad_tiff_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "Truncated BigTIFF container"
+    assert row["signature_status"] == "unverified: expected TIFF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def _valid_fits_bytes(simple_value: bytes = b"T") -> bytes:
+    block = bytearray(b" " * 2880)
+    block[0:30] = b"SIMPLE  =                    " + simple_value
+    block[80:110] = b"BITPIX  =                    8"
+    block[160:190] = b"NAXIS   =                    0"
+    block[240:243] = b"END"
+    return bytes(block)
+
+
+def test_fits_primary_header_is_verified(tmp_path: Path):
+    source = tmp_path / "fits_source"
+    source.mkdir()
+    (source / "spectrum.fits").write_bytes(_valid_fits_bytes())
+    output = tmp_path / "fits_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "FITS"
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "FITS primary HDU (SIMPLE=T)"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+    assert row["recommended_action"] == "KEEP"
+
+
+def test_fits_simple_false_is_nonconforming_and_reviewed(tmp_path: Path):
+    source = tmp_path / "fits_false_source"
+    source.mkdir()
+    (source / "nonconforming.fits").write_bytes(_valid_fits_bytes(b"F"))
+    output = tmp_path / "fits_false_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "Nonconforming FITS (SIMPLE=F)"
+    assert row["signature_status"] == "unverified: expected FITS structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fits_invalid_block_size_is_reviewed(tmp_path: Path):
+    source = tmp_path / "fits_bad_block_source"
+    source.mkdir()
+    data = bytearray(_valid_fits_bytes())
+    data.extend(b"x")
+    (source / "badblock.fits").write_bytes(data)
+    output = tmp_path / "fits_bad_block_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["container_type"] == "Invalid FITS block size"
+    assert row["signature_status"] == "unverified: expected FITS structure"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fits_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "fake_fits_source"
+    source.mkdir()
+    (source / "fake.fits").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "fake_fits_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["signature_status"] == "mismatch: expected FITS, detected PDF"
+    assert row["confidence"] == "LOW"
+
+
+def _matlab5_header(endian: bytes = b"IM") -> bytes:
+    header = bytearray(b" " * 128)
+    text = b"MATLAB 5.0 MAT-file, Platform: GLNXA64, Created by LabVault Scout test"
+    header[:len(text)] = text
+    header[124:126] = b"\x00\x01"
+    header[126:128] = endian
+    return bytes(header)
+
+
+def test_matlab5_header_evidence():
+    from labvault_scout.identifier import matlab5_container_from_header, signature_from_head
+
+    little = _matlab5_header(b"IM")
+    big = _matlab5_header(b"MI")
+
+    assert signature_from_head(little) == "MAT5"
+    assert matlab5_container_from_header(little) == "MATLAB Level 5 MAT-file (little-endian)"
+    assert matlab5_container_from_header(big) == "MATLAB Level 5 MAT-file (big-endian)"
+
+
+def test_matlab5_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "mat5_source"
+    source.mkdir()
+    (source / "experiment.mat").write_bytes(_matlab5_header() + b"\x00" * 64)
+    output = tmp_path / "mat5_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "MATLAB Data"
+    assert row["signature"] == "MAT5"
+    assert row["container_type"] == "MATLAB Level 5 MAT-file (little-endian)"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_matlab_hdf5_container_remains_conservative(tmp_path: Path):
+    source = tmp_path / "mat_hdf5_source"
+    source.mkdir()
+    header = bytes.fromhex("894844460D0A1A0A") + bytes([2]) + b"\x00" * 64
+    (source / "modern.mat").write_bytes(header)
+    output = tmp_path / "mat_hdf5_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "HDF5"
+    assert row["container_type"] == "HDF5 superblock v2"
+    assert row["signature_status"] == "container-only: HDF5"
+    assert row["confidence"] == "MEDIUM"
+
+
+def test_matlab_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "bad_mat_source"
+    source.mkdir()
+    (source / "fake.mat").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "bad_mat_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["signature_status"] == "mismatch: expected MATLAB Level 5/HDF5, detected PDF"
+    assert row["confidence"] == "LOW"
+
+
+def test_truncated_matlab5_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_mat_source"
+    source.mkdir()
+    (source / "broken.mat").write_bytes(b"MATLAB 5.0 MAT-file")
+    output = tmp_path / "truncated_mat_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "MAT5"
+    assert row["container_type"] == "Truncated MATLAB Level 5 header"
+    assert row["signature_status"] == "unverified: expected MATLAB Level 5 structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def _dicom_part10_bytes() -> bytes:
+    return b"\x00" * 128 + b"DICM" + b"\x00" * 64
+
+
+def test_dicom_part10_header_evidence():
+    from labvault_scout.identifier import dicom_container_from_header, signature_from_head
+
+    data = _dicom_part10_bytes()
+    assert signature_from_head(data) == "DICOM"
+    assert dicom_container_from_header(data) == "DICOM Part 10 file"
+
+
+def test_dicom_part10_scan_is_verified(tmp_path: Path):
+    source = tmp_path / "dicom_source"
+    source.mkdir()
+    (source / "image.dcm").write_bytes(_dicom_part10_bytes())
+    output = tmp_path / "dicom_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "DICOM"
+    assert row["signature"] == "DICOM"
+    assert row["container_type"] == "DICOM Part 10 file"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_dicom_without_part10_marker_is_unverified_not_claimed_valid(tmp_path: Path):
+    source = tmp_path / "dicom_no_marker_source"
+    source.mkdir()
+    (source / "legacy.dcm").write_bytes(b"\x00" * 256)
+    output = tmp_path / "dicom_no_marker_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == ""
+    assert row["container_type"] == "DICOM Part 10 marker not found"
+    assert row["signature_status"] == "unverified: expected DICOM Part 10"
+    assert row["confidence"] == "LOW"
+
+
+def test_dicom_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "bad_dicom_source"
+    source.mkdir()
+    (source / "fake.dcm").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "bad_dicom_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["signature_status"] == "mismatch: expected DICOM Part 10, detected PDF"
+    assert row["confidence"] == "LOW"
+
+
+def test_truncated_dicom_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_dicom_source"
+    source.mkdir()
+    (source / "short.dcm").write_bytes(b"\x00" * 64)
+    output = tmp_path / "truncated_dicom_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["container_type"] == "Truncated DICOM Part 10 header"
+    assert row["signature_status"] == "unverified: expected DICOM Part 10"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_scan_writes_bundle_manifest_covering_core_outputs(tmp_path: Path):
+    from labvault_scout.bundle import BUNDLE_FILES, load_bundle_manifest
+
+    source = tmp_path / "bundle_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_report"
+
+    scan(source, output)
+    manifest = load_bundle_manifest(output)
+
+    assert (output / "bundle_manifest.json").exists()
+    assert {entry["path"] for entry in manifest["files"]} == set(BUNDLE_FILES)
+    assert len(manifest["manifest_sha256"]) == 64
+
+
+def test_verify_bundle_succeeds_and_detects_tampering(tmp_path: Path):
+    from labvault_scout.bundle import verify_bundle
+
+    source = tmp_path / "bundle_verify_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_verify_report"
+    scan(source, output)
+
+    result = verify_bundle(output)
+    assert result["status"] == "VERIFIED"
+    assert result["exit_code"] == 0
+    assert result["checked_files"] == 5
+    assert result["problems"] == []
+
+    (output / "report.html").write_text("tampered", encoding="utf-8")
+    result = verify_bundle(output)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert result["problems"][0]["path"] == "report.html"
+
+
+def test_verify_bundle_detects_missing_core_file(tmp_path: Path):
+    from labvault_scout.bundle import verify_bundle
+
+    source = tmp_path / "bundle_missing_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_missing_report"
+    scan(source, output)
+
+    (output / "duplicates.csv").unlink()
+    result = verify_bundle(output)
+    assert result["status"] == "FAILED"
+    assert {"path": "duplicates.csv", "issue": "MISSING"} in result["problems"]
+
+
+def test_bundle_manifest_checksum_detects_manifest_tampering(tmp_path: Path):
+    import pytest
+    from labvault_scout.bundle import load_bundle_manifest
+
+    source = tmp_path / "bundle_manifest_tamper_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_manifest_tamper_report"
+    scan(source, output)
+
+    path = output / "bundle_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["files"][0]["size"] += 1
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        load_bundle_manifest(output)
+
+
+def test_bundle_manifest_rejects_path_traversal(tmp_path: Path):
+    import pytest
+    from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+
+    source = tmp_path / "bundle_path_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_path_report"
+    scan(source, output)
+
+    path = output / "bundle_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["files"][0]["path"] = "../scan.json"
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsafe bundle manifest path"):
+        load_bundle_manifest(output)
+
+
+def test_cli_verify_bundle_and_json_output(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    source = tmp_path / "bundle_cli_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_cli_report"
+    scan(source, output)
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "VERIFIED"
+    assert payload["checked_files"] == 5
+
+
+def test_bundle_schema_is_packaged():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("bundle"))
+    assert schema["title"] == "LabVault Scout bundle manifest schema 1"
+    assert schema["properties"]["schema_version"]["const"] == "1"
+
+
+def test_bundle_manifest_rejects_extra_top_level_fields(tmp_path: Path):
+    import pytest
+    from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+
+    source = tmp_path / "bundle_extra_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_extra_report"
+    scan(source, output)
+
+    path = output / "bundle_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["unexpected"] = True
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid top-level fields"):
+        load_bundle_manifest(output)
+
+
+def test_bundle_manifest_rejects_empty_tool_version(tmp_path: Path):
+    import pytest
+    from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+
+    source = tmp_path / "bundle_tool_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_tool_report"
+    scan(source, output)
+
+    path = output / "bundle_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["tool"]["version"] = ""
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest tool metadata"):
+        load_bundle_manifest(output)
+
+
+def test_verify_bundle_rejects_symlinked_core_artifact_when_supported(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.bundle import verify_bundle
+
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are not supported")
+
+    source = tmp_path / "bundle_symlink_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_symlink_report"
+    scan(source, output)
+
+    report = output / "report.html"
+    outside = tmp_path / "outside.html"
+    outside.write_text(report.read_text(encoding="utf-8"), encoding="utf-8")
+    report.unlink()
+    try:
+        os.symlink(outside, report)
+    except OSError:
+        pytest.skip("symlink creation is unavailable in this environment")
+
+    result = verify_bundle(output)
+    assert {"path": "report.html", "issue": "SYMLINK"} in result["problems"]
+    assert result["status"] == "FAILED"
+
+
+def test_generated_machine_outputs_match_packaged_schema_field_contracts(tmp_path: Path):
+    from labvault_scout.bundle import load_bundle_manifest
+    from labvault_scout.compare import compare_reports, load_scan_report, verify_report
+    from labvault_scout.schema_registry import load_schema_text
+
+    def assert_exact_fields(payload, schema):
+        assert set(payload) == set(schema["required"])
+        assert set(payload) == set(schema["properties"])
+
+    source = tmp_path / "contract_source"
+    source.mkdir()
+    data = source / "data.csv"
+    data.write_text("x\n1\n", encoding="utf-8")
+
+    before_dir = tmp_path / "contract_before"
+    scan(source, before_dir)
+
+    data.write_text("x\n2\n", encoding="utf-8")
+    after_dir = tmp_path / "contract_after"
+    scan(source, after_dir)
+
+    scan_payload = json.loads((after_dir / "scan.json").read_text(encoding="utf-8"))
+    scan_schema = json.loads(load_schema_text("scan"))
+    assert_exact_fields(scan_payload, scan_schema)
+    assert_exact_fields(scan_payload["tool"], scan_schema["properties"]["tool"])
+    assert_exact_fields(scan_payload["provenance"], scan_schema["properties"]["provenance"])
+    assert_exact_fields(scan_payload["summary"], scan_schema["properties"]["summary"])
+    assert_exact_fields(scan_payload["files"][0], scan_schema["properties"]["files"]["items"])
+
+    comparison = compare_reports(before_dir / "scan.json", after_dir / "scan.json")
+    comparison_schema = json.loads(load_schema_text("comparison"))
+    assert_exact_fields(comparison, comparison_schema)
+    assert_exact_fields(comparison["before"], comparison_schema["properties"]["before"])
+    assert_exact_fields(comparison["after"], comparison_schema["properties"]["after"])
+    assert_exact_fields(comparison["metrics_delta"], comparison_schema["properties"]["metrics_delta"])
+    assert_exact_fields(comparison["summary"], comparison_schema["properties"]["summary"])
+    assert comparison["changes"]
+    assert_exact_fields(comparison["changes"][0], comparison_schema["properties"]["changes"]["items"])
+
+    verification = verify_report(load_scan_report(after_dir / "scan.json"))
+    verification_schema = json.loads(load_schema_text("verification"))["oneOf"][0]
+    assert_exact_fields(verification, verification_schema)
+
+    bundle = load_bundle_manifest(after_dir)
+    bundle_schema = json.loads(load_schema_text("bundle"))
+    assert_exact_fields(bundle, bundle_schema)
+    for entry in bundle["files"]:
+        assert_exact_fields(entry, bundle_schema["properties"]["files"]["items"])
+
+
+def test_schema1_runtime_validation_rejects_additional_properties(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "strict_schema_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_schema_report"
+    scan(source, output)
+
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    cases = []
+
+    top = json.loads(json.dumps(original))
+    top["unexpected"] = True
+    cases.append((top, "unexpected top-level fields"))
+
+    tool = json.loads(json.dumps(original))
+    tool["tool"]["unexpected"] = True
+    cases.append((tool, "invalid tool metadata"))
+
+    provenance = json.loads(json.dumps(original))
+    provenance["provenance"]["unexpected"] = True
+    cases.append((provenance, "invalid provenance metadata"))
+
+    summary = json.loads(json.dumps(original))
+    summary["summary"]["unexpected"] = 1
+    cases.append((summary, "invalid summary fields"))
+
+    file_row = json.loads(json.dumps(original))
+    file_row["files"][0]["unexpected"] = "x"
+    cases.append((file_row, "unexpected fields"))
+
+    for index, (payload, message) in enumerate(cases):
+        payload["report_sha256"] = report_payload_sha256(payload)
+        path = tmp_path / f"strict_case_{index}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            load_scan_report(path)
+
+
+def test_schema1_runtime_validation_rejects_invalid_summary_types(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "strict_summary_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_summary_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["summary"]["file_count"] = True
+    payload["report_sha256"] = report_payload_sha256(payload)
+    path = tmp_path / "bad_summary.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid summary file_count"):
+        load_scan_report(path)
+
+
+def test_schema1_runtime_validation_handles_non_string_enum_without_typeerror(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "strict_enum_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "strict_enum_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    payload["files"][0]["risk"] = ["SAFE"]
+    payload["report_sha256"] = report_payload_sha256(payload)
+    path = tmp_path / "bad_enum.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="non-string risk"):
+        load_scan_report(path)
+
+def _fcs_header(version: bytes = b"FCS3.2") -> bytes:
+    offsets = (58, 127, 128, 255, 0, 0)
+    return version + b"    " + b"".join(f"{value:>8}".encode("ascii") for value in offsets)
+
+
+def test_fcs_fixed_header_evidence():
+    from labvault_scout.identifier import fcs_container_from_header, signature_from_head
+
+    for version in (b"FCS2.0", b"FCS3.0", b"FCS3.1", b"FCS3.2"):
+        header = _fcs_header(version)
+        assert len(header) == 58
+        assert signature_from_head(header) == "FCS"
+        assert fcs_container_from_header(header, 256) == f"FCS {version[3:].decode('ascii')} fixed header"
+
+
+def test_fcs_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "fcs_source"
+    source.mkdir()
+    (source / "cells.fcs").write_bytes(_fcs_header() + b"/$TOT/1/" + b" " * 190)
+    output = tmp_path / "fcs_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["format"] == "Flow Cytometry Standard"
+    assert row["signature"] == "FCS"
+    assert row["container_type"] == "FCS 3.2 fixed header"
+    assert row["signature_status"] == "verified"
+
+
+def test_truncated_fcs_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_fcs_source"
+    source.mkdir()
+    (source / "broken.fcs").write_bytes(b"FCS3.2    ")
+    output = tmp_path / "truncated_fcs_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["signature"] == "FCS"
+    assert row["container_type"] == "Truncated FCS header"
+    assert row["signature_status"] == "unverified: expected FCS fixed header"
+
+
+def test_fcs_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "bad_fcs_source"
+    source.mkdir()
+    (source / "fake.fcs").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "bad_fcs_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["signature_status"] == "mismatch: expected FCS, detected PDF"
+
+def _spss_header(magic: bytes = b"$FL2", byteorder: str = "little") -> bytes:
+    header = bytearray(176)
+    header[:4] = magic
+    product = b"@(#) SPSS DATA FILE LabVault Scout synthetic test"
+    header[4:4 + len(product)] = product
+    header[64:68] = (2).to_bytes(4, byteorder, signed=True)
+    header[68:72] = (1).to_bytes(4, byteorder, signed=True)
+    compression = 2 if magic == b"$FL3" else 0
+    header[72:76] = compression.to_bytes(4, byteorder, signed=True)
+    header[76:80] = (0).to_bytes(4, byteorder, signed=True)
+    header[80:84] = (1).to_bytes(4, byteorder, signed=True)
+    return bytes(header)
+
+
+def test_spss_fixed_header_evidence():
+    from labvault_scout.identifier import signature_from_head, spss_container_from_header
+
+    sav = _spss_header(b"$FL2", "little")
+    zsav = _spss_header(b"$FL3", "big")
+    assert signature_from_head(sav) == "SPSS"
+    assert signature_from_head(zsav) == "SPSS"
+    assert spss_container_from_header(sav, 176) == "SPSS SAV $FL2 fixed header (little-endian)"
+    assert spss_container_from_header(zsav, 176) == "SPSS ZSAV $FL3 fixed header (big-endian)"
+
+
+def test_spss_sav_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "spss_sav_source"
+    source.mkdir()
+    (source / "survey.sav").write_bytes(_spss_header(b"$FL2"))
+    output = tmp_path / "spss_sav_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["format"] == "SPSS Data"
+    assert row["signature"] == "SPSS"
+    assert row["container_type"] == "SPSS SAV $FL2 fixed header (little-endian)"
+    assert row["signature_status"] == "verified"
+
+
+def test_spss_zsav_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "spss_zsav_source"
+    source.mkdir()
+    (source / "survey.zsav").write_bytes(_spss_header(b"$FL3"))
+    output = tmp_path / "spss_zsav_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["format"] == "SPSS ZSAV Data"
+    assert row["signature"] == "SPSS"
+    assert row["container_type"] == "SPSS ZSAV $FL3 fixed header (little-endian)"
+    assert row["signature_status"] == "verified"
+
+
+def test_spss_wrong_magic_for_extension_is_not_verified(tmp_path: Path):
+    source = tmp_path / "spss_wrong_magic_source"
+    source.mkdir()
+    (source / "wrong.sav").write_bytes(_spss_header(b"$FL3"))
+    output = tmp_path / "spss_wrong_magic_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
+
+
+def test_truncated_spss_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "spss_truncated_source"
+    source.mkdir()
+    (source / "broken.sav").write_bytes(b"$FL2")
+    output = tmp_path / "spss_truncated_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["container_type"] == "Truncated SPSS system-file header"
+    assert row["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
+

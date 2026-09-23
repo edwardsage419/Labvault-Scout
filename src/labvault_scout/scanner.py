@@ -34,12 +34,12 @@ def iter_files(
 
     for current, dirs, files in os.walk(root, followlinks=False, onerror=report_walk_error):
         current_path = Path(current)
-        dirs[:] = [
+        dirs[:] = sorted(
             name for name in dirs
             if not (current_path / name).is_symlink()
             and not _is_within(current_path / name, excluded)
-        ]
-        for name in files:
+        )
+        for name in sorted(files):
             path = current_path / name
             try:
                 mode = path.lstat().st_mode

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LabVault Scout verification result schema 1",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "status",
+        "exit_code",
+        "schema_version",
+        "schema_supported",
+        "integrity_status",
+        "error_count",
+        "inventory_sha256",
+        "report_sha256",
+        "rules_sha256",
+        "tool"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "VERIFIED",
+            "UNKNOWN",
+            "FAILED",
+            "UNSUPPORTED"
+          ]
+        },
+        "exit_code": {
+          "enum": [
+            0,
+            1,
+            2
+          ]
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "schema_supported": {
+          "type": "boolean"
+        },
+        "integrity_status": {
+          "enum": [
+            "VERIFIED",
+            "MISMATCH",
+            "UNKNOWN"
+          ]
+        },
+        "error_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inventory_sha256": {
+          "type": "string"
+        },
+        "report_sha256": {
+          "type": "string"
+        },
+        "rules_sha256": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "object",
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "const": "LabVault Scout"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "status",
+        "exit_code",
+        "error"
+      ],
+      "properties": {
+        "status": {
+          "const": "INVALID"
+        },
+        "exit_code": {
+          "const": 2
+        },
+        "error": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

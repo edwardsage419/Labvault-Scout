@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "labvault-scout"
-version = "0.2.0"
+version = "0.3.0rc1"
 description = "Local, read-only scientific data preservation risk scanner."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,4 +32,4 @@ labvault-scout = "labvault_scout.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-labvault_scout = ["rules/*.json"]
+labvault_scout = ["rules/*.json", "schemas/*.json"]
