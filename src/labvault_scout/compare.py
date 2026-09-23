@@ -182,7 +182,13 @@ def load_scan_report(path: Path) -> dict:
     if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
         raise ValueError(f"Invalid scan report: {path}")
 
-    schema_version = str(payload.get("schema_version", "legacy"))
+    if "schema_version" in payload:
+        raw_schema_version = payload["schema_version"]
+        if not isinstance(raw_schema_version, str) or not raw_schema_version:
+            raise ValueError(f"Invalid scan schema_version in report: {path}")
+        schema_version = raw_schema_version
+    else:
+        schema_version = "legacy"
     if schema_version == "1":
         _validate_schema1_payload(payload)
 
@@ -320,7 +326,13 @@ def report_identity(payload: dict) -> dict:
     provenance = payload.get("provenance")
     if not isinstance(provenance, dict):
         provenance = {}
-    schema_version = str(payload.get("schema_version", "legacy"))
+    raw_schema_version = payload.get("schema_version")
+    if raw_schema_version is None:
+        schema_version = "legacy"
+    elif isinstance(raw_schema_version, str) and raw_schema_version:
+        schema_version = raw_schema_version
+    else:
+        schema_version = "invalid"
     schema_supported = schema_version == "legacy" or schema_version in SUPPORTED_SCAN_SCHEMA_VERSIONS
     return {
         "schema_version": schema_version,
