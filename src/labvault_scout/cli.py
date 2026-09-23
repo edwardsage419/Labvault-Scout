@@ -35,18 +35,25 @@ def scan(root: Path, output: Path) -> int:
     else:
         excluded_output = output
 
-    def record_error(path: Path, exc: OSError) -> None:
+    def record_issue(path: Path, error: str) -> None:
         try:
             error_path = path.relative_to(root).as_posix()
         except ValueError:
             error_path = path.name
-        errors.append({"path": error_path, "error": type(exc).__name__})
+        errors.append({"path": error_path, "error": error})
+
+    def record_error(path: Path, exc: OSError) -> None:
+        record_issue(path, type(exc).__name__)
 
     for path in iter_files(root, excluded=excluded_output, on_error=record_error):
         try:
             stat = path.stat()
             rule = classify(path, rules)
             digest, header = sha256_with_head(path)
+            post_stat = path.stat()
+            if stat.st_size != post_stat.st_size or stat.st_mtime_ns != post_stat.st_mtime_ns:
+                record_issue(path, "FileChangedDuringScan")
+                continue
             signature = signature_from_head(header)
             if not signature and path.suffix.lower() in {".h5", ".hdf5", ".mat"}:
                 signature = inspect_signature(path)
