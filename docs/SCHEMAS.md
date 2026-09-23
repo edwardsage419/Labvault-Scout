@@ -9,7 +9,8 @@ LabVault Scout v0.3 随包提供机器可读输出的 Draft 2020-12 JSON Schema�
 ```bash
 labvault-scout schema scan
 labvault-scout schema comparison
-labvault-scout schema verification\nlabvault-scout schema bundle
+labvault-scout schema verification
+labvault-scout schema bundle
 ```
 
 The files are also packaged inside `labvault_scout/schemas/`:
@@ -18,7 +19,8 @@ The files are also packaged inside `labvault_scout/schemas/`:
 
 - `scan-1.schema.json`
 - `comparison-1.schema.json`
-- `verification-1.schema.json`\n- `bundle-manifest-1.schema.json`
+- `verification-1.schema.json`
+- `bundle-manifest-1.schema.json`
 
 The schemas describe the current versioned output contracts. LabVault Scout itself does not depend on an external JSON Schema validator; runtime validation remains implemented locally with the Python standard library.
 
