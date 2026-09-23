@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from os import stat_result
 
 from . import __version__
 from .bundle import verify_bundle
@@ -18,6 +19,12 @@ from .report import write_reports
 from .risk import classify, load_rules, rules_sha256
 from .schema_registry import SCHEMA_FILES, load_schema_text
 from .scanner import iter_files
+
+
+def _file_changed_during_scan(before: stat_result, after: stat_result) -> bool:
+    """Return True when stable file identity or metadata changed during hashing."""
+    fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+    return any(getattr(before, field, None) != getattr(after, field, None) for field in fields)
 
 
 def scan(root: Path, output: Path) -> int:
@@ -51,7 +58,7 @@ def scan(root: Path, output: Path) -> int:
             rule = classify(path, rules)
             digest, header = sha256_with_head(path)
             post_stat = path.stat()
-            if stat.st_size != post_stat.st_size or stat.st_mtime_ns != post_stat.st_mtime_ns:
+            if _file_changed_during_scan(stat, post_stat):
                 record_issue(path, "FileChangedDuringScan")
                 continue
             signature = signature_from_head(header)

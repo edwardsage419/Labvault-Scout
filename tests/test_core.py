@@ -3161,6 +3161,38 @@ def test_legacy_or_unknown_stata_dta_remains_unverified(tmp_path: Path):
     assert row["signature"] == ""
     assert row["signature_status"] == "unverified: modern Stata DTA structure not detected"
 
+def test_file_change_detection_covers_identity_and_ctime():
+    from types import SimpleNamespace
+    from labvault_scout.cli import _file_changed_during_scan
+
+    baseline = SimpleNamespace(
+        st_dev=1,
+        st_ino=10,
+        st_size=100,
+        st_mtime_ns=1000,
+        st_ctime_ns=2000,
+    )
+    same = SimpleNamespace(
+        st_dev=1,
+        st_ino=10,
+        st_size=100,
+        st_mtime_ns=1000,
+        st_ctime_ns=2000,
+    )
+    assert _file_changed_during_scan(baseline, same) is False
+
+    for field, value in (
+        ("st_dev", 2),
+        ("st_ino", 11),
+        ("st_size", 101),
+        ("st_mtime_ns", 1001),
+        ("st_ctime_ns", 2001),
+    ):
+        changed = SimpleNamespace(**baseline.__dict__)
+        setattr(changed, field, value)
+        assert _file_changed_during_scan(baseline, changed) is True
+
+
 def test_scan_reports_file_changed_during_hash(tmp_path: Path, monkeypatch):
     import labvault_scout.cli as cli_module
 
