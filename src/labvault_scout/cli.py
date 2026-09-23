@@ -161,7 +161,11 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "scan":
-        count = scan(args.directory, args.output)
+        try:
+            count = scan(args.directory, args.output)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(2) from None
         print(f"Scanned {count} files. Report: {args.output / 'report.html'}")
     elif args.command == "compare":
         try:

@@ -2102,6 +2102,33 @@ def test_unknown_future_schema_uses_minimum_validation_only(tmp_path: Path):
     assert result["exit_code"] == 2
 
 
+def test_cli_scan_invalid_inputs_exit_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    missing = tmp_path / "missing-source"
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "scan", str(missing)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    source = tmp_path / "same-output-source"
+    source.mkdir()
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "scan", str(source), "-o", str(source)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Output directory must not be the scan root" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_cli_verify_invalid_report_is_concise_and_json_capable(tmp_path: Path, monkeypatch, capsys):
     import sys
     import pytest
