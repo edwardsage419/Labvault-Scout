@@ -31,6 +31,14 @@ jobs:
           test -f smoke-report/migration_plan.csv
           labvault-scout verify smoke-report/scan.json
           labvault-scout verify-bundle smoke-report
+          labvault-scout schema scan > schema-scan.json
+          labvault-scout schema comparison > schema-comparison.json
+          labvault-scout schema verification > schema-verification.json
+          labvault-scout schema bundle > schema-bundle.json
+          test -s schema-scan.json
+          test -s schema-comparison.json
+          test -s schema-verification.json
+          test -s schema-bundle.json
       - name: Verify installed package resources
         shell: python
         run: |
