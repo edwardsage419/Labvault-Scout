@@ -17,6 +17,19 @@ def test_core(tmp_path: Path):
     assert classify(f, load_rules())["risk"] == "RESCUE"
 
 
+def test_rule_index_rejects_duplicate_extensions_case_insensitively():
+    import pytest
+    from labvault_scout.risk import _index_rules
+
+    items = [
+        {"extension": ".csv", "name": "CSV"},
+        {"extension": ".CSV", "name": "Duplicate CSV"},
+    ]
+
+    with pytest.raises(ValueError, match=r"Duplicate scientific format rule extension: \.csv"):
+        _index_rules(items)
+
+
 def test_unknown(tmp_path: Path):
     f = tmp_path / "sample.xyzunknown"
     f.write_text("x")

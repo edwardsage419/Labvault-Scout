@@ -6,10 +6,21 @@ from importlib.resources import files
 from pathlib import Path
 
 
+def _index_rules(items: list[dict]) -> dict[str, dict]:
+    """Index rules by normalized extension and reject duplicate entries."""
+    indexed: dict[str, dict] = {}
+    for item in items:
+        extension = item["extension"].lower()
+        if extension in indexed:
+            raise ValueError(f"Duplicate scientific format rule extension: {extension}")
+        indexed[extension] = item
+    return indexed
+
+
 def load_rules() -> dict[str, dict]:
     rule_path = files("labvault_scout").joinpath("rules/scientific_formats.json")
     rules = json.loads(rule_path.read_text(encoding="utf-8"))
-    return {item["extension"].lower(): item for item in rules}
+    return _index_rules(rules)
 
 
 def rules_sha256(rules: dict[str, dict]) -> str:
