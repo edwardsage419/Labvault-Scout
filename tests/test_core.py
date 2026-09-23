@@ -2213,6 +2213,47 @@ def test_cli_schema_outputs_packaged_schema(monkeypatch, capsys):
     assert payload["title"] == "LabVault Scout scan report schema 1"
 
 
+def test_scan_schema_enforces_relative_posix_paths():
+    import re
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    file_path_schema = schema["properties"]["files"]["items"]["properties"]["path"]
+    error_path_schema = schema["properties"]["errors"]["items"]["properties"]["path"]
+
+    def accepts(path_schema, value):
+        if len(value) < path_schema.get("minLength", 0):
+            return False
+        for clause in path_schema.get("allOf", []):
+            negated = clause.get("not", {})
+            if "const" in negated and value == negated["const"]:
+                return False
+            if "pattern" in negated and re.search(negated["pattern"], value):
+                return False
+        return True
+
+    for value in ("data.csv", "nested/data.csv", "nested/deeper/file.jnb"):
+        assert accepts(file_path_schema, value)
+
+    for value in (
+        ".",
+        "/absolute/data.csv",
+        "../escape.csv",
+        "nested/../escape.csv",
+        "./data.csv",
+        "nested/./data.csv",
+        "nested//data.csv",
+        "nested\\data.csv",
+        "data.csv/",
+        "bad\x00path.csv",
+    ):
+        assert not accepts(file_path_schema, value)
+
+    assert accepts(error_path_schema, ".")
+    assert accepts(error_path_schema, "nested/problem")
+    assert not accepts(error_path_schema, "nested\\problem")
+
+
 def test_all_schema_registry_entries_load():
     from labvault_scout.schema_registry import SCHEMA_FILES, load_schema_text
 
