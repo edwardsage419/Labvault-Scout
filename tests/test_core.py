@@ -17,6 +17,37 @@ def test_core(tmp_path: Path):
     assert classify(f, load_rules())["risk"] == "RESCUE"
 
 
+def test_packaged_scientific_format_rules_have_valid_structure():
+    import re
+    from importlib.resources import files
+
+    raw = files("labvault_scout").joinpath("rules/scientific_formats.json").read_text(encoding="utf-8")
+    items = json.loads(raw)
+    required = {"extension", "name", "category", "risk", "reason", "preferred_exports"}
+
+    assert isinstance(items, list)
+    assert items
+    for item in items:
+        assert isinstance(item, dict)
+        assert set(item) == required
+
+        extension = item["extension"]
+        assert isinstance(extension, str)
+        assert extension == extension.lower()
+        assert re.fullmatch(r"\.[a-z0-9]+(?:\.[a-z0-9]+)*", extension)
+
+        assert isinstance(item["name"], str) and item["name"].strip()
+        assert isinstance(item["category"], str)
+        assert re.fullmatch(r"[a-z0-9]+(?:_[a-z0-9]+)*", item["category"])
+        assert item["risk"] in {"SAFE", "WATCH", "RESCUE"}
+        assert isinstance(item["reason"], str) and item["reason"].strip()
+
+        exports = item["preferred_exports"]
+        assert isinstance(exports, list)
+        assert len(exports) == len(set(exports))
+        assert all(isinstance(value, str) and re.fullmatch(r"[a-z0-9]+", value) for value in exports)
+
+
 def test_rule_index_rejects_duplicate_extensions_case_insensitively():
     import pytest
     from labvault_scout.risk import _index_rules
