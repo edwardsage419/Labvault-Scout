@@ -70,7 +70,7 @@ manifest 固定覆盖 `scan.json`、`files.csv`、`duplicates.csv`、`migration_
 
 ## 机器可读 Schema
 
-v0.3 随包提供 scan、comparison 和 verification 输出的 JSON Schema Draft 2020-12 定义：
+v0.3 随包提供 scan、comparison、verification 和 bundle manifest 输出的 JSON Schema Draft 2020-12 定义：
 
 ```bash
 labvault-scout schema scan
@@ -87,7 +87,7 @@ v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 
 
 ## 当前状态
 
-v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述且可验证的报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理、随包分发的 JSON Schema，以及 NIfTI、NetCDF、TIFF/BigTIFF、FITS、MATLAB Level 5 和 DICOM Part 10 的有界结构证据。
+v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述且可验证的报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理、随包分发的 JSON Schema，以及 NIfTI、NetCDF、TIFF/BigTIFF、FITS、MATLAB Level 5、DICOM Part 10、FCS 2.0/3.0/3.1/3.2 和 SPSS SAV/ZSAV 的有界结构证据。
 
 参见 [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) 中英双语开发计划。
 

@@ -84,7 +84,7 @@ The manifest covers `scan.json`, `files.csv`, `duplicates.csv`, `migration_plan.
 
 ## Machine-readable schemas
 
-v0.3 packages JSON Schema Draft 2020-12 definitions for scan, comparison, and verification outputs:
+v0.3 packages JSON Schema Draft 2020-12 definitions for scan, comparison, verification, and bundle-manifest outputs:
 
 ```bash
 labvault-scout schema scan
@@ -107,7 +107,7 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 
 ## Roadmap
 
-v0.2.0 is the current frozen stable release. The v0.3.0 development line adds self-describing and verifiable reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, packaged JSON Schemas, and bounded structural evidence for NIfTI, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, DICOM Part 10, and FCS 2.0/3.0/3.1/3.2 fixed headers.
+v0.2.0 is the current frozen stable release. The v0.3.0 development line adds self-describing and verifiable reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, packaged JSON Schemas, and bounded structural evidence for NIfTI, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, DICOM Part 10, FCS 2.0/3.0/3.1/3.2 fixed headers, and SPSS SAV/ZSAV fixed headers.
 
 See [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) for the bilingual development plan.
 
