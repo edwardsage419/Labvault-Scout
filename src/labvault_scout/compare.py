@@ -56,7 +56,7 @@ CSV_FIELDS = (
 
 
 def _validate_report_path(value: object, *, allow_root: bool = False) -> str:
-    if not isinstance(value, str) or not value or "\x00" in value or "\\" in value:
+    if not isinstance(value, str) or not value or "\x00" in value:
         raise ValueError("Report path must be a non-empty string")
     path = PurePosixPath(value)
     if path.is_absolute() or ".." in path.parts:

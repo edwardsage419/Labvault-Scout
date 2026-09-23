@@ -1490,6 +1490,25 @@ def test_scan_paths_use_posix_separators_in_reports(tmp_path: Path):
     assert "\\" not in payload["files"][0]["path"]
 
 
+def test_schema1_round_trip_allows_literal_backslash_filename_on_posix(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.compare import load_scan_report
+
+    if os.name == "nt":
+        pytest.skip("backslash is a path separator on Windows")
+
+    source = tmp_path / "backslash_source"
+    source.mkdir()
+    name = "literal\\name.csv"
+    (source / name).write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "backslash_report"
+
+    scan(source, output)
+    payload = load_scan_report(output / "scan.json")
+    assert payload["files"][0]["path"] == name
+
+
 def test_inventory_fingerprint_is_stable_and_content_sensitive(tmp_path: Path):
     source = tmp_path / "fingerprint_source"
     source.mkdir()
@@ -2098,7 +2117,7 @@ def test_schema1_loader_rejects_noncanonical_and_parent_paths(tmp_path: Path):
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
 
-    for bad_path in ("/absolute/data.csv", "../escape.csv", "nested/../escape.csv", "./data.csv", "nested//data.csv", "nested\\data.csv"):
+    for bad_path in ("/absolute/data.csv", "../escape.csv", "nested/../escape.csv", "./data.csv", "nested//data.csv"):
         mutated = json.loads(json.dumps(payload))
         mutated["files"][0]["path"] = bad_path
         report = tmp_path / ("bad-path-" + str(abs(hash(bad_path))) + ".json")
@@ -2160,14 +2179,13 @@ def test_schema1_loader_rejects_invalid_error_paths(tmp_path: Path):
     output = tmp_path / "strict_error_report"
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
-    for bad_path in ("../outside", "nested\\error"):
-        mutated = json.loads(json.dumps(payload))
-        mutated["errors"] = [{"path": bad_path, "error": "PermissionError"}]
+    mutated = json.loads(json.dumps(payload))
+    mutated["errors"] = [{"path": "../outside", "error": "PermissionError"}]
 
-        report = tmp_path / ("bad-error-path-" + str(abs(hash(bad_path))) + ".json")
-        report.write_text(json.dumps(mutated), encoding="utf-8")
-        with pytest.raises(ValueError, match="Report path|traverse parents"):
-            load_scan_report(report)
+    report = tmp_path / "bad-error-path.json"
+    report.write_text(json.dumps(mutated), encoding="utf-8")
+    with pytest.raises(ValueError, match="Report path|traverse parents"):
+        load_scan_report(report)
 
 
 def test_legacy_loader_remains_lenient_for_minimal_rows(tmp_path: Path):
@@ -2347,7 +2365,7 @@ def test_scan_schema_enforces_relative_posix_paths():
                 return False
         return True
 
-    for value in ("data.csv", "nested/data.csv", "nested/deeper/file.jnb"):
+    for value in ("data.csv", "nested/data.csv", "nested/deeper/file.jnb", "literal\\name.csv"):
         assert accepts(file_path_schema, value)
 
     for value in (
@@ -2358,7 +2376,6 @@ def test_scan_schema_enforces_relative_posix_paths():
         "./data.csv",
         "nested/./data.csv",
         "nested//data.csv",
-        "nested\\data.csv",
         "data.csv/",
         "bad\x00path.csv",
     ):
@@ -2366,7 +2383,7 @@ def test_scan_schema_enforces_relative_posix_paths():
 
     assert accepts(error_path_schema, ".")
     assert accepts(error_path_schema, "nested/problem")
-    assert not accepts(error_path_schema, "nested\\problem")
+    assert accepts(error_path_schema, "literal\\problem")
 
 
 def test_all_schema_registry_entries_load():
