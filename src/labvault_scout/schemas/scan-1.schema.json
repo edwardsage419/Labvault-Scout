@@ -269,43 +269,50 @@
         ],
         "properties": {
           "path": {
-            "type": "string",
-            "minLength": 1,
-            "allOf": [
+            "anyOf": [
               {
-                "not": {
-                  "pattern": "^/"
-                }
+                "const": "."
               },
               {
-                "not": {
-                  "pattern": "\\\\"
-                }
-              },
-              {
-                "not": {
-                  "pattern": "\\u0000"
-                }
-              },
-              {
-                "not": {
-                  "pattern": "(^|/)\\.\\.(/|$)"
-                }
-              },
-              {
-                "not": {
-                  "pattern": "//"
-                }
-              },
-              {
-                "not": {
-                  "pattern": "(^|/)\\.(/|$)"
-                }
-              },
-              {
-                "not": {
-                  "pattern": "/$"
-                }
+                "type": "string",
+                "minLength": 1,
+                "allOf": [
+                  {
+                    "not": {
+                      "pattern": "^/"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "\\\\"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "\\u0000"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|/)\\.\\.(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "//"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|/)\\.(/|$)"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "/$"
+                    }
+                  }
+                ]
               }
             ]
           },

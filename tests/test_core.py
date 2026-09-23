@@ -2222,6 +2222,10 @@ def test_scan_schema_enforces_relative_posix_paths():
     error_path_schema = schema["properties"]["errors"]["items"]["properties"]["path"]
 
     def accepts(path_schema, value):
+        if "anyOf" in path_schema:
+            return any(accepts(option, value) for option in path_schema["anyOf"])
+        if "const" in path_schema:
+            return value == path_schema["const"]
         if len(value) < path_schema.get("minLength", 0):
             return False
         for clause in path_schema.get("allOf", []):
