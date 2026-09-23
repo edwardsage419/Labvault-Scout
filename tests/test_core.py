@@ -2827,6 +2827,33 @@ def test_cli_verify_bundle_and_json_output(tmp_path: Path, monkeypatch, capsys):
     assert payload["checked_files"] == 5
 
 
+def test_cli_verify_bundle_invalid_manifest_is_concise_and_json_capable(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    output = tmp_path / "invalid_bundle"
+    output.mkdir()
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "error" in result
+
+
 def test_bundle_schema_is_packaged():
     from labvault_scout.schema_registry import load_schema_text
 
