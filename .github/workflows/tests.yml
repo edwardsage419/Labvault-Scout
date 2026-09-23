@@ -29,6 +29,8 @@ jobs:
           labvault-scout scan smoke-input -o smoke-report
           test -f smoke-report/report.html
           test -f smoke-report/migration_plan.csv
+          labvault-scout verify smoke-report/scan.json
+          labvault-scout verify-bundle smoke-report
       - name: Verify installed package resources
         shell: python
         run: |
