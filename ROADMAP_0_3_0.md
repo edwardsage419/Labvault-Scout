@@ -27,6 +27,8 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 已实现：仅使用标准库，对 `.nii` 与 `.nii.gz` 的 NIfTI-1 头进行有界结构检查。
    - Implemented: bounded NetCDF CDF-1/CDF-2/CDF-5, TIFF/BigTIFF, FITS primary-header, MATLAB Level 5 MAT-file, and DICOM Part 10 marker evidence with no third-party dependency.
    - 已实现：无需第三方依赖的 NetCDF CDF-1/CDF-2/CDF-5、TIFF/BigTIFF、FITS primary header、MATLAB Level 5 MAT-file 与 DICOM Part 10 标记有界证据。
+   - Implemented: bounded Flow Cytometry Standard 2.0/3.0/3.1/3.2 fixed 58-byte HEADER evidence.
+   - 已实现：对 Flow Cytometry Standard 2.0/3.0/3.1/3.2 的固定 58 字节 HEADER 进行有界结构检查。
    - Expand bounded, read-only evidence for additional formats where standard-library inspection is safe.
    - 在标准库能够安全执行有界只读检查的范围内继续增强其他格式证据。
 

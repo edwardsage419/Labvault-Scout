@@ -31,7 +31,8 @@ By default the scanner creates `labvault-report/` containing:
 * `files.csv` for spreadsheet analysis
 * `scan.json` for programmatic use
 * `duplicates.csv` for exact SHA-256 duplicate groups
-* `migration_plan.csv` for prioritized preservation actions\n* `bundle_manifest.json` with SHA-256/size records for all core report artifacts
+* `migration_plan.csv` for prioritized preservation actions
+* `bundle_manifest.json` with SHA-256/size records for all core report artifacts
 
 ## Risk levels
 
@@ -48,7 +49,7 @@ Risk labels are triage signals. They are not guarantees of future readability an
 
 The initial rules include common research and scientific formats such as CSV, TSV, TIFF, HDF5, NetCDF, MATLAB, SigmaPlot JNB, Origin OPJ and OPJU, GraphPad Prism PZF, SPSS SAV, Stata DTA, Igor IBW, SPC spectroscopy, FCS, NIfTI and DICOM.
 
-Identification combines extension rules with read-only signature checks for ZIP, OLE, HDF5, PDF, NetCDF CDF-1/CDF-2/CDF-5, TIFF/BigTIFF, FITS primary-header structure, NIfTI, MATLAB Level 5 MAT-files, and DICOM Part 10 preamble/marker evidence. ZIP structures for OOXML, OpenDocument, RO-Crate, and BagIt are inspected without extracting or executing file content; HDF5 detection also recognizes specification-defined user-block offsets. HDF5-based `.mat` and NetCDF-4 files remain conservative container-only evidence unless format-specific structure is proven.
+Identification combines extension rules with read-only signature checks for ZIP, OLE, HDF5, PDF, NetCDF CDF-1/CDF-2/CDF-5, TIFF/BigTIFF, FITS primary-header structure, NIfTI, MATLAB Level 5 MAT-files, DICOM Part 10 preamble/marker evidence, and Flow Cytometry Standard 2.0/3.0/3.1/3.2 fixed headers. ZIP structures for OOXML, OpenDocument, RO-Crate, and BagIt are inspected without extracting or executing file content; HDF5 detection also recognizes specification-defined user-block offsets. HDF5-based `.mat` and NetCDF-4 files remain conservative container-only evidence unless format-specific structure is proven.
 
 ## Compare scans
 
@@ -88,7 +89,8 @@ v0.3 packages JSON Schema Draft 2020-12 definitions for scan, comparison, and ve
 ```bash
 labvault-scout schema scan
 labvault-scout schema comparison
-labvault-scout schema verification\nlabvault-scout schema bundle
+labvault-scout schema verification
+labvault-scout schema bundle
 ```
 
 See [docs/SCHEMAS.md](docs/SCHEMAS.md).
@@ -105,7 +107,7 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 
 ## Roadmap
 
-v0.2.0 is the current frozen stable release. The v0.3.0 development line adds self-describing and verifiable reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, packaged JSON Schemas, and bounded structural evidence for NIfTI, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, and DICOM Part 10.
+v0.2.0 is the current frozen stable release. The v0.3.0 development line adds self-describing and verifiable reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, packaged JSON Schemas, and bounded structural evidence for NIfTI, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, DICOM Part 10, and FCS 2.0/3.0/3.1/3.2 fixed headers.
 
 See [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) for the bilingual development plan.
 

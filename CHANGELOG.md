@@ -14,7 +14,10 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Aggregate comparison deltas for file count, total bytes, risk counts, and priority counts
 * Rule-context comparison (`SAME`, `CHANGED`, or `UNKNOWN`) so assessment drift can be distinguished from content drift
 * Embedded report integrity validation (`VERIFIED`, `MISMATCH`, or `UNKNOWN`) covering inventory fingerprint and summary consistency
-* Deterministic full-report SHA-256 checksum covering tool/schema metadata, provenance, summaries, file records, and errors\n* `bundle_manifest.json` with SHA-256/size records for all core report artifacts\n* `verify-bundle` command with human-readable and `--json` output\n* Packaged Draft 2020-12 JSON Schema for the bundle manifest
+* Deterministic full-report SHA-256 checksum covering tool/schema metadata, provenance, summaries, file records, and errors
+* `bundle_manifest.json` with SHA-256/size records for all core report artifacts
+* `verify-bundle` command with human-readable and `--json` output
+* Packaged Draft 2020-12 JSON Schema for the bundle manifest
 * Optional `compare --exit-code` automation mode: 0=no changes, 1=changes, 2=partial comparison
 * Thousand-file repeated-scan comparison regression coverage without timing thresholds
 * Comparison output is marked `PARTIAL` when either source scan contains recorded errors
@@ -26,7 +29,8 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Packaged Draft 2020-12 JSON Schemas for scan, comparison, and verification outputs
 * `schema` CLI command to print packaged schemas without external dependencies
 * Unsupported scan schema takes precedence over checksum status in standalone verification
-* Version-aware strict validation for schema 1 report structure, relative paths, SHA-256 fields, sizes, priorities, provenance, and errors\n* Schema 1 runtime validation now rejects additional properties and invalid summary field types to match the packaged JSON Schema
+* Version-aware strict validation for schema 1 report structure, relative paths, SHA-256 fields, sizes, priorities, provenance, and errors
+* Schema 1 runtime validation now rejects additional properties and invalid summary field types to match the packaged JSON Schema
 * Concise CLI errors with exit code 2 for malformed compare/verify inputs instead of tracebacks
 * Compound-extension matching with `.nii.gz` NIfTI coverage
 * Bounded NIfTI-1 header evidence for both `.nii` and `.nii.gz` using the standard 348-byte header and magic field
@@ -35,6 +39,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Bounded FITS primary-header evidence with mandatory keyword order and 2880-byte block checks
 * Bounded MATLAB Level 5 MAT-file header evidence with endian-marker validation
 * Bounded DICOM Part 10 preamble/`DICM` marker evidence without parsing patient metadata
+* Bounded Flow Cytometry Standard 2.0/3.0/3.1/3.2 fixed 58-byte HEADER evidence
 
 ### Changed
 

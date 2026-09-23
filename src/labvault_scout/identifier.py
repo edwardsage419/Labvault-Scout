@@ -25,6 +25,7 @@ FITS_SIMPLE_PREFIX = b"SIMPLE  ="
 MATLAB5_PREFIX = b"MATLAB 5.0 MAT-file"
 DICOM_MARKER = b"DICM"
 DICOM_MARKER_OFFSET = 128
+FCS_VERSIONS = (b"FCS2.0", b"FCS3.0", b"FCS3.1", b"FCS3.2")
 
 
 def signature_from_head(head: bytes) -> str:
@@ -49,6 +50,8 @@ def signature_from_head(head: bytes) -> str:
         return "MAT5"
     if len(head) >= DICOM_MARKER_OFFSET + len(DICOM_MARKER) and head[DICOM_MARKER_OFFSET:DICOM_MARKER_OFFSET + len(DICOM_MARKER)] == DICOM_MARKER:
         return "DICOM"
+    if any(head.startswith(version) for version in FCS_VERSIONS):
+        return "FCS"
     return ""
 
 
@@ -188,6 +191,22 @@ def inspect_hdf5_container(path: Path) -> str:
         return "Unreadable HDF5 container"
 
 
+def fcs_container_from_header(header: bytes, size: int) -> str:
+    """Validate bounded Flow Cytometry Standard fixed-header evidence."""
+    version = next((item for item in FCS_VERSIONS if header.startswith(item)), None)
+    if version is None:
+        return ""
+    if size < 58 or len(header) < 58:
+        return "Truncated FCS header"
+    if header[6:10] != b"    ":
+        return "Invalid FCS header spacing"
+    for start in range(10, 58, 8):
+        field = header[start:start + 8]
+        if any(byte not in b" 0123456789" for byte in field):
+            return "Invalid FCS header offsets"
+    return f"FCS {version[3:].decode('ascii')} fixed header"
+
+
 def nifti1_container_from_header(header: bytes) -> str:
     """Validate bounded NIfTI-1 header evidence."""
     if len(header) < 348:
@@ -292,6 +311,13 @@ def extension_signature_status(path: Path, signature: str, container_type: str =
         if signature:
             return f"mismatch: expected DICOM Part 10, detected {signature}"
         return "unverified: expected DICOM Part 10"
+
+    if ext == ".fcs":
+        if signature == "FCS":
+            return "verified" if container_type.startswith("FCS ") and container_type.endswith(" fixed header") else "unverified: expected FCS fixed header"
+        if signature:
+            return f"mismatch: expected FCS, detected {signature}"
+        return "unverified: expected FCS"
 
     if ext == ".mat":
         if signature == "MAT5":

@@ -2817,3 +2817,59 @@ def test_schema1_runtime_validation_handles_non_string_enum_without_typeerror(tm
 
     with pytest.raises(ValueError, match="non-string risk"):
         load_scan_report(path)
+
+def _fcs_header(version: bytes = b"FCS3.2") -> bytes:
+    offsets = (58, 127, 128, 255, 0, 0)
+    return version + b"    " + b"".join(f"{value:>8}".encode("ascii") for value in offsets)
+
+
+def test_fcs_fixed_header_evidence():
+    from labvault_scout.identifier import fcs_container_from_header, signature_from_head
+
+    for version in (b"FCS2.0", b"FCS3.0", b"FCS3.1", b"FCS3.2"):
+        header = _fcs_header(version)
+        assert len(header) == 58
+        assert signature_from_head(header) == "FCS"
+        assert fcs_container_from_header(header, 256) == f"FCS {version[3:].decode('ascii')} fixed header"
+
+
+def test_fcs_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "fcs_source"
+    source.mkdir()
+    (source / "cells.fcs").write_bytes(_fcs_header() + b"/$TOT/1/" + b" " * 190)
+    output = tmp_path / "fcs_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["format"] == "Flow Cytometry Standard"
+    assert row["signature"] == "FCS"
+    assert row["container_type"] == "FCS 3.2 fixed header"
+    assert row["signature_status"] == "verified"
+
+
+def test_truncated_fcs_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_fcs_source"
+    source.mkdir()
+    (source / "broken.fcs").write_bytes(b"FCS3.2    ")
+    output = tmp_path / "truncated_fcs_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["signature"] == "FCS"
+    assert row["container_type"] == "Truncated FCS header"
+    assert row["signature_status"] == "unverified: expected FCS fixed header"
+
+
+def test_fcs_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "bad_fcs_source"
+    source.mkdir()
+    (source / "fake.fcs").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "bad_fcs_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["signature_status"] == "mismatch: expected FCS, detected PDF"
+
