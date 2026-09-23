@@ -113,7 +113,7 @@ See [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) for the bilingual development plan.
 
 ## Release notes
 
-See [v0.2.0 release notes](RELEASE_NOTES_0_2_0.md) and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
+The first v0.3.0 release candidate is documented in [v0.3.0-rc1 release notes](RELEASE_NOTES_0_3_0_RC1.md). The current frozen stable release remains v0.2.0. See [v0.2.0 release notes](RELEASE_NOTES_0_2_0.md) and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
 
 ## License
 
