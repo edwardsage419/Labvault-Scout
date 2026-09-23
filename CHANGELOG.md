@@ -46,7 +46,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 
 ### Changed
 
-* Release candidate package version advances to `0.3.0rc1`
+* Post-rc1 development package version advances to `0.3.0rc2.dev0`
 * Directory and file traversal order is deterministic for more stable report diffs
 * Reported relative paths use POSIX `/` separators on every supported operating system
 * Move detection requires the matching SHA-256 to be globally unique in both source reports
