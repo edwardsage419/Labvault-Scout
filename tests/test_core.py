@@ -2977,3 +2977,52 @@ def test_modern_stata_dta_header_rejects_malformed_values():
     bad_order = b"<stata_dta><header><release>118</release><byteorder>XYZ</byteorder>"
     assert stata_dta_container_from_header(bad_order) == "Invalid Stata DTA byteorder value"
 
+def _modern_stata_dta_header(release: bytes = b"118", byteorder: bytes = b"LSF") -> bytes:
+    return (
+        b"<stata_dta><header><release>"
+        + release
+        + b"</release><byteorder>"
+        + byteorder
+        + b"</byteorder>"
+    )
+
+
+def test_modern_stata_dta_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "stata_source"
+    source.mkdir()
+    (source / "study.dta").write_bytes(_modern_stata_dta_header() + b"<K>\x01\x00</K>")
+    output = tmp_path / "stata_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["format"] == "Stata Data"
+    assert row["signature"] == "STATA_DTA"
+    assert row["container_type"] == "Stata DTA release 118 (LSF)"
+    assert row["signature_status"] == "verified"
+
+
+def test_stata_dta_disguised_file_is_mismatch(tmp_path: Path):
+    source = tmp_path / "bad_stata_source"
+    source.mkdir()
+    (source / "fake.dta").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "bad_stata_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["signature_status"] == "mismatch: expected Stata DTA, detected PDF"
+
+
+def test_legacy_or_unknown_stata_dta_remains_unverified(tmp_path: Path):
+    source = tmp_path / "legacy_stata_source"
+    source.mkdir()
+    (source / "legacy.dta").write_bytes(b"\x72\x02" + b"\x00" * 200)
+    output = tmp_path / "legacy_stata_report"
+
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+    assert row["signature"] == ""
+    assert row["signature_status"] == "unverified: modern Stata DTA structure not detected"
+

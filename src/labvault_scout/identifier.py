@@ -57,6 +57,8 @@ def signature_from_head(head: bytes) -> str:
         return "FCS"
     if any(head.startswith(magic) for magic in SPSS_MAGICS):
         return "SPSS"
+    if head.startswith(STATA_DTA_PREFIX):
+        return "STATA_DTA"
     return ""
 
 
@@ -371,6 +373,13 @@ def extension_signature_status(path: Path, signature: str, container_type: str =
         if signature:
             return f"mismatch: expected DICOM Part 10, detected {signature}"
         return "unverified: expected DICOM Part 10"
+
+    if ext == ".dta":
+        if signature == "STATA_DTA":
+            return "verified" if container_type.startswith("Stata DTA release ") else "unverified: expected modern Stata DTA structure"
+        if signature:
+            return f"mismatch: expected Stata DTA, detected {signature}"
+        return "unverified: modern Stata DTA structure not detected"
 
     if ext in {".sav", ".zsav"}:
         expected_marker = "$FL2" if ext == ".sav" else "$FL3"
