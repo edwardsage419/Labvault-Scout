@@ -32,7 +32,6 @@ By default the scanner creates `labvault-report/` containing:
 * `scan.json` for programmatic use
 * `duplicates.csv` for exact SHA-256 duplicate groups
 * `migration_plan.csv` for prioritized preservation actions
-* `bundle_manifest.json` with SHA-256/size records for all core report artifacts
 
 ## Risk levels
 
