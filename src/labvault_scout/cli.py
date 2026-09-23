@@ -97,6 +97,10 @@ def scan(root: Path, output: Path) -> int:
             else:
                 container_type = ""
             signature_status = extension_signature_status(path, signature, container_type)
+            final_stat = path.stat()
+            if _file_changed_during_scan(stat, final_stat):
+                record_issue(path, "FileChangedDuringScan")
+                continue
             rows.append({
                 "path": path.relative_to(root).as_posix(),
                 "size": stat.st_size,

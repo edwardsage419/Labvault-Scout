@@ -3331,6 +3331,28 @@ def test_file_change_detection_covers_identity_and_ctime():
         assert _file_changed_during_scan(baseline, changed) is True
 
 
+def test_scan_reports_file_changed_during_container_inspection(tmp_path: Path, monkeypatch):
+    import labvault_scout.cli as cli_module
+
+    source = tmp_path / "changing_container_source"
+    source.mkdir()
+    target = source / "archive.zip"
+    target.write_bytes(b"PK\x03\x04synthetic")
+    output = tmp_path / "changing_container_report"
+
+    def changing_inspect(path: Path):
+        path.write_bytes(path.read_bytes() + b"changed")
+        return "ZIP archive"
+
+    monkeypatch.setattr(cli_module, "inspect_zip_container", changing_inspect)
+    count = cli_module.scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert count == 0
+    assert payload["files"] == []
+    assert payload["errors"] == [{"path": "archive.zip", "error": "FileChangedDuringScan"}]
+
+
 def test_scan_reports_file_changed_during_hash(tmp_path: Path, monkeypatch):
     import labvault_scout.cli as cli_module
 
