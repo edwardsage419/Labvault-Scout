@@ -1981,7 +1981,7 @@ def test_schema1_loader_rejects_noncanonical_and_parent_paths(tmp_path: Path):
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
 
-    for bad_path in ("/absolute/data.csv", "../escape.csv", "nested/../escape.csv", "./data.csv", "nested//data.csv"):
+    for bad_path in ("/absolute/data.csv", "../escape.csv", "nested/../escape.csv", "./data.csv", "nested//data.csv", "nested\\data.csv"):
         mutated = json.loads(json.dumps(payload))
         mutated["files"][0]["path"] = bad_path
         report = tmp_path / ("bad-path-" + str(abs(hash(bad_path))) + ".json")
@@ -2043,12 +2043,14 @@ def test_schema1_loader_rejects_invalid_error_paths(tmp_path: Path):
     output = tmp_path / "strict_error_report"
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
-    payload["errors"] = [{"path": "../outside", "error": "PermissionError"}]
+    for bad_path in ("../outside", "nested\\error"):
+        mutated = json.loads(json.dumps(payload))
+        mutated["errors"] = [{"path": bad_path, "error": "PermissionError"}]
 
-    report = tmp_path / "bad-error-path.json"
-    report.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(ValueError, match="must not traverse parents"):
-        load_scan_report(report)
+        report = tmp_path / ("bad-error-path-" + str(abs(hash(bad_path))) + ".json")
+        report.write_text(json.dumps(mutated), encoding="utf-8")
+        with pytest.raises(ValueError, match="Report path|traverse parents"):
+            load_scan_report(report)
 
 
 def test_legacy_loader_remains_lenient_for_minimal_rows(tmp_path: Path):
