@@ -1,29 +1,29 @@
-name: Bug report
-description: Report reproducible incorrect behavior
+name: Bug report / 错误报告
+description: Report reproducible incorrect behavior / 报告可复现的异常行为
 title: "[Bug] "
 body:
   - type: markdown
     attributes:
-      value: "Do not upload confidential or sensitive research data."
+      value: "Do not upload confidential or sensitive research data. / 请勿上传机密或敏感科研数据。"
   - type: textarea
     id: description
     attributes:
-      label: Description
-      description: What happened?
+      label: Description / 问题描述
+      description: What happened? / 发生了什么？
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
-      label: Reproduction
-      description: Minimal steps to reproduce the issue.
+      label: Reproduction / 复现步骤
+      description: Minimal steps to reproduce the issue. / 请提供最小可复现步骤。
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: LabVault Scout version
+      label: LabVault Scout version / LabVault Scout 版本
   - type: input
     id: environment
     attributes:
-      label: Python and operating system
+      label: Python and operating system / Python 与操作系统
