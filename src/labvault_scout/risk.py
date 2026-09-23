@@ -34,7 +34,7 @@ def _validate_rule(item: object, index: int) -> dict:
         raise ValueError(f"{prefix}: invalid name")
     if not isinstance(item["category"], str) or not RULE_CATEGORY_RE.fullmatch(item["category"]):
         raise ValueError(f"{prefix}: invalid category")
-    if item["risk"] not in RULE_RISKS:
+    if not isinstance(item["risk"], str) or item["risk"] not in RULE_RISKS:
         raise ValueError(f"{prefix}: invalid risk")
     if not isinstance(item["reason"], str) or not item["reason"].strip():
         raise ValueError(f"{prefix}: invalid reason")
@@ -42,8 +42,8 @@ def _validate_rule(item: object, index: int) -> dict:
     exports = item["preferred_exports"]
     if (
         not isinstance(exports, list)
-        or len(exports) != len(set(exports))
         or not all(isinstance(value, str) and RULE_EXPORT_RE.fullmatch(value) for value in exports)
+        or len(exports) != len(set(exports))
     ):
         raise ValueError(f"{prefix}: invalid preferred_exports")
     return item

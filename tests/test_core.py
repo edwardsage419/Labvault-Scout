@@ -98,6 +98,14 @@ def test_rule_index_rejects_malformed_rule_structure():
     duplicate_export["preferred_exports"] = ["csv", "csv"]
     cases.append(duplicate_export)
 
+    non_string_risk = dict(valid)
+    non_string_risk["risk"] = ["SAFE"]
+    cases.append(non_string_risk)
+
+    non_string_export = dict(valid)
+    non_string_export["preferred_exports"] = [{"format": "csv"}]
+    cases.append(non_string_export)
+
     for item in cases:
         with pytest.raises(ValueError, match="Invalid scientific format rule"):
             _index_rules([item])
