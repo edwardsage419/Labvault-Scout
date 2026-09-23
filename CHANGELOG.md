@@ -47,6 +47,9 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 ### Changed
 
 * Post-rc2 development package version advances to `0.3.0rc3.dev0`
+* Schema 1 report paths now reject NUL characters and backslashes so `relative-posix` semantics are enforced at runtime
+* Bundle manifest paths now reject embedded NUL characters explicitly
+* Files that change size or modification time during hashing are recorded as `FileChangedDuringScan` instead of producing inconsistent size/hash records
 * Directory and file traversal order is deterministic for more stable report diffs
 * Reported relative paths use POSIX `/` separators on every supported operating system
 * Move detection requires the matching SHA-256 to be globally unique in both source reports
