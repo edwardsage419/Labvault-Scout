@@ -31,6 +31,8 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
    - 已实现：对 Flow Cytometry Standard 2.0/3.0/3.1/3.2 的固定 58 字节 HEADER 进行有界结构检查。
    - Implemented: bounded ASCII-based SPSS SAV (`$FL2`) / ZSAV (`$FL3`) 176-byte fixed-header evidence and `.zsav` classification.
    - 已实现：对 ASCII 系 SPSS SAV（`$FL2`）/ ZSAV（`$FL3`）176 字节固定 HEADER 进行有界结构检查，并增加 `.zsav` 分类规则。
+   - Implemented: bounded tagged-header evidence for modern Stata DTA releases 117/118/119; older DTA formats remain conservatively unverified.
+   - 已实现：对现代 Stata DTA 117/118/119 的标签式文件头进行有界验证；其他旧版 DTA 继续保守标记为未验证。
    - Expand bounded, read-only evidence for additional formats where standard-library inspection is safe.
    - 在标准库能够安全执行有界只读检查的范围内继续增强其他格式证据。
 
