@@ -32,7 +32,6 @@ By default the scanner creates `labvault-report/` containing:
 * `scan.json` for programmatic use
 * `duplicates.csv` for exact SHA-256 duplicate groups
 * `migration_plan.csv` for prioritized preservation actions
-* `bundle_manifest.json` with SHA-256/size records for all core report artifacts
 
 ## Risk levels
 
@@ -49,7 +48,7 @@ Risk labels are triage signals. They are not guarantees of future readability an
 
 The initial rules include common research and scientific formats such as CSV, TSV, TIFF, HDF5, NetCDF, MATLAB, SigmaPlot JNB, Origin OPJ and OPJU, GraphPad Prism PZF, SPSS SAV/ZSAV, Stata DTA, Igor IBW, SPC spectroscopy, FCS, NIfTI and DICOM.
 
-Identification combines extension rules with read-only signature checks for ZIP, OLE, HDF5, PDF, NetCDF CDF-1/CDF-2/CDF-5, TIFF/BigTIFF, FITS primary-header structure, NIfTI, MATLAB Level 5 MAT-files, DICOM Part 10 preamble/marker evidence, Flow Cytometry Standard 2.0/3.0/3.1/3.2 fixed headers, and ASCII-based SPSS SAV/ZSAV fixed headers. ZIP structures for OOXML, OpenDocument, RO-Crate, and BagIt are inspected without extracting or executing file content; HDF5 detection also recognizes specification-defined user-block offsets. HDF5-based `.mat` and NetCDF-4 files remain conservative container-only evidence unless format-specific structure is proven.
+Identification combines extension rules with read-only signature checks for ZIP, OLE, HDF5, PDF, NetCDF CDF-1/CDF-2/CDF-5, TIFF/BigTIFF, FITS primary-header structure, NIfTI, MATLAB Level 5 MAT-files, DICOM Part 10 preamble/marker evidence, Flow Cytometry Standard 2.0/3.0/3.1/3.2 fixed headers, ASCII-based SPSS SAV/ZSAV fixed headers, and modern Stata DTA releases 117/118/119. ZIP structures for OOXML, OpenDocument, RO-Crate, and BagIt are inspected without extracting or executing file content; HDF5 detection also recognizes specification-defined user-block offsets. HDF5-based `.mat` and NetCDF-4 files remain conservative container-only evidence unless format-specific structure is proven.
 
 ## Compare scans
 
@@ -84,7 +83,7 @@ The manifest covers `scan.json`, `files.csv`, `duplicates.csv`, `migration_plan.
 
 ## Machine-readable schemas
 
-v0.3 packages JSON Schema Draft 2020-12 definitions for scan, comparison, and verification outputs:
+v0.3 packages JSON Schema Draft 2020-12 definitions for scan, comparison, verification, and bundle-manifest outputs:
 
 ```bash
 labvault-scout schema scan
@@ -107,13 +106,13 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 
 ## Roadmap
 
-v0.2.0 is the current frozen stable release. The v0.3.0 development line adds self-describing and verifiable reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, packaged JSON Schemas, and bounded structural evidence for NIfTI, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, DICOM Part 10, and FCS 2.0/3.0/3.1/3.2 fixed headers.
+v0.2.0 is the current frozen stable release. The v0.3.0 development line adds self-describing and verifiable reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, packaged JSON Schemas, and bounded structural evidence for NIfTI, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, DICOM Part 10, FCS 2.0/3.0/3.1/3.2 fixed headers, SPSS SAV/ZSAV fixed headers, and modern Stata DTA releases 117/118/119.
 
 See [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) for the bilingual development plan.
 
 ## Release notes
 
-The first v0.3.0 release candidate is documented in [v0.3.0-rc1 release notes](RELEASE_NOTES_0_3_0_RC1.md). The current frozen stable release remains v0.2.0. See [v0.2.0 release notes](RELEASE_NOTES_0_2_0.md) and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
+The current v0.3.0 release candidate is documented in [v0.3.0-rc2 release notes](RELEASE_NOTES_0_3_0_RC2.md). See also [v0.3.0-rc1 release notes](RELEASE_NOTES_0_3_0_RC1.md). The current frozen stable release remains v0.2.0. See [v0.2.0 release notes](RELEASE_NOTES_0_2_0.md) and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
 
 ## License
 

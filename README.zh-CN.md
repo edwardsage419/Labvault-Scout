@@ -70,7 +70,7 @@ manifest 固定覆盖 `scan.json`、`files.csv`、`duplicates.csv`、`migration_
 
 ## 机器可读 Schema
 
-v0.3 随包提供 scan、comparison 和 verification 输出的 JSON Schema Draft 2020-12 定义：
+v0.3 随包提供 scan、comparison、verification 和 bundle manifest 输出的 JSON Schema Draft 2020-12 定义：
 
 ```bash
 labvault-scout schema scan
@@ -83,17 +83,17 @@ labvault-scout schema bundle
 
 ## 格式结构证据
 
-v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5、TIFF/BigTIFF、FITS primary header、MATLAB Level 5 MAT-file 与 DICOM Part 10 preamble/`DICM` 标记的有界只读检查。对于基于 HDF5 的 NetCDF-4 和 `.mat`，当前只报告保守的容器证据，不声称已经验证格式专用结构；FITS `SIMPLE=F` 会明确标记为 nonconforming 并进入容器复核。DICOM 检查只读取 Part 10 preamble/marker，不解析患者元数据或数据集内容。 FCS 检查只验证 FCS 2.0、3.0、3.1、3.2 的固定 58 字节 HEADER 结构，不读取 TEXT 或 DATA 段。 SPSS 检查对 ASCII 系 `$FL2` SAV 与 `$FL3` ZSAV 的 176 字节固定 HEADER、字节序和压缩代码做有界验证，不读取数据记录。
+v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5、TIFF/BigTIFF、FITS primary header、MATLAB Level 5 MAT-file 与 DICOM Part 10 preamble/`DICM` 标记的有界只读检查。对于基于 HDF5 的 NetCDF-4 和 `.mat`，当前只报告保守的容器证据，不声称已经验证格式专用结构；FITS `SIMPLE=F` 会明确标记为 nonconforming 并进入容器复核。DICOM 检查只读取 Part 10 preamble/marker，不解析患者元数据或数据集内容。 FCS 检查只验证 FCS 2.0、3.0、3.1、3.2 的固定 58 字节 HEADER 结构，不读取 TEXT 或 DATA 段。 SPSS 检查对 ASCII 系 `$FL2` SAV 与 `$FL3` ZSAV 的 176 字节固定 HEADER、字节序和压缩代码做有界验证，不读取数据记录。 Stata `.dta` 当前仅对现代 117、118、119 的 `<stata_dta>` 头、release 和 byteorder 进行有界验证；其他旧格式继续保守标记为未验证。
 
 ## 当前状态
 
-v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述且可验证的报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理、随包分发的 JSON Schema，以及 NIfTI、NetCDF、TIFF/BigTIFF、FITS、MATLAB Level 5 和 DICOM Part 10 的有界结构证据。
+v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述且可验证的报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理、随包分发的 JSON Schema，以及 NIfTI、NetCDF、TIFF/BigTIFF、FITS、MATLAB Level 5、DICOM Part 10、FCS 2.0/3.0/3.1/3.2、SPSS SAV/ZSAV 和现代 Stata DTA 117/118/119 的有界结构证据。
 
 参见 [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) 中英双语开发计划。
 
 ## 发布说明
 
-首个 v0.3.0 发布候选版本参见 [v0.3.0-rc1 中英双语发布说明](RELEASE_NOTES_0_3_0_RC1.md)。当前冻结的稳定正式版仍为 v0.2.0。另见 [v0.2.0 中英双语发布说明](RELEASE_NOTES_0_2_0.md) 和 [v0.1.0 发布说明](RELEASE_NOTES_0_1_0.md)。
+当前 v0.3.0 发布候选版本参见 [v0.3.0-rc2 中英双语发布说明](RELEASE_NOTES_0_3_0_RC2.md)。另见 [v0.3.0-rc1 中英双语发布说明](RELEASE_NOTES_0_3_0_RC1.md)。当前冻结的稳定正式版仍为 v0.2.0。另见 [v0.2.0 中英双语发布说明](RELEASE_NOTES_0_2_0.md) 和 [v0.1.0 发布说明](RELEASE_NOTES_0_1_0.md)。
 
 ## 许可证
 

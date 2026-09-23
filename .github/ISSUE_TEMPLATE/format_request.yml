@@ -1,30 +1,34 @@
-name: Scientific format request
-description: Propose a scientific file format for the rule database
+name: Scientific format request / 科研格式请求
+description: Propose a scientific file format for the rule database / 建议加入新的科研文件格式规则
 title: "[Format] "
 body:
+  - type: markdown
+    attributes:
+      value: "Do not upload confidential, personal, proprietary, or sensitive research data. / 请勿上传机密、个人、专有或敏感科研数据。"
   - type: input
     id: name
     attributes:
-      label: Format name
+      label: Format name / 格式名称
     validations:
       required: true
   - type: input
     id: extension
     attributes:
-      label: Extension
+      label: Extension / 扩展名
       placeholder: ".example"
     validations:
       required: true
   - type: textarea
     id: software
     attributes:
-      label: Creating software or instrument
+      label: Creating software or instrument / 创建该格式的软件或仪器
   - type: textarea
     id: evidence
     attributes:
-      label: Public references
-      description: Prefer authoritative specifications or vendor documentation.
+      label: Public references / 公开参考资料
+      description: Prefer authoritative specifications or vendor documentation. / 优先提供权威规范或厂商文档。
   - type: textarea
     id: preservation
     attributes:
-      label: Preservation considerations
+      label: Preservation considerations / 长期保存考虑
+      description: Describe portability, software dependencies, known conversions, or other preservation concerns. / 请说明可移植性、软件依赖、已知转换方式或其他保存风险。

@@ -42,10 +42,11 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Bounded Flow Cytometry Standard 2.0/3.0/3.1/3.2 fixed 58-byte HEADER evidence
 * Bounded ASCII-based SPSS SAV (`$FL2`) and ZSAV (`$FL3`) 176-byte fixed-header evidence
 * `.zsav` statistical-data rule with conservative RESCUE triage
+* Bounded structural evidence for modern Stata DTA releases 117/118/119 using the tagged header and declared byte order
 
 ### Changed
 
-* Release candidate package version advances to `0.3.0rc1`
+* Second release candidate package version advances to `0.3.0rc2`
 * Directory and file traversal order is deterministic for more stable report diffs
 * Reported relative paths use POSIX `/` separators on every supported operating system
 * Move detection requires the matching SHA-256 to be globally unique in both source reports

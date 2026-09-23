@@ -18,6 +18,7 @@ jobs:
       - name: Install built wheel
         shell: bash
         run: python -m pip install dist/*.whl
+      - run: python -m pip check
       - run: python -m pip install pytest
       - run: pytest -q
       - run: labvault-scout --help
@@ -29,11 +30,37 @@ jobs:
           labvault-scout scan smoke-input -o smoke-report
           test -f smoke-report/report.html
           test -f smoke-report/migration_plan.csv
+          labvault-scout verify smoke-report/scan.json
+          labvault-scout verify-bundle smoke-report
+          labvault-scout schema scan > schema-scan.json
+          labvault-scout schema comparison > schema-comparison.json
+          labvault-scout schema verification > schema-verification.json
+          labvault-scout schema bundle > schema-bundle.json
+          test -s schema-scan.json
+          test -s schema-comparison.json
+          test -s schema-verification.json
+          test -s schema-bundle.json
+          cp smoke-report/scan.json smoke-before.json
+          printf "new\n" > smoke-input/added.txt
+          labvault-scout scan smoke-input -o smoke-report-after
+          labvault-scout compare smoke-before.json smoke-report-after/scan.json -o smoke-comparison
+          test -s smoke-comparison/comparison.json
+          test -s smoke-comparison/changes.csv
+          test -s smoke-comparison/comparison.html
       - name: Verify installed package resources
         shell: python
         run: |
+          import json
           from labvault_scout.risk import load_rules
+          from labvault_scout.schema_registry import SCHEMA_FILES, load_schema_text
+
           rules = load_rules()
-          assert ".jnb" in rules
-          assert ".csv" in rules
-          print(f"Loaded {len(rules)} packaged format rules")
+          for extension in (".csv", ".jnb", ".fcs", ".sav", ".zsav"):
+              assert extension in rules
+
+          assert set(SCHEMA_FILES) == {"scan", "comparison", "verification", "bundle"}
+          for kind in SCHEMA_FILES:
+              schema = json.loads(load_schema_text(kind))
+              assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+
+          print(f"Loaded {len(rules)} packaged format rules and {len(SCHEMA_FILES)} schemas")
