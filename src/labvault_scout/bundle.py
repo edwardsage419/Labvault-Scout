@@ -67,7 +67,7 @@ def write_bundle_manifest(output_dir: Path) -> dict:
 
 
 def _canonical_manifest_path(value: object) -> str:
-    if not isinstance(value, str) or not value or "\\x00" in value:
+    if not isinstance(value, str) or not value or "\x00" in value:
         raise ValueError("Bundle manifest path must be a non-empty string")
     path = PurePosixPath(value)
     if path.is_absolute() or ".." in path.parts or value != path.as_posix():

@@ -1990,6 +1990,14 @@ def test_schema1_loader_rejects_noncanonical_and_parent_paths(tmp_path: Path):
             load_scan_report(report)
 
 
+    mutated = json.loads(json.dumps(payload))
+    mutated["files"][0]["path"] = "bad\x00path.csv"
+    report = tmp_path / "bad-path-nul.json"
+    report.write_text(json.dumps(mutated), encoding="utf-8")
+    with pytest.raises(ValueError, match="Report path"):
+        load_scan_report(report)
+
+
 def test_schema1_loader_rejects_invalid_hash_size_and_required_fields(tmp_path: Path):
     import pytest
     from labvault_scout.compare import load_scan_report
@@ -2585,6 +2593,26 @@ def test_bundle_manifest_rejects_path_traversal(tmp_path: Path):
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(ValueError, match="Unsafe bundle manifest path"):
+        load_bundle_manifest(output)
+
+
+def test_bundle_manifest_rejects_nul_path(tmp_path: Path):
+    import pytest
+    from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+
+    source = tmp_path / "bundle_nul_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_nul_report"
+    scan(source, output)
+
+    path = output / "bundle_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["files"][0]["path"] = "scan\x00.json"
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Bundle manifest path"):
         load_bundle_manifest(output)
 
 
