@@ -51,8 +51,10 @@ v0.2.0 已按正式发布标签冻结。v0.3.0 在 `develop-v0.3.0` 分支开发
 4. Scale and determinism / 规模与确定性
    - Implemented: deterministic traversal, cross-platform POSIX report paths, and an inventory SHA-256 fingerprint.
    - 已实现：确定性遍历、跨平台统一的 POSIX 报告路径，以及 inventory SHA-256 指纹。
-   - Implemented: schema 1 path validation rejects NUL/backslash paths, and files modified during hashing are reported instead of entering an inconsistent inventory.
-   - 已实现：schema 1 路径校验拒绝 NUL 与反斜杠路径；哈希期间发生变化的文件会被记录为扫描错误，不进入不一致的清单。
+   - Implemented: schema 1 runtime and packaged-schema path validation reject NUL/backslash and other non-canonical paths; explicit schema versions must be strings.
+   - Implemented: files modified during hashing or bounded container inspection are reported instead of entering an inconsistent inventory.
+   - 已实现：schema 1 运行时与随包 schema 路径校验会拒绝 NUL、反斜杠及其他非规范路径；显式 schema 版本必须为字符串。
+   - 已实现：哈希或有界容器识别期间发生变化的文件会被记录为扫描错误，不进入不一致的清单。
    - Implemented: 1,000-file repeated-scan comparison regression coverage without brittle timing thresholds.
    - 已实现：1,000 文件重复扫描比较回归覆盖，不采用脆弱的固定耗时阈值。
 
