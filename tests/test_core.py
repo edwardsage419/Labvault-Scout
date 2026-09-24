@@ -9,6 +9,66 @@ from labvault_scout.risk import classify, load_rules
 from labvault_scout.scanner import iter_files
 
 
+def test_atomic_text_writer_replaces_symlink_without_modifying_target(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.safeio import atomic_write_text
+
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are unavailable")
+
+    target = tmp_path / "source.txt"
+    target.write_text("source", encoding="utf-8")
+    output = tmp_path / "report.txt"
+    try:
+        os.symlink(target, output)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+
+    atomic_write_text(output, "report", encoding="utf-8")
+
+    assert target.read_text(encoding="utf-8") == "source"
+    assert output.is_symlink() is False
+    assert output.read_text(encoding="utf-8") == "report"
+
+
+def test_atomic_text_writer_replaces_hardlink_without_modifying_target(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.safeio import atomic_write_text
+
+    if not hasattr(os, "link"):
+        pytest.skip("hard links are unavailable")
+
+    target = tmp_path / "source.txt"
+    target.write_text("source", encoding="utf-8")
+    output = tmp_path / "report.txt"
+    try:
+        os.link(target, output)
+    except OSError:
+        pytest.skip("hard-link creation is unavailable")
+
+    atomic_write_text(output, "report", encoding="utf-8")
+
+    assert target.read_text(encoding="utf-8") == "source"
+    assert output.read_text(encoding="utf-8") == "report"
+    assert os.stat(target).st_ino != os.stat(output).st_ino or os.name == "nt"
+
+
+def test_atomic_text_writer_cleans_temporary_file_on_failure(tmp_path: Path):
+    import pytest
+    from labvault_scout.safeio import atomic_text_writer
+
+    output = tmp_path / "report.txt"
+    with pytest.raises(RuntimeError, match="stop"):
+        with atomic_text_writer(output) as handle:
+            handle.write("partial")
+            raise RuntimeError("stop")
+
+    assert not output.exists()
+    assert list(tmp_path.glob(".report.txt.*.tmp")) == []
+
+
 def test_core(tmp_path: Path):
     f = tmp_path / "result.jnb"
     f.write_bytes(b"labvault")
