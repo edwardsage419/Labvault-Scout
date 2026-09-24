@@ -176,7 +176,7 @@ def load_scan_report(path: Path) -> dict:
     """Load a LabVault Scout scan report with version-aware validation."""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"Cannot read scan report: {path}") from exc
 
     if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):

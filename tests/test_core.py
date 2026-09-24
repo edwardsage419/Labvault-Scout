@@ -2297,6 +2297,33 @@ def test_cli_verify_invalid_report_is_concise_and_json_capable(tmp_path: Path, m
     assert result["exit_code"] == 2
 
 
+def test_cli_verify_non_utf8_report_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    bad = tmp_path / "non-utf8-report.json"
+    bad.write_bytes(b"\xff\xfe\xfa")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read scan report" in result["error"]
+
+
 def test_cli_compare_invalid_report_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
     import sys
     import pytest
