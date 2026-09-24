@@ -3143,6 +3143,29 @@ def test_cli_verify_bundle_invalid_utf8_is_concise_and_json_capable(tmp_path: Pa
     assert "Cannot read bundle manifest" in result["error"]
 
 
+def test_bundle_manifest_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.bundle as bundle_module
+
+    calls = []
+    original = bundle_module.atomic_write_text
+
+    def recording_write(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+        calls.append(Path(path).name)
+        original(path, text, encoding=encoding)
+
+    monkeypatch.setattr(bundle_module, "atomic_write_text", recording_write)
+
+    source = tmp_path / "atomic_bundle_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "atomic_bundle_report"
+
+    assert scan(source, output) == 1
+    assert calls == ["bundle_manifest.json"]
+    payload = json.loads((output / "bundle_manifest.json").read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "1"
+
+
 def test_bundle_schema_is_packaged():
     from labvault_scout.schema_registry import load_schema_text
 
