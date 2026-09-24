@@ -174,7 +174,7 @@ def main() -> None:
     if args.command == "scan":
         try:
             count = scan(args.directory, args.output)
-        except ValueError as exc:
+        except (ValueError, OSError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             raise SystemExit(2) from None
         print(f"Scanned {count} files. Report: {args.output / 'report.html'}")

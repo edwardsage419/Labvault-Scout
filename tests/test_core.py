@@ -2271,6 +2271,31 @@ def test_cli_scan_invalid_inputs_exit_two_without_traceback(tmp_path: Path, monk
     assert "Traceback" not in captured.err
 
 
+def test_cli_scan_oserror_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    import labvault_scout.cli as cli_module
+
+    source = tmp_path / "scan-oserror-source"
+    source.mkdir()
+
+    def fail_scan(directory, output):
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(cli_module, "scan", fail_scan)
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "scan", str(source)])
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+    assert exc.value.code == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "permission denied" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_cli_verify_invalid_report_is_concise_and_json_capable(tmp_path: Path, monkeypatch, capsys):
     import sys
     import pytest
