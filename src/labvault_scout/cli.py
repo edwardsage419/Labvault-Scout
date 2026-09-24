@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from os import stat_result
 
 from . import __version__
 from .bundle import verify_bundle
@@ -18,6 +19,12 @@ from .report import write_reports
 from .risk import classify, load_rules, rules_sha256
 from .schema_registry import SCHEMA_FILES, load_schema_text
 from .scanner import iter_files
+
+
+def _file_changed_during_scan(before: stat_result, after: stat_result) -> bool:
+    """Return True when stable file identity or metadata changed during hashing."""
+    fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+    return any(getattr(before, field, None) != getattr(after, field, None) for field in fields)
 
 
 def scan(root: Path, output: Path) -> int:
@@ -35,18 +42,25 @@ def scan(root: Path, output: Path) -> int:
     else:
         excluded_output = output
 
-    def record_error(path: Path, exc: OSError) -> None:
+    def record_issue(path: Path, error: str) -> None:
         try:
             error_path = path.relative_to(root).as_posix()
         except ValueError:
             error_path = path.name
-        errors.append({"path": error_path, "error": type(exc).__name__})
+        errors.append({"path": error_path, "error": error})
+
+    def record_error(path: Path, exc: OSError) -> None:
+        record_issue(path, type(exc).__name__)
 
     for path in iter_files(root, excluded=excluded_output, on_error=record_error):
         try:
             stat = path.stat()
             rule = classify(path, rules)
             digest, header = sha256_with_head(path)
+            post_stat = path.stat()
+            if _file_changed_during_scan(stat, post_stat):
+                record_issue(path, "FileChangedDuringScan")
+                continue
             signature = signature_from_head(header)
             if not signature and path.suffix.lower() in {".h5", ".hdf5", ".mat"}:
                 signature = inspect_signature(path)
@@ -83,6 +97,10 @@ def scan(root: Path, output: Path) -> int:
             else:
                 container_type = ""
             signature_status = extension_signature_status(path, signature, container_type)
+            final_stat = path.stat()
+            if _file_changed_during_scan(stat, final_stat):
+                record_issue(path, "FileChangedDuringScan")
+                continue
             rows.append({
                 "path": path.relative_to(root).as_posix(),
                 "size": stat.st_size,
@@ -154,15 +172,19 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "scan":
-        count = scan(args.directory, args.output)
+        try:
+            count = scan(args.directory, args.output)
+        except (ValueError, OSError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(2) from None
         print(f"Scanned {count} files. Report: {args.output / 'report.html'}")
     elif args.command == "compare":
         try:
             result = compare_reports(args.before, args.after)
-        except ValueError as exc:
+            write_comparison(result, args.output)
+        except (ValueError, OSError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             raise SystemExit(2) from None
-        write_comparison(result, args.output)
         print(f"Compared reports. Changes: {result['summary']['change_count']}. Report: {args.output / 'comparison.html'}")
         if args.exit_code:
             raise SystemExit(comparison_exit_code(result))

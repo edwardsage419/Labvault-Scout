@@ -17,6 +17,103 @@ def test_core(tmp_path: Path):
     assert classify(f, load_rules())["risk"] == "RESCUE"
 
 
+def test_packaged_scientific_format_rules_have_valid_structure():
+    import re
+    from importlib.resources import files
+
+    raw = files("labvault_scout").joinpath("rules/scientific_formats.json").read_text(encoding="utf-8")
+    items = json.loads(raw)
+    required = {"extension", "name", "category", "risk", "reason", "preferred_exports"}
+
+    assert isinstance(items, list)
+    assert items
+    for item in items:
+        assert isinstance(item, dict)
+        assert set(item) == required
+
+        extension = item["extension"]
+        assert isinstance(extension, str)
+        assert extension == extension.lower()
+        assert re.fullmatch(r"\.[a-z0-9]+(?:\.[a-z0-9]+)*", extension)
+
+        assert isinstance(item["name"], str) and item["name"].strip()
+        assert isinstance(item["category"], str)
+        assert re.fullmatch(r"[a-z0-9]+(?:_[a-z0-9]+)*", item["category"])
+        assert item["risk"] in {"SAFE", "WATCH", "RESCUE"}
+        assert isinstance(item["reason"], str) and item["reason"].strip()
+
+        exports = item["preferred_exports"]
+        assert isinstance(exports, list)
+        assert len(exports) == len(set(exports))
+        assert all(isinstance(value, str) and re.fullmatch(r"[a-z0-9]+", value) for value in exports)
+
+
+def test_rule_index_rejects_duplicate_extensions():
+    import pytest
+    from labvault_scout.risk import _index_rules
+
+    def rule(extension, name):
+        return {
+            "extension": extension,
+            "name": name,
+            "category": "open_data",
+            "risk": "SAFE",
+            "reason": "test rule",
+            "preferred_exports": [],
+        }
+
+    items = [rule(".csv", "CSV"), rule(".csv", "Duplicate CSV")]
+    with pytest.raises(ValueError, match=r"Duplicate scientific format rule extension: \.csv"):
+        _index_rules(items)
+
+
+def test_rule_index_rejects_malformed_rule_structure():
+    import pytest
+    from labvault_scout.risk import _index_rules
+
+    valid = {
+        "extension": ".csv",
+        "name": "CSV",
+        "category": "open_data",
+        "risk": "SAFE",
+        "reason": "test rule",
+        "preferred_exports": [],
+    }
+
+    cases = []
+
+    missing = dict(valid)
+    missing.pop("reason")
+    cases.append(missing)
+
+    uppercase_extension = dict(valid)
+    uppercase_extension["extension"] = ".CSV"
+    cases.append(uppercase_extension)
+
+    invalid_risk = dict(valid)
+    invalid_risk["risk"] = "DANGER"
+    cases.append(invalid_risk)
+
+    duplicate_export = dict(valid)
+    duplicate_export["preferred_exports"] = ["csv", "csv"]
+    cases.append(duplicate_export)
+
+    non_string_risk = dict(valid)
+    non_string_risk["risk"] = ["SAFE"]
+    cases.append(non_string_risk)
+
+    non_string_export = dict(valid)
+    non_string_export["preferred_exports"] = [{"format": "csv"}]
+    cases.append(non_string_export)
+
+    for item in cases:
+        with pytest.raises(ValueError, match="Invalid scientific format rule"):
+            _index_rules([item])
+
+    with pytest.raises(ValueError, match="must be a JSON array"):
+        _index_rules({"extension": ".csv"})
+
+
 def test_unknown(tmp_path: Path):
     f = tmp_path / "sample.xyzunknown"
     f.write_text("x")
@@ -1393,6 +1490,25 @@ def test_scan_paths_use_posix_separators_in_reports(tmp_path: Path):
     assert "\\" not in payload["files"][0]["path"]
 
 
+def test_schema1_round_trip_allows_literal_backslash_filename_on_posix(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.compare import load_scan_report
+
+    if os.name == "nt":
+        pytest.skip("backslash is a path separator on Windows")
+
+    source = tmp_path / "backslash_source"
+    source.mkdir()
+    name = "literal\\name.csv"
+    (source / name).write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "backslash_report"
+
+    scan(source, output)
+    payload = load_scan_report(output / "scan.json")
+    assert payload["files"][0]["path"] == name
+
+
 def test_inventory_fingerprint_is_stable_and_content_sensitive(tmp_path: Path):
     source = tmp_path / "fingerprint_source"
     source.mkdir()
@@ -1820,6 +1936,26 @@ def test_report_integrity_detects_tampered_error_count(tmp_path: Path):
     assert report_integrity_status(payload) == "MISMATCH"
 
 
+def test_integrity_recomputes_open_copy_and_duplicate_counts(tmp_path: Path):
+    from labvault_scout.compare import report_integrity_status
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "summary_integrity_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "summary_integrity_report"
+    scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert report_integrity_status(payload) == "VERIFIED"
+
+    for field in ("open_copy_count", "duplicate_group_count"):
+        mutated = json.loads(json.dumps(payload))
+        mutated["summary"][field] += 1
+        mutated["report_sha256"] = report_payload_sha256(mutated)
+        assert report_integrity_status(mutated) == "MISMATCH"
+
+
 def test_verify_report_statuses(tmp_path: Path):
     from labvault_scout.compare import load_scan_report, verify_report
 
@@ -1990,6 +2126,14 @@ def test_schema1_loader_rejects_noncanonical_and_parent_paths(tmp_path: Path):
             load_scan_report(report)
 
 
+    mutated = json.loads(json.dumps(payload))
+    mutated["files"][0]["path"] = "bad\x00path.csv"
+    report = tmp_path / "bad-path-nul.json"
+    report.write_text(json.dumps(mutated), encoding="utf-8")
+    with pytest.raises(ValueError, match="Report path"):
+        load_scan_report(report)
+
+
 def test_schema1_loader_rejects_invalid_hash_size_and_required_fields(tmp_path: Path):
     import pytest
     from labvault_scout.compare import load_scan_report
@@ -2035,11 +2179,12 @@ def test_schema1_loader_rejects_invalid_error_paths(tmp_path: Path):
     output = tmp_path / "strict_error_report"
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
-    payload["errors"] = [{"path": "../outside", "error": "PermissionError"}]
+    mutated = json.loads(json.dumps(payload))
+    mutated["errors"] = [{"path": "../outside", "error": "PermissionError"}]
 
     report = tmp_path / "bad-error-path.json"
-    report.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(ValueError, match="must not traverse parents"):
+    report.write_text(json.dumps(mutated), encoding="utf-8")
+    with pytest.raises(ValueError, match="Report path|traverse parents"):
         load_scan_report(report)
 
 
@@ -2056,6 +2201,33 @@ def test_legacy_loader_remains_lenient_for_minimal_rows(tmp_path: Path):
     assert payload["files"][0]["sha256"] == "legacy"
 
 
+def test_loader_rejects_non_string_or_empty_explicit_schema_version(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report, verify_report
+
+    source = tmp_path / "schema_type_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "schema_type_report"
+    scan(source, output)
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    for value in (1, True, ""):
+        mutated = json.loads(json.dumps(payload))
+        mutated["schema_version"] = value
+        report = tmp_path / ("bad-schema-version-" + str(type(value).__name__) + "-" + str(value) + ".json")
+        report.write_text(json.dumps(mutated), encoding="utf-8")
+        with pytest.raises(ValueError, match="Invalid scan schema_version"):
+            load_scan_report(report)
+
+    direct = json.loads(json.dumps(payload))
+    direct["schema_version"] = 1
+    result = verify_report(direct)
+    assert result["status"] == "UNSUPPORTED"
+    assert result["schema_version"] == "invalid"
+    assert result["schema_supported"] is False
+
+
 def test_unknown_future_schema_uses_minimum_validation_only(tmp_path: Path):
     from labvault_scout.compare import load_scan_report, verify_report
 
@@ -2070,6 +2242,58 @@ def test_unknown_future_schema_uses_minimum_validation_only(tmp_path: Path):
     result = verify_report(payload)
     assert result["status"] == "UNSUPPORTED"
     assert result["exit_code"] == 2
+
+
+def test_cli_scan_invalid_inputs_exit_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    missing = tmp_path / "missing-source"
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "scan", str(missing)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    source = tmp_path / "same-output-source"
+    source.mkdir()
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "scan", str(source), "-o", str(source)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Output directory must not be the scan root" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_cli_scan_oserror_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    import labvault_scout.cli as cli_module
+
+    source = tmp_path / "scan-oserror-source"
+    source.mkdir()
+
+    def fail_scan(directory, output):
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(cli_module, "scan", fail_scan)
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "scan", str(source)])
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+    assert exc.value.code == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "permission denied" in captured.err
+    assert "Traceback" not in captured.err
 
 
 def test_cli_verify_invalid_report_is_concise_and_json_capable(tmp_path: Path, monkeypatch, capsys):
@@ -2098,6 +2322,57 @@ def test_cli_verify_invalid_report_is_concise_and_json_capable(tmp_path: Path, m
     assert result["exit_code"] == 2
 
 
+def test_cli_verify_non_utf8_report_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    bad = tmp_path / "non-utf8-report.json"
+    bad.write_bytes(b"\xff\xfe\xfa")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read scan report" in result["error"]
+
+
+def test_cli_compare_non_utf8_report_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    bad = tmp_path / "non-utf8-compare.json"
+    good = tmp_path / "good-legacy.json"
+    bad.write_bytes(b"\xff\xfe\xfa")
+    good.write_text(
+        json.dumps({"files": [{"path": "data.csv", "sha256": "x"}], "errors": []}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "compare", str(bad), str(good)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Cannot read scan report" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_cli_compare_invalid_report_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
     import sys
     import pytest
@@ -2115,6 +2390,37 @@ def test_cli_compare_invalid_report_exits_two_without_traceback(tmp_path: Path, 
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+
+def test_cli_compare_output_oserror_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    import labvault_scout.cli as cli_module
+
+    before = tmp_path / "before.json"
+    after = tmp_path / "after.json"
+    payload = {"files": [{"path": "data.csv", "sha256": "same"}], "errors": []}
+    before.write_text(json.dumps(payload), encoding="utf-8")
+    after.write_text(json.dumps(payload), encoding="utf-8")
+
+    def fail_write(result, output):
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(cli_module, "write_comparison", fail_write)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["labvault-scout", "compare", str(before), str(after), "-o", str(tmp_path / "comparison")],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "permission denied" in captured.err
     assert "Traceback" not in captured.err
 
 
@@ -2141,6 +2447,50 @@ def test_cli_schema_outputs_packaged_schema(monkeypatch, capsys):
     main()
     payload = json.loads(capsys.readouterr().out)
     assert payload["title"] == "LabVault Scout scan report schema 1"
+
+
+def test_scan_schema_enforces_relative_posix_paths():
+    import re
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    file_path_schema = schema["properties"]["files"]["items"]["properties"]["path"]
+    error_path_schema = schema["properties"]["errors"]["items"]["properties"]["path"]
+
+    def accepts(path_schema, value):
+        if "anyOf" in path_schema:
+            return any(accepts(option, value) for option in path_schema["anyOf"])
+        if "const" in path_schema:
+            return value == path_schema["const"]
+        if len(value) < path_schema.get("minLength", 0):
+            return False
+        for clause in path_schema.get("allOf", []):
+            negated = clause.get("not", {})
+            if "const" in negated and value == negated["const"]:
+                return False
+            if "pattern" in negated and re.search(negated["pattern"], value):
+                return False
+        return True
+
+    for value in ("data.csv", "nested/data.csv", "nested/deeper/file.jnb", "literal\\name.csv"):
+        assert accepts(file_path_schema, value)
+
+    for value in (
+        ".",
+        "/absolute/data.csv",
+        "../escape.csv",
+        "nested/../escape.csv",
+        "./data.csv",
+        "nested/./data.csv",
+        "nested//data.csv",
+        "data.csv/",
+        "bad\x00path.csv",
+    ):
+        assert not accepts(file_path_schema, value)
+
+    assert accepts(error_path_schema, ".")
+    assert accepts(error_path_schema, "nested/problem")
+    assert accepts(error_path_schema, "literal\\problem")
 
 
 def test_all_schema_registry_entries_load():
@@ -2588,6 +2938,26 @@ def test_bundle_manifest_rejects_path_traversal(tmp_path: Path):
         load_bundle_manifest(output)
 
 
+def test_bundle_manifest_rejects_nul_path(tmp_path: Path):
+    import pytest
+    from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+
+    source = tmp_path / "bundle_nul_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_nul_report"
+    scan(source, output)
+
+    path = output / "bundle_manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["files"][0]["path"] = "scan\x00.json"
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Bundle manifest path"):
+        load_bundle_manifest(output)
+
+
 def test_cli_verify_bundle_and_json_output(tmp_path: Path, monkeypatch, capsys):
     import sys
     import pytest
@@ -2606,6 +2976,89 @@ def test_cli_verify_bundle_and_json_output(tmp_path: Path, monkeypatch, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "VERIFIED"
     assert payload["checked_files"] == 5
+
+
+def test_cli_verify_bundle_invalid_manifest_is_concise_and_json_capable(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    output = tmp_path / "invalid_bundle"
+    output.mkdir()
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "error" in result
+
+
+def test_cli_verify_bundle_malformed_json_is_concise_and_json_capable(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    output = tmp_path / "malformed_bundle"
+    output.mkdir()
+    (output / "bundle_manifest.json").write_text("{not-json", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read bundle manifest" in result["error"]
+
+
+def test_cli_verify_bundle_invalid_utf8_is_concise_and_json_capable(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    output = tmp_path / "invalid_utf8_bundle"
+    output.mkdir()
+    (output / "bundle_manifest.json").write_bytes(b"\xff\xfe\xfa")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read bundle manifest" in result["error"]
 
 
 def test_bundle_schema_is_packaged():
@@ -2676,6 +3129,33 @@ def test_verify_bundle_rejects_symlinked_core_artifact_when_supported(tmp_path: 
     report.unlink()
     try:
         os.symlink(outside, report)
+    except OSError:
+        pytest.skip("symlink creation is unavailable in this environment")
+
+    result = verify_bundle(output)
+    assert {"path": "report.html", "issue": "SYMLINK"} in result["problems"]
+    assert result["status"] == "FAILED"
+
+
+def test_verify_bundle_classifies_broken_symlink_as_symlink(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.bundle import verify_bundle
+
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are not supported")
+
+    source = tmp_path / "bundle_broken_symlink_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "bundle_broken_symlink_report"
+    scan(source, output)
+
+    report = output / "report.html"
+    missing_target = tmp_path / "missing-target.html"
+    report.unlink()
+    try:
+        os.symlink(missing_target, report)
     except OSError:
         pytest.skip("symlink creation is unavailable in this environment")
 
@@ -3025,4 +3505,82 @@ def test_legacy_or_unknown_stata_dta_remains_unverified(tmp_path: Path):
     row = payload["files"][0]
     assert row["signature"] == ""
     assert row["signature_status"] == "unverified: modern Stata DTA structure not detected"
+
+def test_file_change_detection_covers_identity_and_ctime():
+    from types import SimpleNamespace
+    from labvault_scout.cli import _file_changed_during_scan
+
+    baseline = SimpleNamespace(
+        st_dev=1,
+        st_ino=10,
+        st_size=100,
+        st_mtime_ns=1000,
+        st_ctime_ns=2000,
+    )
+    same = SimpleNamespace(
+        st_dev=1,
+        st_ino=10,
+        st_size=100,
+        st_mtime_ns=1000,
+        st_ctime_ns=2000,
+    )
+    assert _file_changed_during_scan(baseline, same) is False
+
+    for field, value in (
+        ("st_dev", 2),
+        ("st_ino", 11),
+        ("st_size", 101),
+        ("st_mtime_ns", 1001),
+        ("st_ctime_ns", 2001),
+    ):
+        changed = SimpleNamespace(**baseline.__dict__)
+        setattr(changed, field, value)
+        assert _file_changed_during_scan(baseline, changed) is True
+
+
+def test_scan_reports_file_changed_during_container_inspection(tmp_path: Path, monkeypatch):
+    import labvault_scout.cli as cli_module
+
+    source = tmp_path / "changing_container_source"
+    source.mkdir()
+    target = source / "archive.zip"
+    target.write_bytes(b"PK\x03\x04synthetic")
+    output = tmp_path / "changing_container_report"
+
+    def changing_inspect(path: Path):
+        path.write_bytes(path.read_bytes() + b"changed")
+        return "ZIP archive"
+
+    monkeypatch.setattr(cli_module, "inspect_zip_container", changing_inspect)
+    count = cli_module.scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert count == 0
+    assert payload["files"] == []
+    assert payload["errors"] == [{"path": "archive.zip", "error": "FileChangedDuringScan"}]
+
+
+def test_scan_reports_file_changed_during_hash(tmp_path: Path, monkeypatch):
+    import labvault_scout.cli as cli_module
+
+    source = tmp_path / "changing_source"
+    source.mkdir()
+    target = source / "data.csv"
+    target.write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "changing_report"
+
+    original_hash = cli_module.sha256_with_head
+
+    def changing_hash(path: Path):
+        digest, header = original_hash(path)
+        path.write_text("x\n1\n2\n", encoding="utf-8")
+        return digest, header
+
+    monkeypatch.setattr(cli_module, "sha256_with_head", changing_hash)
+    count = cli_module.scan(source, output)
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert count == 0
+    assert payload["files"] == []
+    assert payload["errors"] == [{"path": "data.csv", "error": "FileChangedDuringScan"}]
 

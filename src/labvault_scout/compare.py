@@ -56,7 +56,7 @@ CSV_FIELDS = (
 
 
 def _validate_report_path(value: object, *, allow_root: bool = False) -> str:
-    if not isinstance(value, str) or not value or "\\x00" in value:
+    if not isinstance(value, str) or not value or "\x00" in value:
         raise ValueError("Report path must be a non-empty string")
     path = PurePosixPath(value)
     if path.is_absolute() or ".." in path.parts:
@@ -176,13 +176,19 @@ def load_scan_report(path: Path) -> dict:
     """Load a LabVault Scout scan report with version-aware validation."""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"Cannot read scan report: {path}") from exc
 
     if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
         raise ValueError(f"Invalid scan report: {path}")
 
-    schema_version = str(payload.get("schema_version", "legacy"))
+    if "schema_version" in payload:
+        raw_schema_version = payload["schema_version"]
+        if not isinstance(raw_schema_version, str) or not raw_schema_version:
+            raise ValueError(f"Invalid scan schema_version in report: {path}")
+        schema_version = raw_schema_version
+    else:
+        schema_version = "legacy"
     if schema_version == "1":
         _validate_schema1_payload(payload)
 
@@ -282,12 +288,24 @@ def report_integrity_status(payload: dict) -> str:
     if actual != expected:
         return "MISMATCH"
 
+    hash_counts: dict[str, int] = defaultdict(int)
+    open_copy_count = 0
+    for row in payload["files"]:
+        digest = str(row.get("sha256", ""))
+        if digest:
+            hash_counts[digest] += 1
+        if row.get("open_copy"):
+            open_copy_count += 1
+    duplicate_group_count = sum(1 for count in hash_counts.values() if count > 1)
+
     required_summary = {
         "file_count": metrics["file_count"],
         "total_bytes": metrics["total_bytes"],
         "risk_counts": metrics["risk_counts"],
         "priority_counts": metrics["priority_counts"],
         "error_count": error_count,
+        "open_copy_count": open_copy_count,
+        "duplicate_group_count": duplicate_group_count,
     }
     for key, value in required_summary.items():
         if summary.get(key) != value:
@@ -308,7 +326,13 @@ def report_identity(payload: dict) -> dict:
     provenance = payload.get("provenance")
     if not isinstance(provenance, dict):
         provenance = {}
-    schema_version = str(payload.get("schema_version", "legacy"))
+    raw_schema_version = payload.get("schema_version")
+    if raw_schema_version is None:
+        schema_version = "legacy"
+    elif isinstance(raw_schema_version, str) and raw_schema_version:
+        schema_version = raw_schema_version
+    else:
+        schema_version = "invalid"
     schema_supported = schema_version == "legacy" or schema_version in SUPPORTED_SCAN_SCHEMA_VERSIONS
     return {
         "schema_version": schema_version,

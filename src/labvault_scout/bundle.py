@@ -67,7 +67,7 @@ def write_bundle_manifest(output_dir: Path) -> dict:
 
 
 def _canonical_manifest_path(value: object) -> str:
-    if not isinstance(value, str) or not value or "\\x00" in value:
+    if not isinstance(value, str) or not value or "\x00" in value:
         raise ValueError("Bundle manifest path must be a non-empty string")
     path = PurePosixPath(value)
     if path.is_absolute() or ".." in path.parts or value != path.as_posix():
@@ -83,7 +83,7 @@ def load_bundle_manifest(output_dir: Path) -> dict:
         raise ValueError("Bundle manifest must not be a symlink")
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
 
     if not isinstance(payload, dict):
@@ -151,11 +151,11 @@ def verify_bundle(output_dir: Path) -> dict:
     for entry in payload["files"]:
         member = entry["path"]
         path = output_dir.joinpath(*PurePosixPath(member).parts)
-        if not path.exists():
-            problems.append({"path": member, "issue": "MISSING"})
-            continue
         if path.is_symlink():
             problems.append({"path": member, "issue": "SYMLINK"})
+            continue
+        if not path.exists():
+            problems.append({"path": member, "issue": "MISSING"})
             continue
         if not path.is_file():
             problems.append({"path": member, "issue": "NOT_REGULAR_FILE"})

@@ -46,7 +46,18 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 
 ### Changed
 
-* Second release candidate package version advances to `0.3.0rc2`
+* Third release candidate package version advances to `0.3.0rc3`
+* Schema 1 report paths now reject NUL characters, absolute paths, parent traversal, dot segments, duplicate `/` separators, and trailing `/`; literal backslashes remain valid filename characters on POSIX systems
+* Bundle manifest paths now reject embedded NUL characters explicitly
+* Files that change size or modification time during hashing are recorded as `FileChangedDuringScan` instead of producing inconsistent size/hash records
+* Report integrity verification now recomputes `open_copy_count` and `duplicate_group_count` in addition to existing summary checks
+* Expected `scan` CLI input errors now return a concise message and exit code 2 instead of a Python traceback
+* Non-UTF-8 scan reports and bundle manifests now fail with concise `INVALID`/exit-code-2 CLI results instead of decode tracebacks
+* Scan and comparison output filesystem errors now return concise exit-code-2 CLI errors instead of tracebacks
+* Scientific-format rules are validated for structure, normalized extensions, allowed risks, export lists, and duplicate extensions before use
+* Packaged scan JSON Schema path constraints now match runtime `relative-posix` validation, including the special root error path `.`
+* Explicit `schema_version` values must be non-empty strings; numeric values are rejected instead of being coerced
+* File-change detection now checks device/inode identity, size, mtime, and ctime before and after hashing and again after bounded container inspection
 * Directory and file traversal order is deterministic for more stable report diffs
 * Reported relative paths use POSIX `/` separators on every supported operating system
 * Move detection requires the matching SHA-256 to be globally unique in both source reports
