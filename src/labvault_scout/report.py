@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .bundle import write_bundle_manifest
+from .safeio import atomic_write_text
 
 REPORT_SCHEMA_VERSION = "1"
 
@@ -98,7 +99,7 @@ def write_reports(
         "errors": errors,
     }
     payload["report_sha256"] = report_payload_sha256(payload)
-    (output_dir / "scan.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_text(output_dir / "scan.json", json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     migration_rows = sorted(
         (row for row in rows if row["priority"] in {"HIGH", "MEDIUM"}),
