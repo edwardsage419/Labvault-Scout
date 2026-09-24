@@ -181,10 +181,10 @@ def main() -> None:
     elif args.command == "compare":
         try:
             result = compare_reports(args.before, args.after)
-        except ValueError as exc:
+            write_comparison(result, args.output)
+        except (ValueError, OSError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             raise SystemExit(2) from None
-        write_comparison(result, args.output)
         print(f"Compared reports. Changes: {result['summary']['change_count']}. Report: {args.output / 'comparison.html'}")
         if args.exit_code:
             raise SystemExit(comparison_exit_code(result))

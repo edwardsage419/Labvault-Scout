@@ -2393,6 +2393,37 @@ def test_cli_compare_invalid_report_exits_two_without_traceback(tmp_path: Path, 
     assert "Traceback" not in captured.err
 
 
+def test_cli_compare_output_oserror_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    import labvault_scout.cli as cli_module
+
+    before = tmp_path / "before.json"
+    after = tmp_path / "after.json"
+    payload = {"files": [{"path": "data.csv", "sha256": "same"}], "errors": []}
+    before.write_text(json.dumps(payload), encoding="utf-8")
+    after.write_text(json.dumps(payload), encoding="utf-8")
+
+    def fail_write(result, output):
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(cli_module, "write_comparison", fail_write)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["labvault-scout", "compare", str(before), str(after), "-o", str(tmp_path / "comparison")],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "permission denied" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_packaged_json_schemas_are_available_and_parseable():
     from labvault_scout.schema_registry import load_schema_text
     from labvault_scout.report import FIELDS
