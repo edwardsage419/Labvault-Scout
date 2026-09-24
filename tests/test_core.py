@@ -2898,6 +2898,34 @@ def test_cli_verify_bundle_invalid_manifest_is_concise_and_json_capable(tmp_path
     assert "error" in result
 
 
+def test_cli_verify_bundle_malformed_json_is_concise_and_json_capable(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    output = tmp_path / "malformed_bundle"
+    output.mkdir()
+    (output / "bundle_manifest.json").write_text("{not-json", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Traceback" not in captured.err
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify-bundle", str(output), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read bundle manifest" in result["error"]
+
+
 def test_bundle_schema_is_packaged():
     from labvault_scout.schema_registry import load_schema_text
 
