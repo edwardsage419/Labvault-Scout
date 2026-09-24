@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 
 from . import __version__
 from .report import FIELDS, inventory_sha256, report_payload_sha256
+from .safeio import atomic_write_text
 
 COMPARISON_SCHEMA_VERSION = "1"
 SUPPORTED_SCAN_SCHEMA_VERSIONS = {"1"}
@@ -621,7 +622,8 @@ def _csv_row(item: dict) -> dict:
 
 def write_comparison(result: dict, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "comparison.json").write_text(
+    atomic_write_text(
+        output_dir / "comparison.json",
         json.dumps(result, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
