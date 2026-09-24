@@ -2324,6 +2324,30 @@ def test_cli_verify_non_utf8_report_exits_two_without_traceback(tmp_path: Path, 
     assert "Cannot read scan report" in result["error"]
 
 
+def test_cli_compare_non_utf8_report_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    import pytest
+    from labvault_scout.cli import main
+
+    bad = tmp_path / "non-utf8-compare.json"
+    good = tmp_path / "good-legacy.json"
+    bad.write_bytes(b"\xff\xfe\xfa")
+    good.write_text(
+        json.dumps({"files": [{"path": "data.csv", "sha256": "x"}], "errors": []}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "compare", str(bad), str(good)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Cannot read scan report" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_cli_compare_invalid_report_exits_two_without_traceback(tmp_path: Path, monkeypatch, capsys):
     import sys
     import pytest
