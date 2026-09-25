@@ -574,6 +574,39 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "change_type": {
+                  "const": "ASSESSMENT_CHANGED"
+                }
+              },
+              "required": [
+                "change_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "before_path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "after_path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "before": {
+                  "type": "object"
+                },
+                "after": {
+                  "type": "object"
+                },
+                "changed_fields": {
+                  "minItems": 1
+                }
+              }
+            }
           }
         ]
       }
