@@ -227,10 +227,15 @@ def scan_metrics(payload: dict) -> dict:
     priority_counts: dict[str, int] = {}
     total_bytes = 0
     for row in payload["files"]:
-        try:
-            total_bytes += int(row.get("size", 0))
-        except (TypeError, ValueError):
-            pass
+        raw_size = row.get("size", 0)
+        if not isinstance(raw_size, bool):
+            try:
+                size = int(raw_size)
+            except (TypeError, ValueError):
+                pass
+            else:
+                if size >= 0:
+                    total_bytes += size
 
         risk = str(row.get("risk", ""))
         if risk:

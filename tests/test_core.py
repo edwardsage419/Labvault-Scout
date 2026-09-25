@@ -1821,6 +1821,22 @@ def test_compare_reports_priority_escalation_and_deescalation():
     assert by_path["down.jnb"]["priority_delta"] == -40
 
 
+def test_scan_metrics_ignores_invalid_legacy_sizes():
+    from labvault_scout.compare import scan_metrics
+
+    metrics = scan_metrics({
+        "files": [
+            {"path": "negative.bin", "size": -5},
+            {"path": "boolean.bin", "size": True},
+            {"path": "numeric-string.bin", "size": "7"},
+            {"path": "invalid.bin", "size": "not-a-number"},
+        ]
+    })
+
+    assert metrics["file_count"] == 4
+    assert metrics["total_bytes"] == 7
+
+
 def test_compare_metrics_delta_for_legacy_and_current_rows():
     from labvault_scout.compare import compare_payloads
 
