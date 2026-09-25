@@ -617,6 +617,105 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "priority_direction": {
+                  "const": ""
+                }
+              },
+              "required": [
+                "priority_direction"
+              ]
+            },
+            "then": {
+              "properties": {
+                "priority_delta": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "priority_direction": {
+                  "const": "ESCALATED"
+                }
+              },
+              "required": [
+                "priority_direction"
+              ]
+            },
+            "then": {
+              "properties": {
+                "priority_delta": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "priority_direction": {
+                  "const": "DEESCALATED"
+                }
+              },
+              "required": [
+                "priority_direction"
+              ]
+            },
+            "then": {
+              "properties": {
+                "priority_delta": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "integer",
+                      "maximum": -1
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "priority_direction": {
+                  "const": "UNCHANGED"
+                }
+              },
+              "required": [
+                "priority_direction"
+              ]
+            },
+            "then": {
+              "properties": {
+                "priority_delta": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "const": 0
+                    }
+                  ]
+                }
+              }
+            }
           }
         ]
       }

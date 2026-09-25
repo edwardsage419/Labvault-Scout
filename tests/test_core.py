@@ -1889,6 +1889,32 @@ def test_comparison_schema_changed_fields_match_runtime_assessments():
     assert set(changed_fields["items"]["enum"]) == set(ASSESSMENT_FIELDS)
 
 
+def test_comparison_schema_priority_delta_matches_direction():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clauses = schema["properties"]["changes"]["items"]["allOf"]
+    by_direction = {
+        clause["if"]["properties"]["priority_direction"]["const"]: clause["then"]["properties"]["priority_delta"]
+        for clause in clauses
+        if "priority_direction" in clause.get("if", {}).get("properties", {})
+    }
+
+    assert by_direction[""] == {"type": "null"}
+    assert by_direction["ESCALATED"]["anyOf"] == [
+        {"type": "null"},
+        {"type": "integer", "minimum": 1},
+    ]
+    assert by_direction["DEESCALATED"]["anyOf"] == [
+        {"type": "null"},
+        {"type": "integer", "maximum": -1},
+    ]
+    assert by_direction["UNCHANGED"]["anyOf"] == [
+        {"type": "null"},
+        {"const": 0},
+    ]
+
+
 def test_compare_reports_priority_escalation_and_deescalation():
     from labvault_scout.compare import compare_payloads
 
