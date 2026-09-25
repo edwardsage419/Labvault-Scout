@@ -314,6 +314,10 @@ def report_integrity_status(payload: dict) -> str:
     return "VERIFIED"
 
 
+def _normalized_sha256(value: object) -> str:
+    return value if isinstance(value, str) and SHA256_RE.fullmatch(value) else ""
+
+
 def report_identity(payload: dict) -> dict:
     """Return non-sensitive compatibility metadata for a source report."""
     tool = payload.get("tool")
@@ -343,10 +347,10 @@ def report_identity(payload: dict) -> dict:
             "version": str(tool.get("version", "unknown")),
         },
         "error_count": error_count,
-        "inventory_sha256": str(inventory),
-        "report_sha256": str(payload.get("report_sha256", "")),
+        "inventory_sha256": _normalized_sha256(inventory),
+        "report_sha256": _normalized_sha256(payload.get("report_sha256", "")),
         "integrity_status": report_integrity_status(payload),
-        "rules_sha256": str(provenance.get("rules_sha256", "")),
+        "rules_sha256": _normalized_sha256(provenance.get("rules_sha256", "")),
         "hash_algorithm": str(provenance.get("hash_algorithm", "")),
         "path_style": str(provenance.get("path_style", "")),
         "legacy_paths_normalized": legacy_paths_normalized,
