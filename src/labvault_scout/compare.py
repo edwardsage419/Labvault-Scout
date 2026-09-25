@@ -663,4 +663,4 @@ def write_comparison(result: dict, output_dir: Path) -> None:
 <p>Risk deltas: {risk_delta}</p>
 <p>Priority deltas: {priority_delta}</p>
 <table><thead><tr><th>change_type</th><th>before_path</th><th>after_path</th><th>priority_direction</th><th>priority_delta</th><th>changed_fields</th></tr></thead><tbody>{rows}</tbody></table></html>"""
-    (output_dir / "comparison.html").write_text(page, encoding="utf-8")
+    atomic_write_text(output_dir / "comparison.html", page, encoding="utf-8")
