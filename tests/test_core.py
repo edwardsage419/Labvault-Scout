@@ -2767,6 +2767,14 @@ def test_comparison_schema_allows_source_tool_names():
     assert result["after"]["tool"]["name"] == "Future Scanner B"
 
 
+def test_verification_schema_hash_fields_match_runtime_normalization():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("verification"))["oneOf"][0]
+    for field in ("inventory_sha256", "report_sha256", "rules_sha256"):
+        assert schema["properties"][field]["pattern"] == "^$|^[0-9a-f]{64}$"
+
+
 def test_verification_schema_allows_source_tool_names():
     from labvault_scout.compare import verify_report
     from labvault_scout.schema_registry import load_schema_text

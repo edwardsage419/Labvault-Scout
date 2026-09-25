@@ -50,13 +50,16 @@
           "minimum": 0
         },
         "inventory_sha256": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
         },
         "report_sha256": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
         },
         "rules_sha256": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
         },
         "tool": {
           "type": "object",
