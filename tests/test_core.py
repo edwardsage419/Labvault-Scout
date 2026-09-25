@@ -294,8 +294,30 @@ def test_scan_json_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
     output = tmp_path / "atomic_scan_report"
 
     assert scan(source, output) == 1
-    assert calls == ["scan.json"]
+    assert "scan.json" in calls
     assert json.loads((output / "scan.json").read_text(encoding="utf-8"))["summary"]["file_count"] == 1
+
+
+def test_report_html_uses_atomic_write_text(tmp_path: Path, monkeypatch):
+    import labvault_scout.report as report_module
+
+    calls = []
+    original = report_module.atomic_write_text
+
+    def recording_write(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+        calls.append(Path(path).name)
+        original(path, text, encoding=encoding)
+
+    monkeypatch.setattr(report_module, "atomic_write_text", recording_write)
+
+    source = tmp_path / "atomic_html_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "atomic_html_report"
+
+    assert scan(source, output) == 1
+    assert "report.html" in calls
+    assert "LabVault Scout Report" in (output / "report.html").read_text(encoding="utf-8")
 
 
 def test_open_copy_detection(tmp_path: Path):
