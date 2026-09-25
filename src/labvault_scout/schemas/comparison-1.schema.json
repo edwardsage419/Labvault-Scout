@@ -477,6 +477,10 @@
                 },
                 "priority_delta": {
                   "type": "null"
+                },
+                "after_path": {
+                  "type": "string",
+                  "minLength": 1
                 }
               }
             }
@@ -511,6 +515,10 @@
                 },
                 "priority_delta": {
                   "type": "null"
+                },
+                "before_path": {
+                  "type": "string",
+                  "minLength": 1
                 }
               }
             }

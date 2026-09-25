@@ -1862,6 +1862,7 @@ def test_comparison_schema_one_sided_changes_match_runtime_shape():
 
     added = by_type["ADDED"]
     assert added["before_path"]["const"] == ""
+    assert added["after_path"]["minLength"] == 1
     assert added["before"]["type"] == "null"
     assert added["after"]["type"] == "object"
     assert added["changed_fields"]["maxItems"] == 0
@@ -1870,6 +1871,7 @@ def test_comparison_schema_one_sided_changes_match_runtime_shape():
 
     removed = by_type["REMOVED"]
     assert removed["after_path"]["const"] == ""
+    assert removed["before_path"]["minLength"] == 1
     assert removed["before"]["type"] == "object"
     assert removed["after"]["type"] == "null"
     assert removed["changed_fields"]["maxItems"] == 0
