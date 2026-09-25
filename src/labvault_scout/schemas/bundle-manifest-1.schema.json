@@ -65,7 +65,84 @@
         },
         "additionalProperties": false
       },
-      "uniqueItems": true
+      "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "const": "scan.json"
+              }
+            },
+            "required": [
+              "path"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "const": "files.csv"
+              }
+            },
+            "required": [
+              "path"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "const": "duplicates.csv"
+              }
+            },
+            "required": [
+              "path"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "const": "migration_plan.csv"
+              }
+            },
+            "required": [
+              "path"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "const": "report.html"
+              }
+            },
+            "required": [
+              "path"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
     },
     "manifest_sha256": {
       "type": "string",
