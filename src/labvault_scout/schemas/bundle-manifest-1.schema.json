@@ -64,7 +64,8 @@
           }
         },
         "additionalProperties": false
-      }
+      },
+      "uniqueItems": true
     },
     "manifest_sha256": {
       "type": "string",

@@ -3337,6 +3337,7 @@ def test_bundle_schema_is_packaged():
     schema = json.loads(load_schema_text("bundle"))
     assert schema["title"] == "LabVault Scout bundle manifest schema 1"
     assert schema["properties"]["schema_version"]["const"] == "1"
+    assert schema["properties"]["files"]["uniqueItems"] is True
 
 
 def test_bundle_manifest_rejects_extra_top_level_fields(tmp_path: Path):
