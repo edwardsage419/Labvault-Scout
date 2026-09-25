@@ -147,13 +147,15 @@
             "risk_counts": {
               "type": "object",
               "additionalProperties": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0
               }
             },
             "priority_counts": {
               "type": "object",
               "additionalProperties": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0
               }
             }
           },
@@ -255,13 +257,15 @@
             "risk_counts": {
               "type": "object",
               "additionalProperties": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0
               }
             },
             "priority_counts": {
               "type": "object",
               "additionalProperties": {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0
               }
             }
           },

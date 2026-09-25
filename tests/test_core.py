@@ -1837,6 +1837,19 @@ def test_scan_metrics_ignores_invalid_legacy_sizes():
     assert metrics["total_bytes"] == 7
 
 
+def test_comparison_schema_source_metric_counts_are_nonnegative():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    for side in ("before", "after"):
+        metrics = schema["properties"][side]["properties"]["metrics"]["properties"]
+        for field in ("risk_counts", "priority_counts"):
+            assert metrics[field]["additionalProperties"] == {
+                "type": "integer",
+                "minimum": 0,
+            }
+
+
 def test_compare_metrics_delta_for_legacy_and_current_rows():
     from labvault_scout.compare import compare_payloads
 
