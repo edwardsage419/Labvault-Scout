@@ -544,6 +544,36 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "change_type": {
+                  "const": "CONTENT_CHANGED"
+                }
+              },
+              "required": [
+                "change_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "before_path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "after_path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "before": {
+                  "type": "object"
+                },
+                "after": {
+                  "type": "object"
+                }
+              }
+            }
           }
         ]
       }
