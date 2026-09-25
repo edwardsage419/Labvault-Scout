@@ -1858,6 +1858,7 @@ def test_comparison_schema_one_sided_changes_match_runtime_shape():
     by_type = {
         clause["if"]["properties"]["change_type"]["const"]: clause["then"]["properties"]
         for clause in clauses
+        if "change_type" in clause.get("if", {}).get("properties", {})
     }
 
     added = by_type["ADDED"]
