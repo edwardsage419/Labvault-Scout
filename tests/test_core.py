@@ -2767,6 +2767,25 @@ def test_comparison_schema_allows_source_tool_names():
     assert result["after"]["tool"]["name"] == "Future Scanner B"
 
 
+def test_verification_schema_status_exit_code_pairs_match_runtime():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("verification"))["oneOf"][0]
+    pairs = {
+        (
+            option["properties"]["status"]["const"],
+            option["properties"]["exit_code"]["const"],
+        )
+        for option in schema["allOf"][0]["oneOf"]
+    }
+    assert pairs == {
+        ("VERIFIED", 0),
+        ("UNKNOWN", 1),
+        ("FAILED", 2),
+        ("UNSUPPORTED", 2),
+    }
+
+
 def test_verification_schema_hash_fields_match_runtime_normalization():
     from labvault_scout.schema_registry import load_schema_text
 

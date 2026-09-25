@@ -80,7 +80,69 @@
           "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "status": {
+                  "const": "VERIFIED"
+                },
+                "exit_code": {
+                  "const": 0
+                }
+              },
+              "required": [
+                "status",
+                "exit_code"
+              ]
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "UNKNOWN"
+                },
+                "exit_code": {
+                  "const": 1
+                }
+              },
+              "required": [
+                "status",
+                "exit_code"
+              ]
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "FAILED"
+                },
+                "exit_code": {
+                  "const": 2
+                }
+              },
+              "required": [
+                "status",
+                "exit_code"
+              ]
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "UNSUPPORTED"
+                },
+                "exit_code": {
+                  "const": 2
+                }
+              },
+              "required": [
+                "status",
+                "exit_code"
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "type": "object",
