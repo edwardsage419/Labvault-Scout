@@ -1798,6 +1798,33 @@ def test_comparison_carries_inventory_fingerprints(tmp_path: Path):
     assert result["before"]["inventory_sha256"] == result["after"]["inventory_sha256"]
 
 
+def test_comparison_schema_one_sided_changes_match_runtime_shape():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clauses = schema["properties"]["changes"]["items"]["allOf"]
+    by_type = {
+        clause["if"]["properties"]["change_type"]["const"]: clause["then"]["properties"]
+        for clause in clauses
+    }
+
+    added = by_type["ADDED"]
+    assert added["before_path"]["const"] == ""
+    assert added["before"]["type"] == "null"
+    assert added["after"]["type"] == "object"
+    assert added["changed_fields"]["maxItems"] == 0
+    assert added["priority_direction"]["const"] == ""
+    assert added["priority_delta"]["type"] == "null"
+
+    removed = by_type["REMOVED"]
+    assert removed["after_path"]["const"] == ""
+    assert removed["before"]["type"] == "object"
+    assert removed["after"]["type"] == "null"
+    assert removed["changed_fields"]["maxItems"] == 0
+    assert removed["priority_direction"]["const"] == ""
+    assert removed["priority_delta"]["type"] == "null"
+
+
 def test_comparison_schema_changed_fields_match_runtime_assessments():
     from labvault_scout.compare import ASSESSMENT_FIELDS
     from labvault_scout.schema_registry import load_schema_text

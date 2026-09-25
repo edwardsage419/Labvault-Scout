@@ -445,7 +445,77 @@
             ]
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "change_type": {
+                  "const": "ADDED"
+                }
+              },
+              "required": [
+                "change_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "before_path": {
+                  "const": ""
+                },
+                "before": {
+                  "type": "null"
+                },
+                "after": {
+                  "type": "object"
+                },
+                "changed_fields": {
+                  "maxItems": 0
+                },
+                "priority_direction": {
+                  "const": ""
+                },
+                "priority_delta": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "change_type": {
+                  "const": "REMOVED"
+                }
+              },
+              "required": [
+                "change_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "after_path": {
+                  "const": ""
+                },
+                "before": {
+                  "type": "object"
+                },
+                "after": {
+                  "type": "null"
+                },
+                "changed_fields": {
+                  "maxItems": 0
+                },
+                "priority_direction": {
+                  "const": ""
+                },
+                "priority_delta": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
       }
     }
   },
