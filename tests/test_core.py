@@ -1798,6 +1798,16 @@ def test_comparison_carries_inventory_fingerprints(tmp_path: Path):
     assert result["before"]["inventory_sha256"] == result["after"]["inventory_sha256"]
 
 
+def test_comparison_schema_changed_fields_match_runtime_assessments():
+    from labvault_scout.compare import ASSESSMENT_FIELDS
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    changed_fields = schema["properties"]["changes"]["items"]["properties"]["changed_fields"]
+    assert changed_fields["uniqueItems"] is True
+    assert set(changed_fields["items"]["enum"]) == set(ASSESSMENT_FIELDS)
+
+
 def test_compare_reports_priority_escalation_and_deescalation():
     from labvault_scout.compare import compare_payloads
 
