@@ -1798,6 +1798,23 @@ def test_comparison_carries_inventory_fingerprints(tmp_path: Path):
     assert result["before"]["inventory_sha256"] == result["after"]["inventory_sha256"]
 
 
+def test_comparison_schema_moved_changes_are_two_sided():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clauses = schema["properties"]["changes"]["items"]["allOf"]
+    moved = next(
+        clause["then"]["properties"]
+        for clause in clauses
+        if clause["if"]["properties"]["change_type"]["const"] == "MOVED"
+    )
+
+    assert moved["before_path"]["minLength"] == 1
+    assert moved["after_path"]["minLength"] == 1
+    assert moved["before"]["type"] == "object"
+    assert moved["after"]["type"] == "object"
+
+
 def test_comparison_schema_one_sided_changes_match_runtime_shape():
     from labvault_scout.schema_registry import load_schema_text
 
