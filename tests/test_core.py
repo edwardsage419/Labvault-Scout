@@ -2686,6 +2686,24 @@ def test_packaged_json_schemas_are_available_and_parseable():
     assert verification_schema["oneOf"]
 
 
+def test_verification_schema_allows_source_tool_names():
+    from labvault_scout.compare import verify_report
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("verification"))["oneOf"][0]
+    name_schema = schema["properties"]["tool"]["properties"]["name"]
+    assert name_schema == {"type": "string", "minLength": 1}
+
+    result = verify_report({
+        "schema_version": "99",
+        "tool": {"name": "Future Scientific Scanner", "version": "1"},
+        "files": [],
+        "errors": [],
+    })
+    assert result["status"] == "UNSUPPORTED"
+    assert result["tool"]["name"] == "Future Scientific Scanner"
+
+
 def test_cli_schema_outputs_packaged_schema(monkeypatch, capsys):
     import sys
     from labvault_scout.cli import main
