@@ -2702,6 +2702,26 @@ def test_packaged_json_schemas_are_available_and_parseable():
     assert verification_schema["oneOf"]
 
 
+def test_report_identity_normalizes_invalid_tool_metadata():
+    from labvault_scout.compare import report_identity
+
+    empty = report_identity({
+        "schema_version": "99",
+        "tool": {"name": "", "version": None},
+        "files": [],
+        "errors": [],
+    })
+    assert empty["tool"] == {"name": "unknown", "version": "unknown"}
+
+    valid = report_identity({
+        "schema_version": "99",
+        "tool": {"name": "Future Scanner", "version": "2"},
+        "files": [],
+        "errors": [],
+    })
+    assert valid["tool"] == {"name": "Future Scanner", "version": "2"}
+
+
 def test_report_identity_normalizes_untrusted_sha256_fields():
     from labvault_scout.compare import report_identity
 

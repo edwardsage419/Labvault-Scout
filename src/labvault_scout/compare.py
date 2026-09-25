@@ -323,6 +323,10 @@ def _normalized_sha256(value: object) -> str:
     return value if isinstance(value, str) and SHA256_RE.fullmatch(value) else ""
 
 
+def _normalized_metadata_text(value: object) -> str:
+    return value if isinstance(value, str) and value else "unknown"
+
+
 def report_identity(payload: dict) -> dict:
     """Return non-sensitive compatibility metadata for a source report."""
     tool = payload.get("tool")
@@ -348,8 +352,8 @@ def report_identity(payload: dict) -> dict:
         "schema_version": schema_version,
         "schema_supported": schema_supported,
         "tool": {
-            "name": str(tool.get("name", "LabVault Scout")),
-            "version": str(tool.get("version", "unknown")),
+            "name": _normalized_metadata_text(tool.get("name")),
+            "version": _normalized_metadata_text(tool.get("version")),
         },
         "error_count": error_count,
         "inventory_sha256": _normalized_sha256(inventory),
