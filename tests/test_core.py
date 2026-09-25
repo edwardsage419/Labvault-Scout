@@ -1592,6 +1592,31 @@ def test_comparison_json_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
     assert payload["summary"]["moved_count"] == 1
 
 
+def test_changes_csv_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.compare as compare_module
+    from labvault_scout.compare import compare_payloads, write_comparison
+
+    calls = []
+    original = compare_module.atomic_text_writer
+
+    def recording_writer(path: Path, *, encoding: str = "utf-8", newline=None):
+        calls.append(Path(path).name)
+        return original(path, encoding=encoding, newline=newline)
+
+    monkeypatch.setattr(compare_module, "atomic_text_writer", recording_writer)
+
+    result = compare_payloads(
+        {"files": [{"path": "old.csv", "sha256": "same", "risk": "SAFE"}]},
+        {"files": [{"path": "new.csv", "sha256": "same", "risk": "SAFE"}]},
+    )
+    output = tmp_path / "atomic_changes"
+    write_comparison(result, output)
+
+    assert calls == ["changes.csv"]
+    with (output / "changes.csv").open(encoding="utf-8-sig") as handle:
+        assert next(csv.DictReader(handle))["change_type"] == "MOVED"
+
+
 def test_cli_compare_command(tmp_path: Path, monkeypatch, capsys):
     import sys
     from labvault_scout.cli import main

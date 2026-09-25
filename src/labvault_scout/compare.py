@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 
 from . import __version__
 from .report import FIELDS, inventory_sha256, report_payload_sha256
-from .safeio import atomic_write_text
+from .safeio import atomic_text_writer, atomic_write_text
 
 COMPARISON_SCHEMA_VERSION = "1"
 SUPPORTED_SCAN_SCHEMA_VERSIONS = {"1"}
@@ -628,7 +628,7 @@ def write_comparison(result: dict, output_dir: Path) -> None:
         encoding="utf-8",
     )
 
-    with (output_dir / "changes.csv").open("w", newline="", encoding="utf-8-sig") as handle:
+    with atomic_text_writer(output_dir / "changes.csv", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
         writer.writeheader()
         writer.writerows(_csv_row(item) for item in result["changes"])
