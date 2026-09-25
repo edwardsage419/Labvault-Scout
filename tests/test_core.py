@@ -1928,6 +1928,17 @@ def test_scan_metrics_ignores_invalid_legacy_sizes():
     assert metrics["total_bytes"] == 7
 
 
+def test_comparison_schema_source_versions_are_nonempty():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    for side in ("before", "after"):
+        assert schema["properties"][side]["properties"]["schema_version"] == {
+            "type": "string",
+            "minLength": 1,
+        }
+
+
 def test_comparison_schema_source_metric_counts_are_nonnegative():
     from labvault_scout.schema_registry import load_schema_text
 

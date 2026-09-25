@@ -72,7 +72,8 @@
       ],
       "properties": {
         "schema_version": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "schema_supported": {
           "type": "boolean"
@@ -182,7 +183,8 @@
       ],
       "properties": {
         "schema_version": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "schema_supported": {
           "type": "boolean"
