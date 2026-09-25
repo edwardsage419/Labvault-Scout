@@ -252,6 +252,30 @@ def test_migration_plan_csv_uses_atomic_text_writer(tmp_path: Path, monkeypatch)
     assert (output / "migration_plan.csv").exists()
 
 
+def test_duplicates_csv_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.report as report_module
+
+    calls = []
+    original = report_module.atomic_text_writer
+
+    def recording_writer(path: Path, *, encoding: str = "utf-8", newline=None):
+        calls.append(Path(path).name)
+        return original(path, encoding=encoding, newline=newline)
+
+    monkeypatch.setattr(report_module, "atomic_text_writer", recording_writer)
+
+    source = tmp_path / "atomic_duplicates_source"
+    source.mkdir()
+    (source / "a.csv").write_text("same", encoding="utf-8")
+    (source / "b.csv").write_text("same", encoding="utf-8")
+    output = tmp_path / "atomic_duplicates_report"
+
+    assert scan(source, output) == 2
+    assert "duplicates.csv" in calls
+    with (output / "duplicates.csv").open(encoding="utf-8-sig") as handle:
+        assert len(list(csv.DictReader(handle))) == 2
+
+
 def test_scan_json_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
     import labvault_scout.report as report_module
 

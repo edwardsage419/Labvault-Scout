@@ -111,7 +111,7 @@ def write_reports(
         writer.writeheader()
         writer.writerows(migration_rows)
 
-    with (output_dir / "duplicates.csv").open("w", newline="", encoding="utf-8-sig") as f:
+    with atomic_text_writer(output_dir / "duplicates.csv", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=["group", "sha256", "path", "size"])
         writer.writeheader()
         writer.writerows(duplicates)
