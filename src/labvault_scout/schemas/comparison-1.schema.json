@@ -85,7 +85,8 @@
           ],
           "properties": {
             "name": {
-              "const": "LabVault Scout"
+              "type": "string",
+              "minLength": 1
             },
             "version": {
               "type": "string",
@@ -192,7 +193,8 @@
           ],
           "properties": {
             "name": {
-              "const": "LabVault Scout"
+              "type": "string",
+              "minLength": 1
             },
             "version": {
               "type": "string",

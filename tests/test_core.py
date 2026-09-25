@@ -2686,6 +2686,33 @@ def test_packaged_json_schemas_are_available_and_parseable():
     assert verification_schema["oneOf"]
 
 
+def test_comparison_schema_allows_source_tool_names():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    for side in ("before", "after"):
+        name_schema = schema["properties"][side]["properties"]["tool"]["properties"]["name"]
+        assert name_schema == {"type": "string", "minLength": 1}
+
+    result = compare_payloads(
+        {
+            "schema_version": "99",
+            "tool": {"name": "Future Scanner A", "version": "1"},
+            "files": [],
+            "errors": [],
+        },
+        {
+            "schema_version": "100",
+            "tool": {"name": "Future Scanner B", "version": "2"},
+            "files": [],
+            "errors": [],
+        },
+    )
+    assert result["before"]["tool"]["name"] == "Future Scanner A"
+    assert result["after"]["tool"]["name"] == "Future Scanner B"
+
+
 def test_verification_schema_allows_source_tool_names():
     from labvault_scout.compare import verify_report
     from labvault_scout.schema_registry import load_schema_text
