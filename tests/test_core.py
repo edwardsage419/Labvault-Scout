@@ -225,9 +225,31 @@ def test_files_csv_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
     output = tmp_path / "atomic_files_report"
 
     assert scan(source, output) == 1
-    assert calls == ["files.csv"]
+    assert "files.csv" in calls
     with (output / "files.csv").open(encoding="utf-8-sig") as handle:
         assert next(csv.DictReader(handle))["path"] == "data.csv"
+
+
+def test_migration_plan_csv_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.report as report_module
+
+    calls = []
+    original = report_module.atomic_text_writer
+
+    def recording_writer(path: Path, *, encoding: str = "utf-8", newline=None):
+        calls.append(Path(path).name)
+        return original(path, encoding=encoding, newline=newline)
+
+    monkeypatch.setattr(report_module, "atomic_text_writer", recording_writer)
+
+    source = tmp_path / "atomic_migration_source"
+    source.mkdir()
+    (source / "project.jnb").write_bytes(b"jnb")
+    output = tmp_path / "atomic_migration_report"
+
+    assert scan(source, output) == 1
+    assert "migration_plan.csv" in calls
+    assert (output / "migration_plan.csv").exists()
 
 
 def test_scan_json_uses_atomic_text_writer(tmp_path: Path, monkeypatch):

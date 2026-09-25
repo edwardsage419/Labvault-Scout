@@ -106,7 +106,7 @@ def write_reports(
         key=lambda row: (-int(row["priority_score"]), row["path"].lower()),
     )
     migration_fields = ["priority_score", "priority", "path", "format", "risk", "confidence", "priority_reason", "recommended_action", "open_copy", "relationship_strength", "relationship_evidence", "evidence", "reason"]
-    with (output_dir / "migration_plan.csv").open("w", newline="", encoding="utf-8-sig") as f:
+    with atomic_text_writer(output_dir / "migration_plan.csv", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=migration_fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(migration_rows)
