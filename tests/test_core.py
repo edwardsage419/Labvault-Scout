@@ -207,6 +207,29 @@ def test_end_to_end_reports(tmp_path: Path):
         assert len(list(csv.DictReader(f))) == 2
 
 
+def test_files_csv_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.report as report_module
+
+    calls = []
+    original = report_module.atomic_text_writer
+
+    def recording_writer(path: Path, *, encoding: str = "utf-8", newline=None):
+        calls.append(Path(path).name)
+        return original(path, encoding=encoding, newline=newline)
+
+    monkeypatch.setattr(report_module, "atomic_text_writer", recording_writer)
+
+    source = tmp_path / "atomic_files_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "atomic_files_report"
+
+    assert scan(source, output) == 1
+    assert calls == ["files.csv"]
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        assert next(csv.DictReader(handle))["path"] == "data.csv"
+
+
 def test_scan_json_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
     import labvault_scout.report as report_module
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .bundle import write_bundle_manifest
-from .safeio import atomic_write_text
+from .safeio import atomic_text_writer, atomic_write_text
 
 REPORT_SCHEMA_VERSION = "1"
 
@@ -85,7 +85,7 @@ def write_reports(
     errors = errors or []
     duplicates = duplicate_groups(rows)
     summary_data = build_summary(rows, errors, duplicates)
-    with (output_dir / "files.csv").open("w", newline="", encoding="utf-8-sig") as f:
+    with atomic_text_writer(output_dir / "files.csv", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         writer.writeheader()
         writer.writerows(rows)
