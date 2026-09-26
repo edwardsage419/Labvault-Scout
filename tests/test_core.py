@@ -3675,6 +3675,7 @@ def test_matlab_disguised_file_is_mismatch(tmp_path: Path):
     assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected MATLAB Level 5/HDF5, detected PDF"
     assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
 def test_truncated_matlab5_header_is_reviewed(tmp_path: Path):
