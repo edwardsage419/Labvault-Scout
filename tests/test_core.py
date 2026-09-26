@@ -3133,6 +3133,23 @@ def test_netcdf_cdf5_scan_is_verified(tmp_path: Path):
     assert row["confidence"] == "HIGH"
 
 
+def test_truncated_netcdf_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_netcdf_source"
+    source.mkdir()
+    (source / "broken.nc").write_bytes(b"CDF\x01")
+    output = tmp_path / "truncated_netcdf_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "NETCDF"
+    assert row["container_type"] == "Truncated NetCDF container"
+    assert row["signature_status"] == "unverified: expected NetCDF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_netcdf_hdf5_container_is_conservative(tmp_path: Path):
     source = tmp_path / "netcdf4_source"
     source.mkdir()
