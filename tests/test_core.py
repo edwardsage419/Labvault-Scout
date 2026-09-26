@@ -1496,6 +1496,24 @@ def test_uncompressed_nifti_invalid_magic_is_reviewed(tmp_path: Path):
     assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
+def test_uncompressed_nifti_signature_mismatch_is_reported(tmp_path: Path):
+    source = tmp_path / "nii_mismatch_source"
+    source.mkdir()
+    (source / "brain.nii").write_bytes(b"%PDF-1.7\nnot-nifti")
+
+    output = tmp_path / "nii_mismatch_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["container_type"] == ""
+    assert row["signature_status"] == "mismatch: expected NIFTI1, detected PDF"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
+
+
 def test_uncompressed_nifti_invalid_header_is_reviewed(tmp_path: Path):
     source = tmp_path / "bad_nii_source"
     source.mkdir()
