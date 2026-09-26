@@ -3753,6 +3753,7 @@ def test_dicom_disguised_file_is_mismatch(tmp_path: Path):
     assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected DICOM Part 10, detected PDF"
     assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
 def test_truncated_dicom_header_is_reviewed(tmp_path: Path):
