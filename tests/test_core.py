@@ -3117,6 +3117,22 @@ def test_netcdf_classic_scan_is_verified(tmp_path: Path):
     assert row["confidence"] == "HIGH"
 
 
+def test_netcdf_cdf5_scan_is_verified(tmp_path: Path):
+    source = tmp_path / "netcdf_cdf5_source"
+    source.mkdir()
+    (source / "large.nc").write_bytes(b"CDF\x05" + b"\x00" * 32)
+    output = tmp_path / "netcdf_cdf5_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "NETCDF"
+    assert row["container_type"] == "NetCDF CDF-5"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
 def test_netcdf_hdf5_container_is_conservative(tmp_path: Path):
     source = tmp_path / "netcdf4_source"
     source.mkdir()
