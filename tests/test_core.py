@@ -3371,6 +3371,44 @@ def test_truncated_fits_is_reviewed(tmp_path: Path):
     assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
+def test_fits_missing_end_is_reviewed(tmp_path: Path):
+    source = tmp_path / "fits_missing_end_source"
+    source.mkdir()
+    data = bytearray(_valid_fits_bytes())
+    data[240:320] = b" " * 80
+    (source / "missing_end.fits").write_bytes(data)
+    output = tmp_path / "fits_missing_end_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "Invalid FITS missing END card"
+    assert row["signature_status"] == "unverified: expected FITS structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fits_multiblock_header_end_is_verified(tmp_path: Path):
+    source = tmp_path / "fits_multiblock_source"
+    source.mkdir()
+    data = bytearray(b" " * 5760)
+    data[:240] = _valid_fits_bytes()[:240]
+    data[2880:2883] = b"END"
+    (source / "multiblock.fits").write_bytes(data)
+    output = tmp_path / "fits_multiblock_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "FITS primary HDU (SIMPLE=T)"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
 def test_fits_simple_false_is_nonconforming_and_reviewed(tmp_path: Path):
     source = tmp_path / "fits_false_source"
     source.mkdir()

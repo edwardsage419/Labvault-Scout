@@ -22,6 +22,9 @@ TIFF_CLASSIC_MAGICS = (bytes.fromhex("49492A00"), bytes.fromhex("4D4D002A"))
 TIFF_BIG_MAGICS = (bytes.fromhex("49492B00"), bytes.fromhex("4D4D002B"))
 TIFF_MAGICS = TIFF_CLASSIC_MAGICS + TIFF_BIG_MAGICS
 FITS_SIMPLE_PREFIX = b"SIMPLE  ="
+FITS_BLOCK_SIZE = 2880
+FITS_CARD_SIZE = 80
+FITS_MAX_HEADER_BLOCKS = 64
 MATLAB5_PREFIX = b"MATLAB 5.0 MAT-file"
 DICOM_MARKER = b"DICM"
 DICOM_MARKER_OFFSET = 128
@@ -105,9 +108,9 @@ def fits_container_from_header(header: bytes, size: int) -> str:
     """Validate bounded FITS primary-header structure."""
     if signature_from_head(header) != "FITS":
         return ""
-    if size < 2880 or len(header) < 240:
+    if size < FITS_BLOCK_SIZE or len(header) < 240:
         return "Truncated FITS container"
-    if size % 2880 != 0:
+    if size % FITS_BLOCK_SIZE != 0:
         return "Invalid FITS block size"
 
     first = header[0:80]
@@ -122,6 +125,36 @@ def fits_container_from_header(header: bytes, size: int) -> str:
     if second[:8] != b"BITPIX  " or third[:8] != b"NAXIS   ":
         return "Invalid FITS mandatory header order"
     return "FITS primary HDU (SIMPLE=T)"
+
+
+def inspect_fits_container(path: Path) -> str:
+    """Validate FITS header termination within a bounded number of header blocks."""
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        first_block = handle.read(FITS_BLOCK_SIZE)
+        status = fits_container_from_header(first_block, size)
+        if status != "FITS primary HDU (SIMPLE=T)":
+            return status
+
+        block = first_block
+        for block_index in range(FITS_MAX_HEADER_BLOCKS):
+            if block_index:
+                block = handle.read(FITS_BLOCK_SIZE)
+                if len(block) < FITS_BLOCK_SIZE:
+                    return "Truncated FITS container"
+
+            start = 240 if block_index == 0 else 0
+            for offset in range(start, FITS_BLOCK_SIZE, FITS_CARD_SIZE):
+                card = block[offset:offset + FITS_CARD_SIZE]
+                if card[:8] == b"END     ":
+                    if card[8:] != b" " * 72:
+                        return "Invalid FITS END card"
+                    return status
+
+            if handle.tell() >= size:
+                return "Invalid FITS missing END card"
+
+        return "Unknown FITS END location beyond bounded header"
 
 
 def dicom_container_from_header(header: bytes) -> str:
