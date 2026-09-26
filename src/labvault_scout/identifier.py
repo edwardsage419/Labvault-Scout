@@ -130,6 +130,12 @@ def fits_container_from_header(header: bytes, size: int) -> str:
         return "Invalid FITS BITPIX value"
     if bitpix not in {8, 16, 32, 64, -32, -64}:
         return "Invalid FITS BITPIX value"
+    try:
+        naxis = int(third[10:30].strip())
+    except ValueError:
+        return "Invalid FITS NAXIS value"
+    if not 0 <= naxis <= 999:
+        return "Invalid FITS NAXIS value"
     return "FITS primary HDU (SIMPLE=T)"
 
 

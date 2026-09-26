@@ -3390,6 +3390,30 @@ def test_fits_invalid_bitpix_is_reviewed(tmp_path: Path):
     assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
+def test_fits_invalid_naxis_is_reviewed(tmp_path: Path):
+    source = tmp_path / "fits_invalid_naxis_source"
+    source.mkdir()
+
+    for name, value in (("negative.fits", b"-1"), ("too_many.fits", b"1000")):
+        data = bytearray(_valid_fits_bytes())
+        data[170:190] = b" " * (20 - len(value)) + value
+        (source / name).write_bytes(data)
+
+    output = tmp_path / "fits_invalid_naxis_report"
+    assert scan(source, output) == 2
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert len(rows) == 2
+    for row in rows:
+        assert row["signature"] == "FITS"
+        assert row["container_type"] == "Invalid FITS NAXIS value"
+        assert row["signature_status"] == "unverified: expected FITS structure"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_fits_missing_end_is_reviewed(tmp_path: Path):
     source = tmp_path / "fits_missing_end_source"
     source.mkdir()
