@@ -3424,19 +3424,19 @@ def test_fits_naxisn_structure_is_validated(tmp_path: Path):
 
     out_of_order = bytearray(_valid_fits_bytes())
     out_of_order[170:190] = b"                   2"
-    out_of_order[240:270] = b"NAXIS2  =                   5"
-    out_of_order[320:350] = b"NAXIS1  =                   4"
+    out_of_order[240:270] = b"NAXIS2  = " + b"5".rjust(20)
+    out_of_order[320:350] = b"NAXIS1  = " + b"4".rjust(20)
     out_of_order[400:403] = b"END"
     (source / "out_of_order.fits").write_bytes(out_of_order)
 
     negative = bytearray(_valid_fits_bytes())
     negative[170:190] = b"                   1"
-    negative[240:270] = b"NAXIS1  =                  -1"
+    negative[240:270] = b"NAXIS1  = " + b"-1".rjust(20)
     negative[320:323] = b"END"
     (source / "negative_axis.fits").write_bytes(negative)
 
     extra = bytearray(_valid_fits_bytes())
-    extra[240:270] = b"NAXIS1  =                   1"
+    extra[240:270] = b"NAXIS1  = " + b"1".rjust(20)
     extra[320:323] = b"END"
     (source / "extra_axis.fits").write_bytes(extra)
 
