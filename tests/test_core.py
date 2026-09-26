@@ -1475,6 +1475,27 @@ def test_uncompressed_big_endian_nifti_is_structurally_verified(tmp_path: Path):
     assert row["confidence"] == "HIGH"
 
 
+def test_uncompressed_nifti_invalid_magic_is_reviewed(tmp_path: Path):
+    source = tmp_path / "nii_invalid_magic_source"
+    source.mkdir()
+    header = bytearray(348)
+    header[:4] = (348).to_bytes(4, "little")
+    header[344:348] = b"fake"
+    (source / "brain.nii").write_bytes(header)
+
+    output = tmp_path / "nii_invalid_magic_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == ""
+    assert row["container_type"] == "Invalid NIfTI-1 magic"
+    assert row["signature_status"] == "unverified: expected NIFTI1"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_uncompressed_nifti_invalid_header_is_reviewed(tmp_path: Path):
     source = tmp_path / "bad_nii_source"
     source.mkdir()
