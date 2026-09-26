@@ -3414,6 +3414,54 @@ def test_fits_invalid_naxis_is_reviewed(tmp_path: Path):
         assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
+def test_fits_naxisn_structure_is_validated(tmp_path: Path):
+    source = tmp_path / "fits_naxisn_source"
+    source.mkdir()
+
+    missing = bytearray(_valid_fits_bytes())
+    missing[170:190] = b"                   1"
+    (source / "missing_axis.fits").write_bytes(missing)
+
+    out_of_order = bytearray(_valid_fits_bytes())
+    out_of_order[170:190] = b"                   2"
+    out_of_order[240:270] = b"NAXIS2  =                   5"
+    out_of_order[320:350] = b"NAXIS1  =                   4"
+    out_of_order[400:403] = b"END"
+    (source / "out_of_order.fits").write_bytes(out_of_order)
+
+    negative = bytearray(_valid_fits_bytes())
+    negative[170:190] = b"                   1"
+    negative[240:270] = b"NAXIS1  =                  -1"
+    negative[320:323] = b"END"
+    (source / "negative_axis.fits").write_bytes(negative)
+
+    extra = bytearray(_valid_fits_bytes())
+    extra[240:270] = b"NAXIS1  =                   1"
+    extra[320:323] = b"END"
+    (source / "extra_axis.fits").write_bytes(extra)
+
+    output = tmp_path / "fits_naxisn_report"
+    assert scan(source, output) == 4
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        rows = {row["path"]: row for row in csv.DictReader(handle)}
+
+    expected = {
+        "extra_axis.fits": "Invalid FITS unexpected NAXISn card",
+        "missing_axis.fits": "Invalid FITS missing NAXISn card",
+        "negative_axis.fits": "Invalid FITS NAXISn value",
+        "out_of_order.fits": "Invalid FITS NAXISn order",
+    }
+    assert set(rows) == set(expected)
+    for path, container_type in expected.items():
+        row = rows[path]
+        assert row["signature"] == "FITS"
+        assert row["container_type"] == container_type
+        assert row["signature_status"] == "unverified: expected FITS structure"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_fits_missing_end_is_reviewed(tmp_path: Path):
     source = tmp_path / "fits_missing_end_source"
     source.mkdir()

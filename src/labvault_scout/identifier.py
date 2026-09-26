@@ -148,6 +148,8 @@ def inspect_fits_container(path: Path) -> str:
         if status != "FITS primary HDU (SIMPLE=T)":
             return status
 
+        naxis = int(first_block[170:190].strip())
+        expected_axis = 1
         block = first_block
         for block_index in range(FITS_MAX_HEADER_BLOCKS):
             if block_index:
@@ -158,12 +160,37 @@ def inspect_fits_container(path: Path) -> str:
             start = 240 if block_index == 0 else 0
             for offset in range(start, FITS_BLOCK_SIZE, FITS_CARD_SIZE):
                 card = block[offset:offset + FITS_CARD_SIZE]
-                if card[:8] == b"END     ":
+                keyword = card[:8]
+
+                if expected_axis <= naxis:
+                    expected_keyword = f"NAXIS{expected_axis}".encode("ascii").ljust(8, b" ")
+                    if keyword == b"END     ":
+                        return "Invalid FITS missing NAXISn card"
+                    if keyword != expected_keyword:
+                        return "Invalid FITS NAXISn order"
+                    if card[8:10] != b"= ":
+                        return "Invalid FITS NAXISn value"
+                    try:
+                        axis_length = int(card[10:30].strip())
+                    except ValueError:
+                        return "Invalid FITS NAXISn value"
+                    if axis_length < 0:
+                        return "Invalid FITS NAXISn value"
+                    expected_axis += 1
+                    continue
+
+                suffix = keyword[5:].strip()
+                if keyword.startswith(b"NAXIS") and suffix.isdigit():
+                    return "Invalid FITS unexpected NAXISn card"
+
+                if keyword == b"END     ":
                     if card[8:] != b" " * 72:
                         return "Invalid FITS END card"
                     return status
 
             if handle.tell() >= size:
+                if expected_axis <= naxis:
+                    return "Invalid FITS missing NAXISn card"
                 return "Invalid FITS missing END card"
 
         return "Unknown FITS END location beyond bounded header"
