@@ -150,6 +150,10 @@ def test_rule_index_rejects_malformed_rule_structure():
     uppercase_extension["extension"] = ".CSV"
     cases.append(uppercase_extension)
 
+    missing_dot_extension = dict(valid)
+    missing_dot_extension["extension"] = "csv"
+    cases.append(missing_dot_extension)
+
     invalid_risk = dict(valid)
     invalid_risk["risk"] = "DANGER"
     cases.append(invalid_risk)
