@@ -162,6 +162,10 @@ def test_rule_index_rejects_malformed_rule_structure():
     duplicate_export["preferred_exports"] = ["csv", "csv"]
     cases.append(duplicate_export)
 
+    malformed_export = dict(valid)
+    malformed_export["preferred_exports"] = ["CSV"]
+    cases.append(malformed_export)
+
     non_string_risk = dict(valid)
     non_string_risk["risk"] = ["SAFE"]
     cases.append(non_string_risk)
