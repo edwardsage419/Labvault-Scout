@@ -3196,11 +3196,13 @@ def test_tiff_classic_and_bigtiff_header_evidence():
     classic_le = bytes.fromhex("49492A00") + (8).to_bytes(4, "little")
     classic_be = bytes.fromhex("4D4D002A") + (8).to_bytes(4, "big")
     big_le = bytes.fromhex("49492B00") + (8).to_bytes(2, "little") + b"\x00\x00" + (16).to_bytes(8, "little")
+    big_be = bytes.fromhex("4D4D002B") + (8).to_bytes(2, "big") + b"\x00\x00" + (16).to_bytes(8, "big")
 
     assert signature_from_head(classic_le) == "TIFF"
     assert tiff_container_from_header(classic_le) == "TIFF classic (little-endian)"
     assert tiff_container_from_header(classic_be) == "TIFF classic (big-endian)"
     assert tiff_container_from_header(big_le) == "BigTIFF (little-endian)"
+    assert tiff_container_from_header(big_be) == "BigTIFF (big-endian)"
 
 
 def test_tiff_scan_is_structurally_verified(tmp_path: Path):
