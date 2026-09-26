@@ -3756,6 +3756,24 @@ def test_dicom_disguised_file_is_mismatch(tmp_path: Path):
     assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
+def test_dicom_nontruncated_signature_mismatch_is_reviewed_as_format(tmp_path: Path):
+    source = tmp_path / "bad_dicom_nontruncated_source"
+    source.mkdir()
+    payload = b"%PDF-1.7\n" + b"x" * 247
+    (source / "fake.dcm").write_bytes(payload)
+    output = tmp_path / "bad_dicom_nontruncated_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["container_type"] == "DICOM Part 10 marker not found"
+    assert row["signature_status"] == "mismatch: expected DICOM Part 10, detected PDF"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
+
+
 def test_truncated_dicom_header_is_reviewed(tmp_path: Path):
     source = tmp_path / "truncated_dicom_source"
     source.mkdir()
