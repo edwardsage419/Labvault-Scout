@@ -154,6 +154,10 @@ def test_rule_index_rejects_malformed_rule_structure():
     invalid_risk["risk"] = "DANGER"
     cases.append(invalid_risk)
 
+    invalid_category = dict(valid)
+    invalid_category["category"] = "Open Data"
+    cases.append(invalid_category)
+
     duplicate_export = dict(valid)
     duplicate_export["preferred_exports"] = ["csv", "csv"]
     cases.append(duplicate_export)
