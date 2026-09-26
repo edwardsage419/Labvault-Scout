@@ -1508,10 +1508,10 @@ def test_uncompressed_nifti_signature_mismatch_is_reported(tmp_path: Path):
         row = next(csv.DictReader(handle))
 
     assert row["signature"] == "PDF"
-    assert row["container_type"] == ""
+    assert row["container_type"] == "Truncated NIfTI-1 header"
     assert row["signature_status"] == "mismatch: expected NIFTI1, detected PDF"
     assert row["confidence"] == "LOW"
-    assert row["recommended_action"] == "REVIEW_FORMAT"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
 def test_uncompressed_nifti_invalid_header_is_reviewed(tmp_path: Path):
