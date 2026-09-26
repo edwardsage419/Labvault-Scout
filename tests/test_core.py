@@ -3309,6 +3309,23 @@ def test_invalid_bigtiff_reserved_field_is_reviewed(tmp_path: Path):
     assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
+def test_tiff_extension_pdf_signature_mismatch_is_reviewed(tmp_path: Path):
+    source = tmp_path / "tiff_mismatch_source"
+    source.mkdir()
+    (source / "fake.tif").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "tiff_mismatch_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "TIFF"
+    assert row["signature"] == "PDF"
+    assert row["signature_status"] == "mismatch: expected TIFF, detected PDF"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
+
+
 def _valid_fits_bytes(simple_value: bytes = b"T") -> bytes:
     block = bytearray(b" " * 2880)
     block[0:30] = b"SIMPLE  =                    " + simple_value

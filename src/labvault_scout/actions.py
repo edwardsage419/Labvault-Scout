@@ -13,6 +13,9 @@ def recommended_action(row: dict) -> str:
     if has_structural_warning(row):
         return "REVIEW_CONTAINER"
 
+    if row.get("format") == "TIFF" and row.get("signature_status", "").startswith("mismatch"):
+        return "REVIEW_FORMAT"
+
     if risk == "SAFE" and priority == "LOW":
         return "KEEP"
 
