@@ -3255,6 +3255,24 @@ def test_truncated_bigtiff_is_reviewed(tmp_path: Path):
     assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
+def test_bigtiff_one_byte_short_of_full_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "short_bigtiff_source"
+    source.mkdir()
+    full_header = bytes.fromhex("49492B0008000000") + (16).to_bytes(8, "little")
+    (source / "short.tiff").write_bytes(full_header[:-1])
+    output = tmp_path / "short_bigtiff_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "Truncated BigTIFF container"
+    assert row["signature_status"] == "unverified: expected TIFF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def _valid_fits_bytes(simple_value: bytes = b"T") -> bytes:
     block = bytearray(b" " * 2880)
     block[0:30] = b"SIMPLE  =                    " + simple_value
