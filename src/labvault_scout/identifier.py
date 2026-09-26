@@ -66,7 +66,8 @@ def netcdf_container_from_header(header: bytes) -> str:
     """Validate bounded NetCDF classic-family header evidence."""
     if signature_from_head(header) != "NETCDF":
         return ""
-    if len(header) < 8:
+    minimum_size = 12 if header.startswith(b"CDF\x05") else 8
+    if len(header) < minimum_size:
         return "Truncated NetCDF container"
     for magic, label in NETCDF_MAGICS.items():
         if header.startswith(magic):

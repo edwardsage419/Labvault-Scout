@@ -3093,11 +3093,19 @@ def test_netcdf_classic_family_header_evidence():
     cases = {
         b"CDF\x01" + b"\x00" * 4: "NetCDF CDF-1",
         b"CDF\x02" + b"\x00" * 4: "NetCDF CDF-2",
-        b"CDF\x05" + b"\x00" * 4: "NetCDF CDF-5",
+        b"CDF\x05" + b"\x00" * 8: "NetCDF CDF-5",
     }
     for header, label in cases.items():
         assert signature_from_head(header) == "NETCDF"
         assert netcdf_container_from_header(header) == label
+
+
+def test_netcdf_cdf5_requires_64_bit_numrecs():
+    from labvault_scout.identifier import netcdf_container_from_header, signature_from_head
+
+    header = b"CDF\x05" + b"\x00" * 4
+    assert signature_from_head(header) == "NETCDF"
+    assert netcdf_container_from_header(header) == "Truncated NetCDF container"
 
 
 def test_netcdf_classic_scan_is_verified(tmp_path: Path):
