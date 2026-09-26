@@ -3221,6 +3221,23 @@ def test_tiff_scan_is_structurally_verified(tmp_path: Path):
     assert row["confidence"] == "HIGH"
 
 
+def test_truncated_classic_tiff_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_tiff_source"
+    source.mkdir()
+    (source / "broken.tif").write_bytes(bytes.fromhex("49492A00") + b"\x00" * 3)
+    output = tmp_path / "truncated_tiff_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "Truncated TIFF container"
+    assert row["signature_status"] == "unverified: expected TIFF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_truncated_bigtiff_is_reviewed(tmp_path: Path):
     source = tmp_path / "bad_tiff_source"
     source.mkdir()
