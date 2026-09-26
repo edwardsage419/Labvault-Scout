@@ -3627,6 +3627,24 @@ def test_matlab5_scan_is_structurally_verified(tmp_path: Path):
     assert row["confidence"] == "HIGH"
 
 
+def test_matlab5_big_endian_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "mat5_big_endian_source"
+    source.mkdir()
+    (source / "experiment.mat").write_bytes(_matlab5_header(b"MI") + b"\x00" * 64)
+    output = tmp_path / "mat5_big_endian_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "MATLAB Data"
+    assert row["signature"] == "MAT5"
+    assert row["container_type"] == "MATLAB Level 5 MAT-file (big-endian)"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
+
+
 def test_matlab_hdf5_container_remains_conservative(tmp_path: Path):
     source = tmp_path / "mat_hdf5_source"
     source.mkdir()
