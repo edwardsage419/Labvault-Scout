@@ -3371,6 +3371,25 @@ def test_truncated_fits_is_reviewed(tmp_path: Path):
     assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
+def test_fits_invalid_bitpix_is_reviewed(tmp_path: Path):
+    source = tmp_path / "fits_invalid_bitpix_source"
+    source.mkdir()
+    data = bytearray(_valid_fits_bytes())
+    data[90:110] = b"                  12"
+    (source / "invalid_bitpix.fits").write_bytes(data)
+    output = tmp_path / "fits_invalid_bitpix_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "Invalid FITS BITPIX value"
+    assert row["signature_status"] == "unverified: expected FITS structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_fits_missing_end_is_reviewed(tmp_path: Path):
     source = tmp_path / "fits_missing_end_source"
     source.mkdir()

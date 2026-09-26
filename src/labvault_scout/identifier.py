@@ -124,6 +124,12 @@ def fits_container_from_header(header: bytes, size: int) -> str:
         return "Invalid FITS SIMPLE value"
     if second[:8] != b"BITPIX  " or third[:8] != b"NAXIS   ":
         return "Invalid FITS mandatory header order"
+    try:
+        bitpix = int(second[10:30].strip())
+    except ValueError:
+        return "Invalid FITS BITPIX value"
+    if bitpix not in {8, 16, 32, 64, -32, -64}:
+        return "Invalid FITS BITPIX value"
     return "FITS primary HDU (SIMPLE=T)"
 
 
