@@ -3576,6 +3576,23 @@ def test_matlab5_header_evidence():
     assert matlab5_container_from_header(invalid_version) == "Invalid MATLAB Level 5 version"
 
 
+def test_matlab5_invalid_endian_marker_is_reviewed(tmp_path: Path):
+    source = tmp_path / "mat5_invalid_endian_source"
+    source.mkdir()
+    (source / "broken.mat").write_bytes(_matlab5_header(b"XX") + b"\x00" * 64)
+    output = tmp_path / "mat5_invalid_endian_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "MAT5"
+    assert row["container_type"] == "Invalid MATLAB Level 5 endian marker"
+    assert row["signature_status"] == "unverified: expected MATLAB Level 5 structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_matlab5_scan_is_structurally_verified(tmp_path: Path):
     source = tmp_path / "mat5_source"
     source.mkdir()
