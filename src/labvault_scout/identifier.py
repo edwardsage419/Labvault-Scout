@@ -214,8 +214,12 @@ def matlab5_container_from_header(header: bytes) -> str:
 
     endian = header[126:128]
     if endian == b"IM":
+        if header[124:126] != b"\x00\x01":
+            return "Invalid MATLAB Level 5 version"
         return "MATLAB Level 5 MAT-file (little-endian)"
     if endian == b"MI":
+        if header[124:126] != b"\x01\x00":
+            return "Invalid MATLAB Level 5 version"
         return "MATLAB Level 5 MAT-file (big-endian)"
     return "Invalid MATLAB Level 5 endian marker"
 

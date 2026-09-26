@@ -3551,11 +3551,13 @@ def test_fits_disguised_file_is_mismatch(tmp_path: Path):
     assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
-def _matlab5_header(endian: bytes = b"IM") -> bytes:
+def _matlab5_header(endian: bytes = b"IM", version: bytes | None = None) -> bytes:
     header = bytearray(b" " * 128)
     text = b"MATLAB 5.0 MAT-file, Platform: GLNXA64, Created by LabVault Scout test"
     header[:len(text)] = text
-    header[124:126] = b"\x00\x01"
+    if version is None:
+        version = b"\x00\x01" if endian == b"IM" else b"\x01\x00"
+    header[124:126] = version
     header[126:128] = endian
     return bytes(header)
 
@@ -3566,9 +3568,12 @@ def test_matlab5_header_evidence():
     little = _matlab5_header(b"IM")
     big = _matlab5_header(b"MI")
 
+    invalid_version = _matlab5_header(b"IM", b"\x01\x00")
+
     assert signature_from_head(little) == "MAT5"
     assert matlab5_container_from_header(little) == "MATLAB Level 5 MAT-file (little-endian)"
     assert matlab5_container_from_header(big) == "MATLAB Level 5 MAT-file (big-endian)"
+    assert matlab5_container_from_header(invalid_version) == "Invalid MATLAB Level 5 version"
 
 
 def test_matlab5_scan_is_structurally_verified(tmp_path: Path):
