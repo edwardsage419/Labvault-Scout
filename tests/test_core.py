@@ -3544,9 +3544,11 @@ def test_fits_disguised_file_is_mismatch(tmp_path: Path):
     with (output / "files.csv").open(encoding="utf-8-sig") as handle:
         row = next(csv.DictReader(handle))
 
+    assert row["format"] == "FITS"
     assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected FITS, detected PDF"
     assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
 def _matlab5_header(endian: bytes = b"IM") -> bytes:
