@@ -3273,6 +3273,24 @@ def test_bigtiff_one_byte_short_of_full_header_is_reviewed(tmp_path: Path):
     assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
+def test_invalid_bigtiff_offset_size_is_reviewed(tmp_path: Path):
+    source = tmp_path / "invalid_bigtiff_offset_source"
+    source.mkdir()
+    header = bytes.fromhex("49492B0004000000") + (16).to_bytes(8, "little")
+    (source / "invalid.tiff").write_bytes(header)
+    output = tmp_path / "invalid_bigtiff_offset_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "Invalid BigTIFF header"
+    assert row["signature_status"] == "unverified: expected TIFF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def _valid_fits_bytes(simple_value: bytes = b"T") -> bytes:
     block = bytearray(b" " * 2880)
     block[0:30] = b"SIMPLE  =                    " + simple_value
