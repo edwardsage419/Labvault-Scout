@@ -4293,6 +4293,33 @@ def test_fcs_fixed_header_evidence():
         assert fcs_container_from_header(header, 256) == f"FCS {version[3:].decode('ascii')} fixed header"
 
 
+def test_fcs_legacy_versions_scan_as_verified(tmp_path: Path):
+    source = tmp_path / "fcs_legacy_versions_source"
+    source.mkdir()
+    versions = {
+        "v20.fcs": b"FCS2.0",
+        "v30.fcs": b"FCS3.0",
+        "v31.fcs": b"FCS3.1",
+    }
+    for name, version in versions.items():
+        (source / name).write_bytes(_fcs_header(version) + b"/$TOT/1/" + b" " * 190)
+
+    output = tmp_path / "fcs_legacy_versions_report"
+    assert scan(source, output) == 3
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert set(rows) == set(versions)
+    for name, version in versions.items():
+        row = rows[name]
+        assert row["format"] == "Flow Cytometry Standard"
+        assert row["signature"] == "FCS"
+        assert row["container_type"] == f"FCS {version[3:].decode('ascii')} fixed header"
+        assert row["signature_status"] == "verified"
+        assert row["confidence"] == "HIGH"
+
+
 def test_fcs_scan_is_structurally_verified(tmp_path: Path):
     source = tmp_path / "fcs_source"
     source.mkdir()
