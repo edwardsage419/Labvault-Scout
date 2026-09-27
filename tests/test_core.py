@@ -4335,6 +4335,25 @@ def test_fcs_scan_is_structurally_verified(tmp_path: Path):
     assert row["signature_status"] == "verified"
 
 
+def test_fcs_invalid_header_spacing_is_reviewed(tmp_path: Path):
+    source = tmp_path / "fcs_invalid_spacing_source"
+    source.mkdir()
+    data = bytearray(_fcs_header())
+    data[6:10] = b" xxx"
+    (source / "bad_spacing.fcs").write_bytes(data)
+    output = tmp_path / "fcs_invalid_spacing_report"
+
+    assert scan(source, output) == 1
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+
+    assert row["signature"] == "FCS"
+    assert row["container_type"] == "Invalid FCS header spacing"
+    assert row["signature_status"] == "unverified: expected FCS fixed header"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_fcs_57_byte_header_is_truncated(tmp_path: Path):
     source = tmp_path / "fcs_57_byte_source"
     source.mkdir()
