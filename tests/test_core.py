@@ -4734,6 +4734,23 @@ def test_modern_stata_dta_additional_release_and_byteorder_scans(tmp_path: Path)
         assert row["confidence"] == "HIGH"
 
 
+def test_truncated_modern_stata_release_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "stata_truncated_release_source"
+    source.mkdir()
+    (source / "broken.dta").write_bytes(b"<stata_dta><header><release>118")
+    output = tmp_path / "stata_truncated_release_report"
+
+    assert scan(source, output) == 1
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+
+    assert row["signature"] == "STATA_DTA"
+    assert row["container_type"] == "Truncated Stata DTA release header"
+    assert row["signature_status"] == "unverified: expected modern Stata DTA structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_modern_stata_dta_scan_is_structurally_verified(tmp_path: Path):
     source = tmp_path / "stata_source"
     source.mkdir()
