@@ -4564,6 +4564,27 @@ def test_spss_wrong_magic_for_extension_is_not_verified(tmp_path: Path):
     assert row["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
 
 
+def test_spss_invalid_layout_code_is_reviewed(tmp_path: Path):
+    source = tmp_path / "spss_invalid_layout_source"
+    source.mkdir()
+
+    for name, magic in (("bad.sav", b"$FL2"), ("bad.zsav", b"$FL3")):
+        data = bytearray(_spss_header(magic))
+        data[64:68] = (0).to_bytes(4, "little", signed=True)
+        (source / name).write_bytes(data)
+
+    output = tmp_path / "spss_invalid_layout_report"
+    assert scan(source, output) == 2
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    for row in payload["files"]:
+        assert row["signature"] == "SPSS"
+        assert row["container_type"] == "Invalid SPSS layout code"
+        assert row["signature_status"].startswith("unverified: expected SPSS ")
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_spss_175_byte_headers_are_truncated(tmp_path: Path):
     source = tmp_path / "spss_175_byte_source"
     source.mkdir()
