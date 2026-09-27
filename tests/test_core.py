@@ -4706,6 +4706,34 @@ def _modern_stata_dta_header(release: bytes = b"118", byteorder: bytes = b"LSF")
     )
 
 
+def test_modern_stata_dta_additional_release_and_byteorder_scans(tmp_path: Path):
+    source = tmp_path / "stata_additional_source"
+    source.mkdir()
+    cases = {
+        "release117.dta": (b"117", b"LSF"),
+        "release119.dta": (b"119", b"LSF"),
+        "big_endian.dta": (b"118", b"MSF"),
+    }
+    for name, (release, byteorder) in cases.items():
+        (source / name).write_bytes(
+            _modern_stata_dta_header(release, byteorder) + b"<K>\x01\x00</K>"
+        )
+
+    output = tmp_path / "stata_additional_report"
+    assert scan(source, output) == 3
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert set(rows) == set(cases)
+    for name, (release, byteorder) in cases.items():
+        row = rows[name]
+        assert row["format"] == "Stata Data"
+        assert row["signature"] == "STATA_DTA"
+        assert row["container_type"] == f"Stata DTA release {release.decode('ascii')} ({byteorder.decode('ascii')})"
+        assert row["signature_status"] == "verified"
+        assert row["confidence"] == "HIGH"
+
+
 def test_modern_stata_dta_scan_is_structurally_verified(tmp_path: Path):
     source = tmp_path / "stata_source"
     source.mkdir()
