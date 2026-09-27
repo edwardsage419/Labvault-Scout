@@ -4573,6 +4573,25 @@ def test_spss_wrong_magic_for_extension_is_not_verified(tmp_path: Path):
         assert row["recommended_action"] == "EXPORT_OPEN_FORMAT"
 
 
+def test_spss_signature_mismatches_are_reviewed_as_format(tmp_path: Path):
+    source = tmp_path / "spss_signature_mismatch_source"
+    source.mkdir()
+    (source / "fake.sav").write_bytes(b"%PDF-1.7\n")
+    (source / "fake.zsav").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "spss_signature_mismatch_report"
+
+    assert scan(source, output) == 2
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert rows["fake.sav"]["signature_status"] == "mismatch: expected SPSS $FL2, detected PDF"
+    assert rows["fake.zsav"]["signature_status"] == "mismatch: expected SPSS $FL3, detected PDF"
+    for row in rows.values():
+        assert row["signature"] == "PDF"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_FORMAT"
+
+
 def test_spss_invalid_layout_code_is_reviewed(tmp_path: Path):
     source = tmp_path / "spss_invalid_layout_source"
     source.mkdir()
