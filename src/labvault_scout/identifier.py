@@ -22,6 +22,9 @@ TIFF_CLASSIC_MAGICS = (bytes.fromhex("49492A00"), bytes.fromhex("4D4D002A"))
 TIFF_BIG_MAGICS = (bytes.fromhex("49492B00"), bytes.fromhex("4D4D002B"))
 TIFF_MAGICS = TIFF_CLASSIC_MAGICS + TIFF_BIG_MAGICS
 FITS_SIMPLE_PREFIX = b"SIMPLE  ="
+FITS_BLOCK_SIZE = 2880
+FITS_CARD_SIZE = 80
+FITS_MAX_HEADER_BLOCKS = 64
 MATLAB5_PREFIX = b"MATLAB 5.0 MAT-file"
 DICOM_MARKER = b"DICM"
 DICOM_MARKER_OFFSET = 128
@@ -66,7 +69,8 @@ def netcdf_container_from_header(header: bytes) -> str:
     """Validate bounded NetCDF classic-family header evidence."""
     if signature_from_head(header) != "NETCDF":
         return ""
-    if len(header) < 8:
+    minimum_size = 12 if header.startswith(b"CDF\x05") else 8
+    if len(header) < minimum_size:
         return "Truncated NetCDF container"
     for magic, label in NETCDF_MAGICS.items():
         if header.startswith(magic):
@@ -104,9 +108,9 @@ def fits_container_from_header(header: bytes, size: int) -> str:
     """Validate bounded FITS primary-header structure."""
     if signature_from_head(header) != "FITS":
         return ""
-    if size < 2880 or len(header) < 240:
+    if size < FITS_BLOCK_SIZE or len(header) < 240:
         return "Truncated FITS container"
-    if size % 2880 != 0:
+    if size % FITS_BLOCK_SIZE != 0:
         return "Invalid FITS block size"
 
     first = header[0:80]
@@ -120,7 +124,76 @@ def fits_container_from_header(header: bytes, size: int) -> str:
         return "Invalid FITS SIMPLE value"
     if second[:8] != b"BITPIX  " or third[:8] != b"NAXIS   ":
         return "Invalid FITS mandatory header order"
+    try:
+        bitpix = int(second[10:30].strip())
+    except ValueError:
+        return "Invalid FITS BITPIX value"
+    if bitpix not in {8, 16, 32, 64, -32, -64}:
+        return "Invalid FITS BITPIX value"
+    try:
+        naxis = int(third[10:30].strip())
+    except ValueError:
+        return "Invalid FITS NAXIS value"
+    if not 0 <= naxis <= 999:
+        return "Invalid FITS NAXIS value"
     return "FITS primary HDU (SIMPLE=T)"
+
+
+def inspect_fits_container(path: Path) -> str:
+    """Validate FITS header termination within a bounded number of header blocks."""
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        first_block = handle.read(FITS_BLOCK_SIZE)
+        status = fits_container_from_header(first_block, size)
+        if status != "FITS primary HDU (SIMPLE=T)":
+            return status
+
+        naxis = int(first_block[170:190].strip())
+        expected_axis = 1
+        block = first_block
+        for block_index in range(FITS_MAX_HEADER_BLOCKS):
+            if block_index:
+                block = handle.read(FITS_BLOCK_SIZE)
+                if len(block) < FITS_BLOCK_SIZE:
+                    return "Truncated FITS container"
+
+            start = 240 if block_index == 0 else 0
+            for offset in range(start, FITS_BLOCK_SIZE, FITS_CARD_SIZE):
+                card = block[offset:offset + FITS_CARD_SIZE]
+                keyword = card[:8]
+
+                if expected_axis <= naxis:
+                    expected_keyword = f"NAXIS{expected_axis}".encode("ascii").ljust(8, b" ")
+                    if keyword == b"END     ":
+                        return "Invalid FITS missing NAXISn card"
+                    if keyword != expected_keyword:
+                        return "Invalid FITS NAXISn order"
+                    if card[8:10] != b"= ":
+                        return "Invalid FITS NAXISn value"
+                    try:
+                        axis_length = int(card[10:30].strip())
+                    except ValueError:
+                        return "Invalid FITS NAXISn value"
+                    if axis_length < 0:
+                        return "Invalid FITS NAXISn value"
+                    expected_axis += 1
+                    continue
+
+                suffix = keyword[5:].strip()
+                if keyword.startswith(b"NAXIS") and suffix.isdigit():
+                    return "Invalid FITS unexpected NAXISn card"
+
+                if keyword == b"END     ":
+                    if card[8:] != b" " * 72:
+                        return "Invalid FITS END card"
+                    return status
+
+            if handle.tell() >= size:
+                if expected_axis <= naxis:
+                    return "Invalid FITS missing NAXISn card"
+                return "Invalid FITS missing END card"
+
+        return "Unknown FITS END location beyond bounded header"
 
 
 def dicom_container_from_header(header: bytes) -> str:
@@ -141,8 +214,12 @@ def matlab5_container_from_header(header: bytes) -> str:
 
     endian = header[126:128]
     if endian == b"IM":
+        if header[124:126] != b"\x00\x01":
+            return "Invalid MATLAB Level 5 version"
         return "MATLAB Level 5 MAT-file (little-endian)"
     if endian == b"MI":
+        if header[124:126] != b"\x01\x00":
+            return "Invalid MATLAB Level 5 version"
         return "MATLAB Level 5 MAT-file (big-endian)"
     return "Invalid MATLAB Level 5 endian marker"
 
@@ -266,6 +343,34 @@ def fcs_container_from_header(header: bytes, size: int) -> str:
         field = header[start:start + 8]
         if any(byte not in b" 0123456789" for byte in field):
             return "Invalid FCS header offsets"
+
+    try:
+        text_begin = int(header[10:18].strip())
+        text_end = int(header[18:26].strip())
+    except ValueError:
+        return "Invalid FCS TEXT offsets"
+    if text_begin < 58 or text_end < text_begin or text_end >= size:
+        return "Invalid FCS TEXT offsets"
+
+    data_begin_field = header[26:34].strip()
+    data_end_field = header[34:42].strip()
+    analysis_begin_field = header[42:50].strip()
+    analysis_end_field = header[50:58].strip()
+    try:
+        data_begin = int(data_begin_field) if data_begin_field else 0
+        data_end = int(data_end_field) if data_end_field else 0
+        analysis_begin = int(analysis_begin_field) if analysis_begin_field else 0
+        analysis_end = int(analysis_end_field) if analysis_end_field else 0
+    except ValueError:
+        return "Invalid FCS header offsets"
+
+    if data_begin and data_end:
+        if data_begin < 58 or data_end < data_begin or data_end >= size:
+            return "Invalid FCS DATA offsets"
+    if analysis_begin and analysis_end:
+        if analysis_begin < 58 or analysis_end < analysis_begin or analysis_end >= size:
+            return "Invalid FCS ANALYSIS offsets"
+
     return f"FCS {version[3:].decode('ascii')} fixed header"
 
 

@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 
 from . import __version__
 from .report import FIELDS, inventory_sha256, report_payload_sha256
+from .safeio import atomic_text_writer, atomic_write_text
 
 COMPARISON_SCHEMA_VERSION = "1"
 SUPPORTED_SCAN_SCHEMA_VERSIONS = {"1"}
@@ -226,10 +227,15 @@ def scan_metrics(payload: dict) -> dict:
     priority_counts: dict[str, int] = {}
     total_bytes = 0
     for row in payload["files"]:
-        try:
-            total_bytes += int(row.get("size", 0))
-        except (TypeError, ValueError):
-            pass
+        raw_size = row.get("size", 0)
+        if not isinstance(raw_size, bool):
+            try:
+                size = int(raw_size)
+            except (TypeError, ValueError):
+                pass
+            else:
+                if size >= 0:
+                    total_bytes += size
 
         risk = str(row.get("risk", ""))
         if risk:
@@ -313,6 +319,14 @@ def report_integrity_status(payload: dict) -> str:
     return "VERIFIED"
 
 
+def _normalized_sha256(value: object) -> str:
+    return value if isinstance(value, str) and SHA256_RE.fullmatch(value) else ""
+
+
+def _normalized_metadata_text(value: object) -> str:
+    return value if isinstance(value, str) and value else "unknown"
+
+
 def report_identity(payload: dict) -> dict:
     """Return non-sensitive compatibility metadata for a source report."""
     tool = payload.get("tool")
@@ -338,14 +352,14 @@ def report_identity(payload: dict) -> dict:
         "schema_version": schema_version,
         "schema_supported": schema_supported,
         "tool": {
-            "name": str(tool.get("name", "LabVault Scout")),
-            "version": str(tool.get("version", "unknown")),
+            "name": _normalized_metadata_text(tool.get("name")),
+            "version": _normalized_metadata_text(tool.get("version")),
         },
         "error_count": error_count,
-        "inventory_sha256": str(inventory),
-        "report_sha256": str(payload.get("report_sha256", "")),
+        "inventory_sha256": _normalized_sha256(inventory),
+        "report_sha256": _normalized_sha256(payload.get("report_sha256", "")),
         "integrity_status": report_integrity_status(payload),
-        "rules_sha256": str(provenance.get("rules_sha256", "")),
+        "rules_sha256": _normalized_sha256(provenance.get("rules_sha256", "")),
         "hash_algorithm": str(provenance.get("hash_algorithm", "")),
         "path_style": str(provenance.get("path_style", "")),
         "legacy_paths_normalized": legacy_paths_normalized,
@@ -621,12 +635,13 @@ def _csv_row(item: dict) -> dict:
 
 def write_comparison(result: dict, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "comparison.json").write_text(
+    atomic_write_text(
+        output_dir / "comparison.json",
         json.dumps(result, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
-    with (output_dir / "changes.csv").open("w", newline="", encoding="utf-8-sig") as handle:
+    with atomic_text_writer(output_dir / "changes.csv", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
         writer.writeheader()
         writer.writerows(_csv_row(item) for item in result["changes"])
@@ -661,4 +676,4 @@ def write_comparison(result: dict, output_dir: Path) -> None:
 <p>Risk deltas: {risk_delta}</p>
 <p>Priority deltas: {priority_delta}</p>
 <table><thead><tr><th>change_type</th><th>before_path</th><th>after_path</th><th>priority_direction</th><th>priority_delta</th><th>changed_fields</th></tr></thead><tbody>{rows}</tbody></table></html>"""
-    (output_dir / "comparison.html").write_text(page, encoding="utf-8")
+    atomic_write_text(output_dir / "comparison.html", page, encoding="utf-8")

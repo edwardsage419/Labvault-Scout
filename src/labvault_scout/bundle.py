@@ -7,6 +7,7 @@ from pathlib import Path, PurePosixPath
 
 from . import __version__
 from .hashing import sha256_file
+from .safeio import atomic_write_text
 
 BUNDLE_SCHEMA_VERSION = "1"
 BUNDLE_MANIFEST_NAME = "bundle_manifest.json"
@@ -59,7 +60,8 @@ def build_bundle_manifest(output_dir: Path) -> dict:
 
 def write_bundle_manifest(output_dir: Path) -> dict:
     payload = build_bundle_manifest(output_dir)
-    (output_dir / BUNDLE_MANIFEST_NAME).write_text(
+    atomic_write_text(
+        output_dir / BUNDLE_MANIFEST_NAME,
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

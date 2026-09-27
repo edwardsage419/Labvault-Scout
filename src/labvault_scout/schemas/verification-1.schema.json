@@ -50,13 +50,16 @@
           "minimum": 0
         },
         "inventory_sha256": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
         },
         "report_sha256": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
         },
         "rules_sha256": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^$|^[0-9a-f]{64}$"
         },
         "tool": {
           "type": "object",
@@ -66,7 +69,8 @@
           ],
           "properties": {
             "name": {
-              "const": "LabVault Scout"
+              "type": "string",
+              "minLength": 1
             },
             "version": {
               "type": "string",
@@ -76,7 +80,69 @@
           "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "status": {
+                  "const": "VERIFIED"
+                },
+                "exit_code": {
+                  "const": 0
+                }
+              },
+              "required": [
+                "status",
+                "exit_code"
+              ]
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "UNKNOWN"
+                },
+                "exit_code": {
+                  "const": 1
+                }
+              },
+              "required": [
+                "status",
+                "exit_code"
+              ]
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "FAILED"
+                },
+                "exit_code": {
+                  "const": 2
+                }
+              },
+              "required": [
+                "status",
+                "exit_code"
+              ]
+            },
+            {
+              "properties": {
+                "status": {
+                  "const": "UNSUPPORTED"
+                },
+                "exit_code": {
+                  "const": 2
+                }
+              },
+              "required": [
+                "status",
+                "exit_code"
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "type": "object",

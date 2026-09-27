@@ -9,6 +9,66 @@ from labvault_scout.risk import classify, load_rules
 from labvault_scout.scanner import iter_files
 
 
+def test_atomic_text_writer_replaces_symlink_without_modifying_target(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.safeio import atomic_write_text
+
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are unavailable")
+
+    target = tmp_path / "source.txt"
+    target.write_text("source", encoding="utf-8")
+    output = tmp_path / "report.txt"
+    try:
+        os.symlink(target, output)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+
+    atomic_write_text(output, "report", encoding="utf-8")
+
+    assert target.read_text(encoding="utf-8") == "source"
+    assert output.is_symlink() is False
+    assert output.read_text(encoding="utf-8") == "report"
+
+
+def test_atomic_text_writer_replaces_hardlink_without_modifying_target(tmp_path: Path):
+    import os
+    import pytest
+    from labvault_scout.safeio import atomic_write_text
+
+    if not hasattr(os, "link"):
+        pytest.skip("hard links are unavailable")
+
+    target = tmp_path / "source.txt"
+    target.write_text("source", encoding="utf-8")
+    output = tmp_path / "report.txt"
+    try:
+        os.link(target, output)
+    except OSError:
+        pytest.skip("hard-link creation is unavailable")
+
+    atomic_write_text(output, "report", encoding="utf-8")
+
+    assert target.read_text(encoding="utf-8") == "source"
+    assert output.read_text(encoding="utf-8") == "report"
+    assert os.stat(target).st_ino != os.stat(output).st_ino or os.name == "nt"
+
+
+def test_atomic_text_writer_cleans_temporary_file_on_failure(tmp_path: Path):
+    import pytest
+    from labvault_scout.safeio import atomic_text_writer
+
+    output = tmp_path / "report.txt"
+    with pytest.raises(RuntimeError, match="stop"):
+        with atomic_text_writer(output) as handle:
+            handle.write("partial")
+            raise RuntimeError("stop")
+
+    assert not output.exists()
+    assert list(tmp_path.glob(".report.txt.*.tmp")) == []
+
+
 def test_core(tmp_path: Path):
     f = tmp_path / "result.jnb"
     f.write_bytes(b"labvault")
@@ -90,13 +150,25 @@ def test_rule_index_rejects_malformed_rule_structure():
     uppercase_extension["extension"] = ".CSV"
     cases.append(uppercase_extension)
 
+    missing_dot_extension = dict(valid)
+    missing_dot_extension["extension"] = "csv"
+    cases.append(missing_dot_extension)
+
     invalid_risk = dict(valid)
     invalid_risk["risk"] = "DANGER"
     cases.append(invalid_risk)
 
+    invalid_category = dict(valid)
+    invalid_category["category"] = "Open Data"
+    cases.append(invalid_category)
+
     duplicate_export = dict(valid)
     duplicate_export["preferred_exports"] = ["csv", "csv"]
     cases.append(duplicate_export)
+
+    malformed_export = dict(valid)
+    malformed_export["preferred_exports"] = ["CSV"]
+    cases.append(malformed_export)
 
     non_string_risk = dict(valid)
     non_string_risk["risk"] = ["SAFE"]
@@ -145,6 +217,119 @@ def test_end_to_end_reports(tmp_path: Path):
     assert len(payload["files"]) == 3
     with (output / "duplicates.csv").open(encoding="utf-8-sig") as f:
         assert len(list(csv.DictReader(f))) == 2
+
+
+def test_files_csv_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.report as report_module
+
+    calls = []
+    original = report_module.atomic_text_writer
+
+    def recording_writer(path: Path, *, encoding: str = "utf-8", newline=None):
+        calls.append(Path(path).name)
+        return original(path, encoding=encoding, newline=newline)
+
+    monkeypatch.setattr(report_module, "atomic_text_writer", recording_writer)
+
+    source = tmp_path / "atomic_files_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "atomic_files_report"
+
+    assert scan(source, output) == 1
+    assert "files.csv" in calls
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        assert next(csv.DictReader(handle))["path"] == "data.csv"
+
+
+def test_migration_plan_csv_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.report as report_module
+
+    calls = []
+    original = report_module.atomic_text_writer
+
+    def recording_writer(path: Path, *, encoding: str = "utf-8", newline=None):
+        calls.append(Path(path).name)
+        return original(path, encoding=encoding, newline=newline)
+
+    monkeypatch.setattr(report_module, "atomic_text_writer", recording_writer)
+
+    source = tmp_path / "atomic_migration_source"
+    source.mkdir()
+    (source / "project.jnb").write_bytes(b"jnb")
+    output = tmp_path / "atomic_migration_report"
+
+    assert scan(source, output) == 1
+    assert "migration_plan.csv" in calls
+    assert (output / "migration_plan.csv").exists()
+
+
+def test_duplicates_csv_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.report as report_module
+
+    calls = []
+    original = report_module.atomic_text_writer
+
+    def recording_writer(path: Path, *, encoding: str = "utf-8", newline=None):
+        calls.append(Path(path).name)
+        return original(path, encoding=encoding, newline=newline)
+
+    monkeypatch.setattr(report_module, "atomic_text_writer", recording_writer)
+
+    source = tmp_path / "atomic_duplicates_source"
+    source.mkdir()
+    (source / "a.csv").write_text("same", encoding="utf-8")
+    (source / "b.csv").write_text("same", encoding="utf-8")
+    output = tmp_path / "atomic_duplicates_report"
+
+    assert scan(source, output) == 2
+    assert "duplicates.csv" in calls
+    with (output / "duplicates.csv").open(encoding="utf-8-sig") as handle:
+        assert len(list(csv.DictReader(handle))) == 2
+
+
+def test_scan_json_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.report as report_module
+
+    calls = []
+    original = report_module.atomic_write_text
+
+    def recording_write(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+        calls.append(Path(path).name)
+        original(path, text, encoding=encoding)
+
+    monkeypatch.setattr(report_module, "atomic_write_text", recording_write)
+
+    source = tmp_path / "atomic_scan_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "atomic_scan_report"
+
+    assert scan(source, output) == 1
+    assert "scan.json" in calls
+    assert json.loads((output / "scan.json").read_text(encoding="utf-8"))["summary"]["file_count"] == 1
+
+
+def test_report_html_uses_atomic_write_text(tmp_path: Path, monkeypatch):
+    import labvault_scout.report as report_module
+
+    calls = []
+    original = report_module.atomic_write_text
+
+    def recording_write(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+        calls.append(Path(path).name)
+        original(path, text, encoding=encoding)
+
+    monkeypatch.setattr(report_module, "atomic_write_text", recording_write)
+
+    source = tmp_path / "atomic_html_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "atomic_html_report"
+
+    assert scan(source, output) == 1
+    assert "report.html" in calls
+    assert "LabVault Scout Report" in (output / "report.html").read_text(encoding="utf-8")
 
 
 def test_open_copy_detection(tmp_path: Path):
@@ -1270,6 +1455,65 @@ def test_uncompressed_nifti_is_structurally_verified(tmp_path: Path):
     assert row["confidence"] == "HIGH"
 
 
+def test_uncompressed_big_endian_nifti_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "nii_big_endian_source"
+    source.mkdir()
+    header = bytearray(348)
+    header[:4] = (348).to_bytes(4, "big")
+    header[344:348] = b"n+1\x00"
+    (source / "brain.nii").write_bytes(header + b"\x00" * 64)
+
+    output = tmp_path / "nii_big_endian_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "NIFTI1"
+    assert row["container_type"] == "NIfTI-1 single-file"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_uncompressed_nifti_invalid_magic_is_reviewed(tmp_path: Path):
+    source = tmp_path / "nii_invalid_magic_source"
+    source.mkdir()
+    header = bytearray(348)
+    header[:4] = (348).to_bytes(4, "little")
+    header[344:348] = b"fake"
+    (source / "brain.nii").write_bytes(header)
+
+    output = tmp_path / "nii_invalid_magic_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == ""
+    assert row["container_type"] == "Invalid NIfTI-1 magic"
+    assert row["signature_status"] == "unverified: expected NIFTI1"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_uncompressed_nifti_signature_mismatch_is_reported(tmp_path: Path):
+    source = tmp_path / "nii_mismatch_source"
+    source.mkdir()
+    (source / "brain.nii").write_bytes(b"%PDF-1.7\nnot-nifti")
+
+    output = tmp_path / "nii_mismatch_report"
+    assert scan(source, output) == 1
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["container_type"] == "Truncated NIfTI-1 header"
+    assert row["signature_status"] == "mismatch: expected NIFTI1, detected PDF"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_uncompressed_nifti_invalid_header_is_reviewed(tmp_path: Path):
     source = tmp_path / "bad_nii_source"
     source.mkdir()
@@ -1416,6 +1660,80 @@ def test_write_comparison_outputs_json_csv_and_html(tmp_path: Path):
     assert row["after_path"] == "new.csv"
 
 
+def test_comparison_json_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.compare as compare_module
+    from labvault_scout.compare import compare_payloads, write_comparison
+
+    calls = []
+    original = compare_module.atomic_write_text
+
+    def recording_write(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+        calls.append(Path(path).name)
+        original(path, text, encoding=encoding)
+
+    monkeypatch.setattr(compare_module, "atomic_write_text", recording_write)
+
+    result = compare_payloads(
+        {"files": [{"path": "old.csv", "sha256": "same", "risk": "SAFE"}]},
+        {"files": [{"path": "new.csv", "sha256": "same", "risk": "SAFE"}]},
+    )
+    output = tmp_path / "atomic_comparison"
+    write_comparison(result, output)
+
+    assert "comparison.json" in calls
+    payload = json.loads((output / "comparison.json").read_text(encoding="utf-8"))
+    assert payload["summary"]["moved_count"] == 1
+
+
+def test_changes_csv_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.compare as compare_module
+    from labvault_scout.compare import compare_payloads, write_comparison
+
+    calls = []
+    original = compare_module.atomic_text_writer
+
+    def recording_writer(path: Path, *, encoding: str = "utf-8", newline=None):
+        calls.append(Path(path).name)
+        return original(path, encoding=encoding, newline=newline)
+
+    monkeypatch.setattr(compare_module, "atomic_text_writer", recording_writer)
+
+    result = compare_payloads(
+        {"files": [{"path": "old.csv", "sha256": "same", "risk": "SAFE"}]},
+        {"files": [{"path": "new.csv", "sha256": "same", "risk": "SAFE"}]},
+    )
+    output = tmp_path / "atomic_changes"
+    write_comparison(result, output)
+
+    assert calls == ["changes.csv"]
+    with (output / "changes.csv").open(encoding="utf-8-sig") as handle:
+        assert next(csv.DictReader(handle))["change_type"] == "MOVED"
+
+
+def test_comparison_html_uses_atomic_write_text(tmp_path: Path, monkeypatch):
+    import labvault_scout.compare as compare_module
+    from labvault_scout.compare import compare_payloads, write_comparison
+
+    calls = []
+    original = compare_module.atomic_write_text
+
+    def recording_write(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+        calls.append(Path(path).name)
+        original(path, text, encoding=encoding)
+
+    monkeypatch.setattr(compare_module, "atomic_write_text", recording_write)
+
+    result = compare_payloads(
+        {"files": [{"path": "old.csv", "sha256": "same", "risk": "SAFE"}]},
+        {"files": [{"path": "new.csv", "sha256": "same", "risk": "SAFE"}]},
+    )
+    output = tmp_path / "atomic_comparison_html"
+    write_comparison(result, output)
+
+    assert "comparison.html" in calls
+    assert "LabVault Scout Comparison" in (output / "comparison.html").read_text(encoding="utf-8")
+
+
 def test_cli_compare_command(tmp_path: Path, monkeypatch, capsys):
     import sys
     from labvault_scout.cli import main
@@ -1551,6 +1869,124 @@ def test_comparison_carries_inventory_fingerprints(tmp_path: Path):
     assert result["before"]["inventory_sha256"] == result["after"]["inventory_sha256"]
 
 
+def test_comparison_schema_assessment_changes_have_real_differences():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clauses = schema["properties"]["changes"]["items"]["allOf"]
+    assessment_changed = next(
+        clause["then"]["properties"]
+        for clause in clauses
+        if clause["if"]["properties"]["change_type"]["const"] == "ASSESSMENT_CHANGED"
+    )
+
+    assert assessment_changed["before_path"]["minLength"] == 1
+    assert assessment_changed["after_path"]["minLength"] == 1
+    assert assessment_changed["before"]["type"] == "object"
+    assert assessment_changed["after"]["type"] == "object"
+    assert assessment_changed["changed_fields"]["minItems"] == 1
+
+
+def test_comparison_schema_content_changes_are_two_sided():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clauses = schema["properties"]["changes"]["items"]["allOf"]
+    content_changed = next(
+        clause["then"]["properties"]
+        for clause in clauses
+        if clause["if"]["properties"]["change_type"]["const"] == "CONTENT_CHANGED"
+    )
+
+    assert content_changed["before_path"]["minLength"] == 1
+    assert content_changed["after_path"]["minLength"] == 1
+    assert content_changed["before"]["type"] == "object"
+    assert content_changed["after"]["type"] == "object"
+
+
+def test_comparison_schema_moved_changes_are_two_sided():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clauses = schema["properties"]["changes"]["items"]["allOf"]
+    moved = next(
+        clause["then"]["properties"]
+        for clause in clauses
+        if clause["if"]["properties"]["change_type"]["const"] == "MOVED"
+    )
+
+    assert moved["before_path"]["minLength"] == 1
+    assert moved["after_path"]["minLength"] == 1
+    assert moved["before"]["type"] == "object"
+    assert moved["after"]["type"] == "object"
+
+
+def test_comparison_schema_one_sided_changes_match_runtime_shape():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clauses = schema["properties"]["changes"]["items"]["allOf"]
+    by_type = {
+        clause["if"]["properties"]["change_type"]["const"]: clause["then"]["properties"]
+        for clause in clauses
+        if "change_type" in clause.get("if", {}).get("properties", {})
+    }
+
+    added = by_type["ADDED"]
+    assert added["before_path"]["const"] == ""
+    assert added["after_path"]["minLength"] == 1
+    assert added["before"]["type"] == "null"
+    assert added["after"]["type"] == "object"
+    assert added["changed_fields"]["maxItems"] == 0
+    assert added["priority_direction"]["const"] == ""
+    assert added["priority_delta"]["type"] == "null"
+
+    removed = by_type["REMOVED"]
+    assert removed["after_path"]["const"] == ""
+    assert removed["before_path"]["minLength"] == 1
+    assert removed["before"]["type"] == "object"
+    assert removed["after"]["type"] == "null"
+    assert removed["changed_fields"]["maxItems"] == 0
+    assert removed["priority_direction"]["const"] == ""
+    assert removed["priority_delta"]["type"] == "null"
+
+
+def test_comparison_schema_changed_fields_match_runtime_assessments():
+    from labvault_scout.compare import ASSESSMENT_FIELDS
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    changed_fields = schema["properties"]["changes"]["items"]["properties"]["changed_fields"]
+    assert changed_fields["uniqueItems"] is True
+    assert set(changed_fields["items"]["enum"]) == set(ASSESSMENT_FIELDS)
+
+
+def test_comparison_schema_priority_delta_matches_direction():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clauses = schema["properties"]["changes"]["items"]["allOf"]
+    by_direction = {
+        clause["if"]["properties"]["priority_direction"]["const"]: clause["then"]["properties"]["priority_delta"]
+        for clause in clauses
+        if "priority_direction" in clause.get("if", {}).get("properties", {})
+    }
+
+    assert by_direction[""] == {"type": "null"}
+    assert by_direction["ESCALATED"]["anyOf"] == [
+        {"type": "null"},
+        {"type": "integer", "minimum": 1},
+    ]
+    assert by_direction["DEESCALATED"]["anyOf"] == [
+        {"type": "null"},
+        {"type": "integer", "maximum": -1},
+    ]
+    assert by_direction["UNCHANGED"]["anyOf"] == [
+        {"type": "null"},
+        {"const": 0},
+    ]
+
+
 def test_compare_reports_priority_escalation_and_deescalation():
     from labvault_scout.compare import compare_payloads
 
@@ -1572,6 +2008,46 @@ def test_compare_reports_priority_escalation_and_deescalation():
     assert by_path["up.jnb"]["priority_delta"] == 20
     assert by_path["down.jnb"]["priority_direction"] == "DEESCALATED"
     assert by_path["down.jnb"]["priority_delta"] == -40
+
+
+def test_scan_metrics_ignores_invalid_legacy_sizes():
+    from labvault_scout.compare import scan_metrics
+
+    metrics = scan_metrics({
+        "files": [
+            {"path": "negative.bin", "size": -5},
+            {"path": "boolean.bin", "size": True},
+            {"path": "numeric-string.bin", "size": "7"},
+            {"path": "invalid.bin", "size": "not-a-number"},
+        ]
+    })
+
+    assert metrics["file_count"] == 4
+    assert metrics["total_bytes"] == 7
+
+
+def test_comparison_schema_source_versions_are_nonempty():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    for side in ("before", "after"):
+        assert schema["properties"][side]["properties"]["schema_version"] == {
+            "type": "string",
+            "minLength": 1,
+        }
+
+
+def test_comparison_schema_source_metric_counts_are_nonnegative():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    for side in ("before", "after"):
+        metrics = schema["properties"][side]["properties"]["metrics"]["properties"]
+        for field in ("risk_counts", "priority_counts"):
+            assert metrics[field]["additionalProperties"] == {
+                "type": "integer",
+                "minimum": 0,
+            }
 
 
 def test_compare_metrics_delta_for_legacy_and_current_rows():
@@ -2439,6 +2915,116 @@ def test_packaged_json_schemas_are_available_and_parseable():
     assert verification_schema["oneOf"]
 
 
+def test_report_identity_normalizes_invalid_tool_metadata():
+    from labvault_scout.compare import report_identity
+
+    empty = report_identity({
+        "schema_version": "99",
+        "tool": {"name": "", "version": None},
+        "files": [],
+        "errors": [],
+    })
+    assert empty["tool"] == {"name": "unknown", "version": "unknown"}
+
+    valid = report_identity({
+        "schema_version": "99",
+        "tool": {"name": "Future Scanner", "version": "2"},
+        "files": [],
+        "errors": [],
+    })
+    assert valid["tool"] == {"name": "Future Scanner", "version": "2"}
+
+
+def test_report_identity_normalizes_untrusted_sha256_fields():
+    from labvault_scout.compare import report_identity
+
+    valid = "a" * 64
+    identity = report_identity({
+        "schema_version": "99",
+        "summary": {"inventory_sha256": "not-a-sha256"},
+        "report_sha256": valid,
+        "provenance": {"rules_sha256": 123},
+        "files": [],
+        "errors": [],
+    })
+
+    assert identity["inventory_sha256"] == ""
+    assert identity["report_sha256"] == valid
+    assert identity["rules_sha256"] == ""
+
+
+def test_comparison_schema_allows_source_tool_names():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    for side in ("before", "after"):
+        name_schema = schema["properties"][side]["properties"]["tool"]["properties"]["name"]
+        assert name_schema == {"type": "string", "minLength": 1}
+
+    result = compare_payloads(
+        {
+            "schema_version": "99",
+            "tool": {"name": "Future Scanner A", "version": "1"},
+            "files": [],
+            "errors": [],
+        },
+        {
+            "schema_version": "100",
+            "tool": {"name": "Future Scanner B", "version": "2"},
+            "files": [],
+            "errors": [],
+        },
+    )
+    assert result["before"]["tool"]["name"] == "Future Scanner A"
+    assert result["after"]["tool"]["name"] == "Future Scanner B"
+
+
+def test_verification_schema_status_exit_code_pairs_match_runtime():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("verification"))["oneOf"][0]
+    pairs = {
+        (
+            option["properties"]["status"]["const"],
+            option["properties"]["exit_code"]["const"],
+        )
+        for option in schema["allOf"][0]["oneOf"]
+    }
+    assert pairs == {
+        ("VERIFIED", 0),
+        ("UNKNOWN", 1),
+        ("FAILED", 2),
+        ("UNSUPPORTED", 2),
+    }
+
+
+def test_verification_schema_hash_fields_match_runtime_normalization():
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("verification"))["oneOf"][0]
+    for field in ("inventory_sha256", "report_sha256", "rules_sha256"):
+        assert schema["properties"][field]["pattern"] == "^$|^[0-9a-f]{64}$"
+
+
+def test_verification_schema_allows_source_tool_names():
+    from labvault_scout.compare import verify_report
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("verification"))["oneOf"][0]
+    name_schema = schema["properties"]["tool"]["properties"]["name"]
+    assert name_schema == {"type": "string", "minLength": 1}
+
+    result = verify_report({
+        "schema_version": "99",
+        "tool": {"name": "Future Scientific Scanner", "version": "1"},
+        "files": [],
+        "errors": [],
+    })
+    assert result["status"] == "UNSUPPORTED"
+    assert result["tool"]["name"] == "Future Scientific Scanner"
+
+
 def test_cli_schema_outputs_packaged_schema(monkeypatch, capsys):
     import sys
     from labvault_scout.cli import main
@@ -2507,11 +3093,19 @@ def test_netcdf_classic_family_header_evidence():
     cases = {
         b"CDF\x01" + b"\x00" * 4: "NetCDF CDF-1",
         b"CDF\x02" + b"\x00" * 4: "NetCDF CDF-2",
-        b"CDF\x05" + b"\x00" * 4: "NetCDF CDF-5",
+        b"CDF\x05" + b"\x00" * 8: "NetCDF CDF-5",
     }
     for header, label in cases.items():
         assert signature_from_head(header) == "NETCDF"
         assert netcdf_container_from_header(header) == label
+
+
+def test_netcdf_cdf5_requires_64_bit_numrecs():
+    from labvault_scout.identifier import netcdf_container_from_header, signature_from_head
+
+    header = b"CDF\x05" + b"\x00" * 4
+    assert signature_from_head(header) == "NETCDF"
+    assert netcdf_container_from_header(header) == "Truncated NetCDF container"
 
 
 def test_netcdf_classic_scan_is_verified(tmp_path: Path):
@@ -2529,6 +3123,39 @@ def test_netcdf_classic_scan_is_verified(tmp_path: Path):
     assert row["container_type"] == "NetCDF CDF-1"
     assert row["signature_status"] == "verified"
     assert row["confidence"] == "HIGH"
+
+
+def test_netcdf_cdf5_scan_is_verified(tmp_path: Path):
+    source = tmp_path / "netcdf_cdf5_source"
+    source.mkdir()
+    (source / "large.nc").write_bytes(b"CDF\x05" + b"\x00" * 32)
+    output = tmp_path / "netcdf_cdf5_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "NETCDF"
+    assert row["container_type"] == "NetCDF CDF-5"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+
+
+def test_truncated_netcdf_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_netcdf_source"
+    source.mkdir()
+    (source / "broken.nc").write_bytes(b"CDF\x01")
+    output = tmp_path / "truncated_netcdf_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "NETCDF"
+    assert row["container_type"] == "Truncated NetCDF container"
+    assert row["signature_status"] == "unverified: expected NetCDF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
 def test_netcdf_hdf5_container_is_conservative(tmp_path: Path):
@@ -2569,11 +3196,13 @@ def test_tiff_classic_and_bigtiff_header_evidence():
     classic_le = bytes.fromhex("49492A00") + (8).to_bytes(4, "little")
     classic_be = bytes.fromhex("4D4D002A") + (8).to_bytes(4, "big")
     big_le = bytes.fromhex("49492B00") + (8).to_bytes(2, "little") + b"\x00\x00" + (16).to_bytes(8, "little")
+    big_be = bytes.fromhex("4D4D002B") + (8).to_bytes(2, "big") + b"\x00\x00" + (16).to_bytes(8, "big")
 
     assert signature_from_head(classic_le) == "TIFF"
     assert tiff_container_from_header(classic_le) == "TIFF classic (little-endian)"
     assert tiff_container_from_header(classic_be) == "TIFF classic (big-endian)"
     assert tiff_container_from_header(big_le) == "BigTIFF (little-endian)"
+    assert tiff_container_from_header(big_be) == "BigTIFF (big-endian)"
 
 
 def test_tiff_scan_is_structurally_verified(tmp_path: Path):
@@ -2592,6 +3221,23 @@ def test_tiff_scan_is_structurally_verified(tmp_path: Path):
     assert row["confidence"] == "HIGH"
 
 
+def test_truncated_classic_tiff_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_tiff_source"
+    source.mkdir()
+    (source / "broken.tif").write_bytes(bytes.fromhex("49492A00") + b"\x00" * 3)
+    output = tmp_path / "truncated_tiff_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "Truncated TIFF container"
+    assert row["signature_status"] == "unverified: expected TIFF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_truncated_bigtiff_is_reviewed(tmp_path: Path):
     source = tmp_path / "bad_tiff_source"
     source.mkdir()
@@ -2607,6 +3253,77 @@ def test_truncated_bigtiff_is_reviewed(tmp_path: Path):
     assert row["signature_status"] == "unverified: expected TIFF structure"
     assert row["confidence"] == "LOW"
     assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_bigtiff_one_byte_short_of_full_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "short_bigtiff_source"
+    source.mkdir()
+    full_header = bytes.fromhex("49492B0008000000") + (16).to_bytes(8, "little")
+    (source / "short.tiff").write_bytes(full_header[:-1])
+    output = tmp_path / "short_bigtiff_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "Truncated BigTIFF container"
+    assert row["signature_status"] == "unverified: expected TIFF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_invalid_bigtiff_offset_size_is_reviewed(tmp_path: Path):
+    source = tmp_path / "invalid_bigtiff_offset_source"
+    source.mkdir()
+    header = bytes.fromhex("49492B0004000000") + (16).to_bytes(8, "little")
+    (source / "invalid.tiff").write_bytes(header)
+    output = tmp_path / "invalid_bigtiff_offset_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "Invalid BigTIFF header"
+    assert row["signature_status"] == "unverified: expected TIFF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_invalid_bigtiff_reserved_field_is_reviewed(tmp_path: Path):
+    source = tmp_path / "invalid_bigtiff_reserved_source"
+    source.mkdir()
+    header = bytes.fromhex("49492B0008000100") + (16).to_bytes(8, "little")
+    (source / "invalid.tiff").write_bytes(header)
+    output = tmp_path / "invalid_bigtiff_reserved_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "TIFF"
+    assert row["container_type"] == "Invalid BigTIFF header"
+    assert row["signature_status"] == "unverified: expected TIFF structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_tiff_extension_pdf_signature_mismatch_is_reviewed(tmp_path: Path):
+    source = tmp_path / "tiff_mismatch_source"
+    source.mkdir()
+    (source / "fake.tif").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "tiff_mismatch_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "TIFF"
+    assert row["signature"] == "PDF"
+    assert row["signature_status"] == "mismatch: expected TIFF, detected PDF"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
 def _valid_fits_bytes(simple_value: bytes = b"T") -> bytes:
@@ -2634,6 +3351,153 @@ def test_fits_primary_header_is_verified(tmp_path: Path):
     assert row["signature_status"] == "verified"
     assert row["confidence"] == "HIGH"
     assert row["recommended_action"] == "KEEP"
+
+
+def test_truncated_fits_is_reviewed(tmp_path: Path):
+    source = tmp_path / "truncated_fits_source"
+    source.mkdir()
+    data = _valid_fits_bytes()[:2879]
+    (source / "truncated.fits").write_bytes(data)
+    output = tmp_path / "truncated_fits_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "Truncated FITS container"
+    assert row["signature_status"] == "unverified: expected FITS structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fits_invalid_bitpix_is_reviewed(tmp_path: Path):
+    source = tmp_path / "fits_invalid_bitpix_source"
+    source.mkdir()
+    data = bytearray(_valid_fits_bytes())
+    data[90:110] = b"                  12"
+    (source / "invalid_bitpix.fits").write_bytes(data)
+    output = tmp_path / "fits_invalid_bitpix_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "Invalid FITS BITPIX value"
+    assert row["signature_status"] == "unverified: expected FITS structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fits_invalid_naxis_is_reviewed(tmp_path: Path):
+    source = tmp_path / "fits_invalid_naxis_source"
+    source.mkdir()
+
+    for name, value in (("negative.fits", b"-1"), ("too_many.fits", b"1000")):
+        data = bytearray(_valid_fits_bytes())
+        data[170:190] = b" " * (20 - len(value)) + value
+        (source / name).write_bytes(data)
+
+    output = tmp_path / "fits_invalid_naxis_report"
+    assert scan(source, output) == 2
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert len(rows) == 2
+    for row in rows:
+        assert row["signature"] == "FITS"
+        assert row["container_type"] == "Invalid FITS NAXIS value"
+        assert row["signature_status"] == "unverified: expected FITS structure"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fits_naxisn_structure_is_validated(tmp_path: Path):
+    source = tmp_path / "fits_naxisn_source"
+    source.mkdir()
+
+    missing = bytearray(_valid_fits_bytes())
+    missing[170:190] = b"                   1"
+    (source / "missing_axis.fits").write_bytes(missing)
+
+    out_of_order = bytearray(_valid_fits_bytes())
+    out_of_order[170:190] = b"                   2"
+    out_of_order[240:270] = b"NAXIS2  = " + b"5".rjust(20)
+    out_of_order[320:350] = b"NAXIS1  = " + b"4".rjust(20)
+    out_of_order[400:403] = b"END"
+    (source / "out_of_order.fits").write_bytes(out_of_order)
+
+    negative = bytearray(_valid_fits_bytes())
+    negative[170:190] = b"                   1"
+    negative[240:270] = b"NAXIS1  = " + b"-1".rjust(20)
+    negative[320:323] = b"END"
+    (source / "negative_axis.fits").write_bytes(negative)
+
+    extra = bytearray(_valid_fits_bytes())
+    extra[240:270] = b"NAXIS1  = " + b"1".rjust(20)
+    extra[320:323] = b"END"
+    (source / "extra_axis.fits").write_bytes(extra)
+
+    output = tmp_path / "fits_naxisn_report"
+    assert scan(source, output) == 4
+
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        rows = {row["path"]: row for row in csv.DictReader(handle)}
+
+    expected = {
+        "extra_axis.fits": "Invalid FITS unexpected NAXISn card",
+        "missing_axis.fits": "Invalid FITS missing NAXISn card",
+        "negative_axis.fits": "Invalid FITS NAXISn value",
+        "out_of_order.fits": "Invalid FITS NAXISn order",
+    }
+    assert set(rows) == set(expected)
+    for path, container_type in expected.items():
+        row = rows[path]
+        assert row["signature"] == "FITS"
+        assert row["container_type"] == container_type
+        assert row["signature_status"] == "unverified: expected FITS structure"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fits_missing_end_is_reviewed(tmp_path: Path):
+    source = tmp_path / "fits_missing_end_source"
+    source.mkdir()
+    data = bytearray(_valid_fits_bytes())
+    data[240:320] = b" " * 80
+    (source / "missing_end.fits").write_bytes(data)
+    output = tmp_path / "fits_missing_end_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "Invalid FITS missing END card"
+    assert row["signature_status"] == "unverified: expected FITS structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fits_multiblock_header_end_is_verified(tmp_path: Path):
+    source = tmp_path / "fits_multiblock_source"
+    source.mkdir()
+    data = bytearray(b" " * 5760)
+    data[:240] = _valid_fits_bytes()[:240]
+    data[2880:2883] = b"END"
+    (source / "multiblock.fits").write_bytes(data)
+    output = tmp_path / "fits_multiblock_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "FITS"
+    assert row["container_type"] == "FITS primary HDU (SIMPLE=T)"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
 
 
 def test_fits_simple_false_is_nonconforming_and_reviewed(tmp_path: Path):
@@ -2680,16 +3544,20 @@ def test_fits_disguised_file_is_mismatch(tmp_path: Path):
     with (output / "files.csv").open(encoding="utf-8-sig") as handle:
         row = next(csv.DictReader(handle))
 
+    assert row["format"] == "FITS"
     assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected FITS, detected PDF"
     assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
-def _matlab5_header(endian: bytes = b"IM") -> bytes:
+def _matlab5_header(endian: bytes = b"IM", version: bytes | None = None) -> bytes:
     header = bytearray(b" " * 128)
     text = b"MATLAB 5.0 MAT-file, Platform: GLNXA64, Created by LabVault Scout test"
     header[:len(text)] = text
-    header[124:126] = b"\x00\x01"
+    if version is None:
+        version = b"\x00\x01" if endian == b"IM" else b"\x01\x00"
+    header[124:126] = version
     header[126:128] = endian
     return bytes(header)
 
@@ -2700,9 +3568,46 @@ def test_matlab5_header_evidence():
     little = _matlab5_header(b"IM")
     big = _matlab5_header(b"MI")
 
+    invalid_version = _matlab5_header(b"IM", b"\x01\x00")
+
     assert signature_from_head(little) == "MAT5"
     assert matlab5_container_from_header(little) == "MATLAB Level 5 MAT-file (little-endian)"
     assert matlab5_container_from_header(big) == "MATLAB Level 5 MAT-file (big-endian)"
+    assert matlab5_container_from_header(invalid_version) == "Invalid MATLAB Level 5 version"
+
+
+def test_matlab5_invalid_version_is_reviewed(tmp_path: Path):
+    source = tmp_path / "mat5_invalid_version_source"
+    source.mkdir()
+    (source / "broken.mat").write_bytes(_matlab5_header(b"IM", b"\x01\x00") + b"\x00" * 64)
+    output = tmp_path / "mat5_invalid_version_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "MAT5"
+    assert row["container_type"] == "Invalid MATLAB Level 5 version"
+    assert row["signature_status"] == "unverified: expected MATLAB Level 5 structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_matlab5_invalid_endian_marker_is_reviewed(tmp_path: Path):
+    source = tmp_path / "mat5_invalid_endian_source"
+    source.mkdir()
+    (source / "broken.mat").write_bytes(_matlab5_header(b"XX") + b"\x00" * 64)
+    output = tmp_path / "mat5_invalid_endian_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "MAT5"
+    assert row["container_type"] == "Invalid MATLAB Level 5 endian marker"
+    assert row["signature_status"] == "unverified: expected MATLAB Level 5 structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
 def test_matlab5_scan_is_structurally_verified(tmp_path: Path):
@@ -2720,6 +3625,24 @@ def test_matlab5_scan_is_structurally_verified(tmp_path: Path):
     assert row["container_type"] == "MATLAB Level 5 MAT-file (little-endian)"
     assert row["signature_status"] == "verified"
     assert row["confidence"] == "HIGH"
+
+
+def test_matlab5_big_endian_scan_is_structurally_verified(tmp_path: Path):
+    source = tmp_path / "mat5_big_endian_source"
+    source.mkdir()
+    (source / "experiment.mat").write_bytes(_matlab5_header(b"MI") + b"\x00" * 64)
+    output = tmp_path / "mat5_big_endian_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["format"] == "MATLAB Data"
+    assert row["signature"] == "MAT5"
+    assert row["container_type"] == "MATLAB Level 5 MAT-file (big-endian)"
+    assert row["signature_status"] == "verified"
+    assert row["confidence"] == "HIGH"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
 def test_matlab_hdf5_container_remains_conservative(tmp_path: Path):
@@ -2752,6 +3675,7 @@ def test_matlab_disguised_file_is_mismatch(tmp_path: Path):
     assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected MATLAB Level 5/HDF5, detected PDF"
     assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
 def test_truncated_matlab5_header_is_reviewed(tmp_path: Path):
@@ -2829,6 +3753,25 @@ def test_dicom_disguised_file_is_mismatch(tmp_path: Path):
     assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected DICOM Part 10, detected PDF"
     assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_dicom_nontruncated_signature_mismatch_is_reviewed_as_format(tmp_path: Path):
+    source = tmp_path / "bad_dicom_nontruncated_source"
+    source.mkdir()
+    payload = b"%PDF-1.7\n" + b"x" * 247
+    (source / "fake.dcm").write_bytes(payload)
+    output = tmp_path / "bad_dicom_nontruncated_report"
+
+    assert scan(source, output) == 1
+    with (output / "files.csv").open(encoding="utf-8-sig") as handle:
+        row = next(csv.DictReader(handle))
+
+    assert row["signature"] == "PDF"
+    assert row["container_type"] == "DICOM Part 10 marker not found"
+    assert row["signature_status"] == "mismatch: expected DICOM Part 10, detected PDF"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
 def test_truncated_dicom_header_is_reviewed(tmp_path: Path):
@@ -3061,12 +4004,49 @@ def test_cli_verify_bundle_invalid_utf8_is_concise_and_json_capable(tmp_path: Pa
     assert "Cannot read bundle manifest" in result["error"]
 
 
+def test_bundle_manifest_uses_atomic_text_writer(tmp_path: Path, monkeypatch):
+    import labvault_scout.bundle as bundle_module
+
+    calls = []
+    original = bundle_module.atomic_write_text
+
+    def recording_write(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+        calls.append(Path(path).name)
+        original(path, text, encoding=encoding)
+
+    monkeypatch.setattr(bundle_module, "atomic_write_text", recording_write)
+
+    source = tmp_path / "atomic_bundle_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "atomic_bundle_report"
+
+    assert scan(source, output) == 1
+    assert calls == ["bundle_manifest.json"]
+    payload = json.loads((output / "bundle_manifest.json").read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "1"
+
+
 def test_bundle_schema_is_packaged():
     from labvault_scout.schema_registry import load_schema_text
 
     schema = json.loads(load_schema_text("bundle"))
     assert schema["title"] == "LabVault Scout bundle manifest schema 1"
     assert schema["properties"]["schema_version"]["const"] == "1"
+    files_schema = schema["properties"]["files"]
+    assert files_schema["uniqueItems"] is True
+    required_paths = {
+        clause["contains"]["properties"]["path"]["const"]
+        for clause in files_schema["allOf"]
+        if clause.get("minContains") == 1 and clause.get("maxContains") == 1
+    }
+    assert required_paths == {
+        "scan.json",
+        "files.csv",
+        "duplicates.csv",
+        "migration_plan.csv",
+        "report.html",
+    }
 
 
 def test_bundle_manifest_rejects_extra_top_level_fields(tmp_path: Path):
@@ -3313,6 +4293,33 @@ def test_fcs_fixed_header_evidence():
         assert fcs_container_from_header(header, 256) == f"FCS {version[3:].decode('ascii')} fixed header"
 
 
+def test_fcs_legacy_versions_scan_as_verified(tmp_path: Path):
+    source = tmp_path / "fcs_legacy_versions_source"
+    source.mkdir()
+    versions = {
+        "v20.fcs": b"FCS2.0",
+        "v30.fcs": b"FCS3.0",
+        "v31.fcs": b"FCS3.1",
+    }
+    for name, version in versions.items():
+        (source / name).write_bytes(_fcs_header(version) + b"/$TOT/1/" + b" " * 190)
+
+    output = tmp_path / "fcs_legacy_versions_report"
+    assert scan(source, output) == 3
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert set(rows) == set(versions)
+    for name, version in versions.items():
+        row = rows[name]
+        assert row["format"] == "Flow Cytometry Standard"
+        assert row["signature"] == "FCS"
+        assert row["container_type"] == f"FCS {version[3:].decode('ascii')} fixed header"
+        assert row["signature_status"] == "verified"
+        assert row["confidence"] == "HIGH"
+
+
 def test_fcs_scan_is_structurally_verified(tmp_path: Path):
     source = tmp_path / "fcs_source"
     source.mkdir()
@@ -3326,6 +4333,119 @@ def test_fcs_scan_is_structurally_verified(tmp_path: Path):
     assert row["signature"] == "FCS"
     assert row["container_type"] == "FCS 3.2 fixed header"
     assert row["signature_status"] == "verified"
+
+
+def test_fcs_nonzero_data_and_analysis_offsets_must_be_bounded(tmp_path: Path):
+    source = tmp_path / "fcs_invalid_segment_offsets_source"
+    source.mkdir()
+
+    data_reversed = bytearray(_fcs_header() + b"/$TOT/1/" + b" " * 190)
+    data_reversed[26:34] = b"     200"
+    data_reversed[34:42] = b"     150"
+    (source / "data_reversed.fcs").write_bytes(data_reversed)
+
+    analysis_past_eof = bytearray(_fcs_header() + b"/$TOT/1/" + b" " * 190)
+    analysis_past_eof[42:50] = b"     200"
+    analysis_past_eof[50:58] = b"     300"
+    (source / "analysis_past_eof.fcs").write_bytes(analysis_past_eof)
+
+    output = tmp_path / "fcs_invalid_segment_offsets_report"
+    assert scan(source, output) == 2
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert rows["data_reversed.fcs"]["container_type"] == "Invalid FCS DATA offsets"
+    assert rows["analysis_past_eof.fcs"]["container_type"] == "Invalid FCS ANALYSIS offsets"
+    for row in rows.values():
+        assert row["signature"] == "FCS"
+        assert row["signature_status"] == "unverified: expected FCS fixed header"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fcs_invalid_text_offset_bounds_are_reviewed(tmp_path: Path):
+    source = tmp_path / "fcs_invalid_text_offsets_source"
+    source.mkdir()
+
+    cases = {
+        "overlaps_header.fcs": (57, 127),
+        "reversed.fcs": (128, 127),
+        "past_eof.fcs": (58, 300),
+    }
+    for name, (text_begin, text_end) in cases.items():
+        data = bytearray(_fcs_header() + b"/$TOT/1/" + b" " * 190)
+        data[10:18] = f"{text_begin:>8}".encode("ascii")
+        data[18:26] = f"{text_end:>8}".encode("ascii")
+        (source / name).write_bytes(data)
+
+    output = tmp_path / "fcs_invalid_text_offsets_report"
+    assert scan(source, output) == 3
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = payload["files"]
+    assert len(rows) == 3
+    for row in rows:
+        assert row["signature"] == "FCS"
+        assert row["container_type"] == "Invalid FCS TEXT offsets"
+        assert row["signature_status"] == "unverified: expected FCS fixed header"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fcs_invalid_header_offset_characters_are_reviewed(tmp_path: Path):
+    source = tmp_path / "fcs_invalid_offset_source"
+    source.mkdir()
+    data = bytearray(_fcs_header())
+    data[10:18] = b"      x8"
+    (source / "bad_offset.fcs").write_bytes(data)
+    output = tmp_path / "fcs_invalid_offset_report"
+
+    assert scan(source, output) == 1
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+
+    assert row["signature"] == "FCS"
+    assert row["container_type"] == "Invalid FCS header offsets"
+    assert row["signature_status"] == "unverified: expected FCS fixed header"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fcs_invalid_header_spacing_is_reviewed(tmp_path: Path):
+    source = tmp_path / "fcs_invalid_spacing_source"
+    source.mkdir()
+    data = bytearray(_fcs_header())
+    data[6:10] = b" xxx"
+    (source / "bad_spacing.fcs").write_bytes(data)
+    output = tmp_path / "fcs_invalid_spacing_report"
+
+    assert scan(source, output) == 1
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+
+    assert row["signature"] == "FCS"
+    assert row["container_type"] == "Invalid FCS header spacing"
+    assert row["signature_status"] == "unverified: expected FCS fixed header"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_fcs_57_byte_header_is_truncated(tmp_path: Path):
+    source = tmp_path / "fcs_57_byte_source"
+    source.mkdir()
+    (source / "boundary.fcs").write_bytes(_fcs_header()[:57])
+    output = tmp_path / "fcs_57_byte_report"
+
+    assert scan(source, output) == 1
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+
+    assert row["signature"] == "FCS"
+    assert row["container_type"] == "Truncated FCS header"
+    assert row["signature_status"] == "unverified: expected FCS fixed header"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
 def test_truncated_fcs_header_is_reviewed(tmp_path: Path):
@@ -3351,7 +4471,12 @@ def test_fcs_disguised_file_is_mismatch(tmp_path: Path):
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
     row = payload["files"][0]
+    assert row["format"] == "Flow Cytometry Standard"
+    assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected FCS, detected PDF"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
+
 
 def _spss_header(magic: bytes = b"$FL2", byteorder: str = "little") -> bytes:
     header = bytearray(176)
@@ -3376,6 +4501,25 @@ def test_spss_fixed_header_evidence():
     assert signature_from_head(zsav) == "SPSS"
     assert spss_container_from_header(sav, 176) == "SPSS SAV $FL2 fixed header (little-endian)"
     assert spss_container_from_header(zsav, 176) == "SPSS ZSAV $FL3 fixed header (big-endian)"
+
+
+def test_spss_big_endian_scans_are_verified(tmp_path: Path):
+    source = tmp_path / "spss_big_endian_source"
+    source.mkdir()
+    (source / "survey.sav").write_bytes(_spss_header(b"$FL2", "big"))
+    (source / "survey.zsav").write_bytes(_spss_header(b"$FL3", "big"))
+    output = tmp_path / "spss_big_endian_report"
+
+    assert scan(source, output) == 2
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert rows["survey.sav"]["container_type"] == "SPSS SAV $FL2 fixed header (big-endian)"
+    assert rows["survey.zsav"]["container_type"] == "SPSS ZSAV $FL3 fixed header (big-endian)"
+    for row in rows.values():
+        assert row["signature"] == "SPSS"
+        assert row["signature_status"] == "verified"
+        assert row["confidence"] == "HIGH"
 
 
 def test_spss_sav_scan_is_structurally_verified(tmp_path: Path):
@@ -3412,12 +4556,107 @@ def test_spss_wrong_magic_for_extension_is_not_verified(tmp_path: Path):
     source = tmp_path / "spss_wrong_magic_source"
     source.mkdir()
     (source / "wrong.sav").write_bytes(_spss_header(b"$FL3"))
+    (source / "wrong.zsav").write_bytes(_spss_header(b"$FL2"))
     output = tmp_path / "spss_wrong_magic_report"
 
-    scan(source, output)
+    assert scan(source, output) == 2
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
-    row = payload["files"][0]
-    assert row["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert rows["wrong.sav"]["container_type"] == "SPSS ZSAV $FL3 fixed header (little-endian)"
+    assert rows["wrong.sav"]["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
+    assert rows["wrong.zsav"]["container_type"] == "SPSS SAV $FL2 fixed header (little-endian)"
+    assert rows["wrong.zsav"]["signature_status"] == "unverified: expected SPSS $FL3 fixed header"
+    for row in rows.values():
+        assert row["signature"] == "SPSS"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "EXPORT_OPEN_FORMAT"
+
+
+def test_spss_signature_mismatches_are_reviewed_as_format(tmp_path: Path):
+    source = tmp_path / "spss_signature_mismatch_source"
+    source.mkdir()
+    (source / "fake.sav").write_bytes(b"%PDF-1.7\n")
+    (source / "fake.zsav").write_bytes(b"%PDF-1.7\n")
+    output = tmp_path / "spss_signature_mismatch_report"
+
+    assert scan(source, output) == 2
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert rows["fake.sav"]["signature_status"] == "mismatch: expected SPSS $FL2, detected PDF"
+    assert rows["fake.zsav"]["signature_status"] == "mismatch: expected SPSS $FL3, detected PDF"
+    for row in rows.values():
+        assert row["signature"] == "PDF"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_FORMAT"
+
+
+def test_spss_invalid_layout_code_is_reviewed(tmp_path: Path):
+    source = tmp_path / "spss_invalid_layout_source"
+    source.mkdir()
+
+    for name, magic in (("bad.sav", b"$FL2"), ("bad.zsav", b"$FL3")):
+        data = bytearray(_spss_header(magic))
+        data[64:68] = (0).to_bytes(4, "little", signed=True)
+        (source / name).write_bytes(data)
+
+    output = tmp_path / "spss_invalid_layout_report"
+    assert scan(source, output) == 2
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+
+    for row in payload["files"]:
+        assert row["signature"] == "SPSS"
+        assert row["container_type"] == "Invalid SPSS layout code"
+        assert row["signature_status"].startswith("unverified: expected SPSS ")
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_spss_invalid_compression_codes_are_reviewed(tmp_path: Path):
+    source = tmp_path / "spss_invalid_compression_source"
+    source.mkdir()
+
+    sav = bytearray(_spss_header(b"$FL2"))
+    sav[72:76] = (2).to_bytes(4, "little", signed=True)
+    (source / "bad.sav").write_bytes(sav)
+
+    zsav = bytearray(_spss_header(b"$FL3"))
+    zsav[72:76] = (0).to_bytes(4, "little", signed=True)
+    (source / "bad.zsav").write_bytes(zsav)
+
+    output = tmp_path / "spss_invalid_compression_report"
+    assert scan(source, output) == 2
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert rows["bad.sav"]["container_type"] == "Invalid SPSS SAV compression code"
+    assert rows["bad.zsav"]["container_type"] == "Invalid SPSS ZSAV compression code"
+    for row in rows.values():
+        assert row["signature"] == "SPSS"
+        assert row["signature_status"].startswith("unverified: expected SPSS ")
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_spss_175_byte_headers_are_truncated(tmp_path: Path):
+    source = tmp_path / "spss_175_byte_source"
+    source.mkdir()
+    (source / "boundary.sav").write_bytes(_spss_header(b"$FL2")[:175])
+    (source / "boundary.zsav").write_bytes(_spss_header(b"$FL3")[:175])
+    output = tmp_path / "spss_175_byte_report"
+
+    assert scan(source, output) == 2
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert set(rows) == {"boundary.sav", "boundary.zsav"}
+    for row in rows.values():
+        assert row["signature"] == "SPSS"
+        assert row["container_type"] == "Truncated SPSS system-file header"
+        assert row["signature_status"].startswith("unverified: expected SPSS ")
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
 def test_truncated_spss_header_is_reviewed(tmp_path: Path):
@@ -3467,6 +4706,106 @@ def _modern_stata_dta_header(release: bytes = b"118", byteorder: bytes = b"LSF")
     )
 
 
+def test_malformed_modern_stata_byteorder_headers_are_reviewed(tmp_path: Path):
+    source = tmp_path / "stata_bad_byteorder_source"
+    source.mkdir()
+
+    cases = {
+        "missing_tag.dta": (
+            b"<stata_dta><header><release>118</release>LSF</byteorder>",
+            "Invalid Stata DTA byteorder header",
+        ),
+        "truncated_tag.dta": (
+            b"<stata_dta><header><release>118</release><byteorder>LSF",
+            "Truncated Stata DTA byteorder header",
+        ),
+        "invalid_value.dta": (
+            _modern_stata_dta_header(b"118", b"XYZ"),
+            "Invalid Stata DTA byteorder value",
+        ),
+    }
+    for name, (data, _) in cases.items():
+        (source / name).write_bytes(data)
+
+    output = tmp_path / "stata_bad_byteorder_report"
+    assert scan(source, output) == 3
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert set(rows) == set(cases)
+    for name, (_, container_type) in cases.items():
+        row = rows[name]
+        assert row["signature"] == "STATA_DTA"
+        assert row["container_type"] == container_type
+        assert row["signature_status"] == "unverified: expected modern Stata DTA structure"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
+def test_modern_stata_dta_additional_release_and_byteorder_scans(tmp_path: Path):
+    source = tmp_path / "stata_additional_source"
+    source.mkdir()
+    cases = {
+        "release117.dta": (b"117", b"LSF"),
+        "release119.dta": (b"119", b"LSF"),
+        "big_endian.dta": (b"118", b"MSF"),
+    }
+    for name, (release, byteorder) in cases.items():
+        (source / name).write_bytes(
+            _modern_stata_dta_header(release, byteorder) + b"<K>\x01\x00</K>"
+        )
+
+    output = tmp_path / "stata_additional_report"
+    assert scan(source, output) == 3
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert set(rows) == set(cases)
+    for name, (release, byteorder) in cases.items():
+        row = rows[name]
+        assert row["format"] == "Stata Data"
+        assert row["signature"] == "STATA_DTA"
+        assert row["container_type"] == f"Stata DTA release {release.decode('ascii')} ({byteorder.decode('ascii')})"
+        assert row["signature_status"] == "verified"
+        assert row["confidence"] == "HIGH"
+
+
+def test_unsupported_modern_stata_release_is_reviewed(tmp_path: Path):
+    source = tmp_path / "stata_unsupported_release_source"
+    source.mkdir()
+    (source / "unsupported.dta").write_bytes(
+        _modern_stata_dta_header(b"999", b"LSF") + b"<K>\x01\x00</K>"
+    )
+    output = tmp_path / "stata_unsupported_release_report"
+
+    assert scan(source, output) == 1
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+
+    assert row["signature"] == "STATA_DTA"
+    assert row["container_type"] == "Unsupported modern Stata DTA release"
+    assert row["signature_status"] == "unverified: expected modern Stata DTA structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
+
+
+def test_truncated_modern_stata_release_header_is_reviewed(tmp_path: Path):
+    source = tmp_path / "stata_truncated_release_source"
+    source.mkdir()
+    (source / "broken.dta").write_bytes(b"<stata_dta><header><release>118")
+    output = tmp_path / "stata_truncated_release_report"
+
+    assert scan(source, output) == 1
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    row = payload["files"][0]
+
+    assert row["signature"] == "STATA_DTA"
+    assert row["container_type"] == "Truncated Stata DTA release header"
+    assert row["signature_status"] == "unverified: expected modern Stata DTA structure"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_modern_stata_dta_scan_is_structurally_verified(tmp_path: Path):
     source = tmp_path / "stata_source"
     source.mkdir()
@@ -3491,7 +4830,11 @@ def test_stata_dta_disguised_file_is_mismatch(tmp_path: Path):
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
     row = payload["files"][0]
+    assert row["format"] == "Stata Data"
+    assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected Stata DTA, detected PDF"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
 def test_legacy_or_unknown_stata_dta_remains_unverified(tmp_path: Path):
