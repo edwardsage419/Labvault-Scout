@@ -4556,12 +4556,21 @@ def test_spss_wrong_magic_for_extension_is_not_verified(tmp_path: Path):
     source = tmp_path / "spss_wrong_magic_source"
     source.mkdir()
     (source / "wrong.sav").write_bytes(_spss_header(b"$FL3"))
+    (source / "wrong.zsav").write_bytes(_spss_header(b"$FL2"))
     output = tmp_path / "spss_wrong_magic_report"
 
-    scan(source, output)
+    assert scan(source, output) == 2
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
-    row = payload["files"][0]
-    assert row["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert rows["wrong.sav"]["container_type"] == "SPSS ZSAV $FL3 fixed header (little-endian)"
+    assert rows["wrong.sav"]["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
+    assert rows["wrong.zsav"]["container_type"] == "SPSS SAV $FL2 fixed header (little-endian)"
+    assert rows["wrong.zsav"]["signature_status"] == "unverified: expected SPSS $FL3 fixed header"
+    for row in rows.values():
+        assert row["signature"] == "SPSS"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "EXPORT_OPEN_FORMAT"
 
 
 def test_spss_invalid_layout_code_is_reviewed(tmp_path: Path):
