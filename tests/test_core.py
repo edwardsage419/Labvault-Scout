@@ -4706,6 +4706,42 @@ def _modern_stata_dta_header(release: bytes = b"118", byteorder: bytes = b"LSF")
     )
 
 
+def test_malformed_modern_stata_byteorder_headers_are_reviewed(tmp_path: Path):
+    source = tmp_path / "stata_bad_byteorder_source"
+    source.mkdir()
+
+    cases = {
+        "missing_tag.dta": (
+            b"<stata_dta><header><release>118</release>LSF</byteorder>",
+            "Invalid Stata DTA byteorder header",
+        ),
+        "truncated_tag.dta": (
+            b"<stata_dta><header><release>118</release><byteorder>LSF",
+            "Truncated Stata DTA byteorder header",
+        ),
+        "invalid_value.dta": (
+            _modern_stata_dta_header(b"118", b"XYZ"),
+            "Invalid Stata DTA byteorder value",
+        ),
+    }
+    for name, (data, _) in cases.items():
+        (source / name).write_bytes(data)
+
+    output = tmp_path / "stata_bad_byteorder_report"
+    assert scan(source, output) == 3
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert set(rows) == set(cases)
+    for name, (_, container_type) in cases.items():
+        row = rows[name]
+        assert row["signature"] == "STATA_DTA"
+        assert row["container_type"] == container_type
+        assert row["signature_status"] == "unverified: expected modern Stata DTA structure"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_modern_stata_dta_additional_release_and_byteorder_scans(tmp_path: Path):
     source = tmp_path / "stata_additional_source"
     source.mkdir()
