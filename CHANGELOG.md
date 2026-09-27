@@ -43,6 +43,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * Bounded ASCII-based SPSS SAV (`$FL2`) and ZSAV (`$FL3`) 176-byte fixed-header evidence
 * `.zsav` statistical-data rule with conservative RESCUE triage
 * Bounded structural evidence for modern Stata DTA releases 117/118/119 using the tagged header and declared byte order
+* Regression-hardened scientific-format verification across NIfTI-1, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, DICOM Part 10, FCS, SPSS SAV/ZSAV, and modern Stata DTA
 
 ### Changed
 
@@ -65,6 +66,11 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 * NetCDF-4/HDF5 containers remain conservative `container-only` evidence unless NetCDF-specific structure is proven
 * HDF5-based `.mat` files remain conservative `container-only` evidence unless MATLAB-specific structure is proven
 * FITS `SIMPLE=F` is treated as nonconforming structural evidence and routed to `REVIEW_CONTAINER`
+* FITS verification now checks bounded header termination, legal BITPIX values, NAXIS/NAXISn structure, and malformed or missing mandatory cards before assigning high confidence
+* MATLAB Level 5 verification now validates the version bytes against the declared `IM` / `MI` byte order
+* FCS fixed-header verification now validates primary TEXT bounds and non-zero DATA/ANALYSIS segment ranges without parsing file payloads
+* SPSS SAV/ZSAV extension-subtype mismatches remain conservatively unverified, while obvious non-SPSS signature mismatches are routed to `REVIEW_FORMAT`
+* Modern Stata DTA verification now distinguishes unsupported releases from malformed release/byteorder headers and keeps legacy or unknown DTA files conservatively unverified
 
 ## 0.2.0 — 2026-09-19
 
