@@ -4750,7 +4750,7 @@ def test_unsupported_modern_stata_release_is_reviewed(tmp_path: Path):
     assert row["container_type"] == "Unsupported modern Stata DTA release"
     assert row["signature_status"] == "unverified: expected modern Stata DTA structure"
     assert row["confidence"] == "LOW"
-    assert row["recommended_action"] == "REVIEW_CONTAINER"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
 def test_truncated_modern_stata_release_header_is_reviewed(tmp_path: Path):
