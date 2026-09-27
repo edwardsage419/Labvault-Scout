@@ -4564,6 +4564,26 @@ def test_spss_wrong_magic_for_extension_is_not_verified(tmp_path: Path):
     assert row["signature_status"] == "unverified: expected SPSS $FL2 fixed header"
 
 
+def test_spss_175_byte_headers_are_truncated(tmp_path: Path):
+    source = tmp_path / "spss_175_byte_source"
+    source.mkdir()
+    (source / "boundary.sav").write_bytes(_spss_header(b"$FL2")[:175])
+    (source / "boundary.zsav").write_bytes(_spss_header(b"$FL3")[:175])
+    output = tmp_path / "spss_175_byte_report"
+
+    assert scan(source, output) == 2
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert set(rows) == {"boundary.sav", "boundary.zsav"}
+    for row in rows.values():
+        assert row["signature"] == "SPSS"
+        assert row["container_type"] == "Truncated SPSS system-file header"
+        assert row["signature_status"].startswith("unverified: expected SPSS ")
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_truncated_spss_header_is_reviewed(tmp_path: Path):
     source = tmp_path / "spss_truncated_source"
     source.mkdir()
