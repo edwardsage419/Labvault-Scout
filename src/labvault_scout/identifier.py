@@ -352,6 +352,25 @@ def fcs_container_from_header(header: bytes, size: int) -> str:
     if text_begin < 58 or text_end < text_begin or text_end >= size:
         return "Invalid FCS TEXT offsets"
 
+    data_begin_field = header[26:34].strip()
+    data_end_field = header[34:42].strip()
+    analysis_begin_field = header[42:50].strip()
+    analysis_end_field = header[50:58].strip()
+    try:
+        data_begin = int(data_begin_field) if data_begin_field else 0
+        data_end = int(data_end_field) if data_end_field else 0
+        analysis_begin = int(analysis_begin_field) if analysis_begin_field else 0
+        analysis_end = int(analysis_end_field) if analysis_end_field else 0
+    except ValueError:
+        return "Invalid FCS header offsets"
+
+    if data_begin and data_end:
+        if data_begin < 58 or data_end < data_begin or data_end >= size:
+            return "Invalid FCS DATA offsets"
+    if analysis_begin and analysis_end:
+        if analysis_begin < 58 or analysis_end < analysis_begin or analysis_end >= size:
+            return "Invalid FCS ANALYSIS offsets"
+
     return f"FCS {version[3:].decode('ascii')} fixed header"
 
 

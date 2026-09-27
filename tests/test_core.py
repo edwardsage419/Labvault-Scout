@@ -4335,6 +4335,35 @@ def test_fcs_scan_is_structurally_verified(tmp_path: Path):
     assert row["signature_status"] == "verified"
 
 
+def test_fcs_nonzero_data_and_analysis_offsets_must_be_bounded(tmp_path: Path):
+    source = tmp_path / "fcs_invalid_segment_offsets_source"
+    source.mkdir()
+
+    data_reversed = bytearray(_fcs_header() + b"/$TOT/1/" + b" " * 190)
+    data_reversed[26:34] = b"     200"
+    data_reversed[34:42] = b"     150"
+    (source / "data_reversed.fcs").write_bytes(data_reversed)
+
+    analysis_past_eof = bytearray(_fcs_header() + b"/$TOT/1/" + b" " * 190)
+    analysis_past_eof[42:50] = b"     200"
+    analysis_past_eof[50:58] = b"     300"
+    (source / "analysis_past_eof.fcs").write_bytes(analysis_past_eof)
+
+    output = tmp_path / "fcs_invalid_segment_offsets_report"
+    assert scan(source, output) == 2
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert rows["data_reversed.fcs"]["container_type"] == "Invalid FCS DATA offsets"
+    assert rows["analysis_past_eof.fcs"]["container_type"] == "Invalid FCS ANALYSIS offsets"
+    for row in rows.values():
+        assert row["signature"] == "FCS"
+        assert row["signature_status"] == "unverified: expected FCS fixed header"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_fcs_invalid_text_offset_bounds_are_reviewed(tmp_path: Path):
     source = tmp_path / "fcs_invalid_text_offsets_source"
     source.mkdir()
