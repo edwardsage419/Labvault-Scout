@@ -4503,6 +4503,25 @@ def test_spss_fixed_header_evidence():
     assert spss_container_from_header(zsav, 176) == "SPSS ZSAV $FL3 fixed header (big-endian)"
 
 
+def test_spss_big_endian_scans_are_verified(tmp_path: Path):
+    source = tmp_path / "spss_big_endian_source"
+    source.mkdir()
+    (source / "survey.sav").write_bytes(_spss_header(b"$FL2", "big"))
+    (source / "survey.zsav").write_bytes(_spss_header(b"$FL3", "big"))
+    output = tmp_path / "spss_big_endian_report"
+
+    assert scan(source, output) == 2
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert rows["survey.sav"]["container_type"] == "SPSS SAV $FL2 fixed header (big-endian)"
+    assert rows["survey.zsav"]["container_type"] == "SPSS ZSAV $FL3 fixed header (big-endian)"
+    for row in rows.values():
+        assert row["signature"] == "SPSS"
+        assert row["signature_status"] == "verified"
+        assert row["confidence"] == "HIGH"
+
+
 def test_spss_sav_scan_is_structurally_verified(tmp_path: Path):
     source = tmp_path / "spss_sav_source"
     source.mkdir()
