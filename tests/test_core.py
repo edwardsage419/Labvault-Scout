@@ -4585,6 +4585,32 @@ def test_spss_invalid_layout_code_is_reviewed(tmp_path: Path):
         assert row["recommended_action"] == "REVIEW_CONTAINER"
 
 
+def test_spss_invalid_compression_codes_are_reviewed(tmp_path: Path):
+    source = tmp_path / "spss_invalid_compression_source"
+    source.mkdir()
+
+    sav = bytearray(_spss_header(b"$FL2"))
+    sav[72:76] = (2).to_bytes(4, "little", signed=True)
+    (source / "bad.sav").write_bytes(sav)
+
+    zsav = bytearray(_spss_header(b"$FL3"))
+    zsav[72:76] = (0).to_bytes(4, "little", signed=True)
+    (source / "bad.zsav").write_bytes(zsav)
+
+    output = tmp_path / "spss_invalid_compression_report"
+    assert scan(source, output) == 2
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = {row["path"]: row for row in payload["files"]}
+
+    assert rows["bad.sav"]["container_type"] == "Invalid SPSS SAV compression code"
+    assert rows["bad.zsav"]["container_type"] == "Invalid SPSS ZSAV compression code"
+    for row in rows.values():
+        assert row["signature"] == "SPSS"
+        assert row["signature_status"].startswith("unverified: expected SPSS ")
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_spss_175_byte_headers_are_truncated(tmp_path: Path):
     source = tmp_path / "spss_175_byte_source"
     source.mkdir()
