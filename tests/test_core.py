@@ -4335,6 +4335,35 @@ def test_fcs_scan_is_structurally_verified(tmp_path: Path):
     assert row["signature_status"] == "verified"
 
 
+def test_fcs_invalid_text_offset_bounds_are_reviewed(tmp_path: Path):
+    source = tmp_path / "fcs_invalid_text_offsets_source"
+    source.mkdir()
+
+    cases = {
+        "overlaps_header.fcs": (57, 127),
+        "reversed.fcs": (128, 127),
+        "past_eof.fcs": (58, 300),
+    }
+    for name, (text_begin, text_end) in cases.items():
+        data = bytearray(_fcs_header() + b"/$TOT/1/" + b" " * 190)
+        data[10:18] = f"{text_begin:>8}".encode("ascii")
+        data[18:26] = f"{text_end:>8}".encode("ascii")
+        (source / name).write_bytes(data)
+
+    output = tmp_path / "fcs_invalid_text_offsets_report"
+    assert scan(source, output) == 3
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    rows = payload["files"]
+    assert len(rows) == 3
+    for row in rows:
+        assert row["signature"] == "FCS"
+        assert row["container_type"] == "Invalid FCS TEXT offsets"
+        assert row["signature_status"] == "unverified: expected FCS fixed header"
+        assert row["confidence"] == "LOW"
+        assert row["recommended_action"] == "REVIEW_CONTAINER"
+
+
 def test_fcs_invalid_header_offset_characters_are_reviewed(tmp_path: Path):
     source = tmp_path / "fcs_invalid_offset_source"
     source.mkdir()

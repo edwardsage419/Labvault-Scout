@@ -343,6 +343,15 @@ def fcs_container_from_header(header: bytes, size: int) -> str:
         field = header[start:start + 8]
         if any(byte not in b" 0123456789" for byte in field):
             return "Invalid FCS header offsets"
+
+    try:
+        text_begin = int(header[10:18].strip())
+        text_end = int(header[18:26].strip())
+    except ValueError:
+        return "Invalid FCS TEXT offsets"
+    if text_begin < 58 or text_end < text_begin or text_end >= size:
+        return "Invalid FCS TEXT offsets"
+
     return f"FCS {version[3:].decode('ascii')} fixed header"
 
 
