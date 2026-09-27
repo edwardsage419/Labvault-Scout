@@ -4830,7 +4830,11 @@ def test_stata_dta_disguised_file_is_mismatch(tmp_path: Path):
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
     row = payload["files"][0]
+    assert row["format"] == "Stata Data"
+    assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected Stata DTA, detected PDF"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
 
 
 def test_legacy_or_unknown_stata_dta_remains_unverified(tmp_path: Path):
