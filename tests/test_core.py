@@ -4442,7 +4442,12 @@ def test_fcs_disguised_file_is_mismatch(tmp_path: Path):
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
     row = payload["files"][0]
+    assert row["format"] == "Flow Cytometry Standard"
+    assert row["signature"] == "PDF"
     assert row["signature_status"] == "mismatch: expected FCS, detected PDF"
+    assert row["confidence"] == "LOW"
+    assert row["recommended_action"] == "REVIEW_FORMAT"
+
 
 def _spss_header(magic: bytes = b"$FL2", byteorder: str = "little") -> bytes:
     header = bytearray(176)
