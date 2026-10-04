@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 — 2026-10-04
+
+### Fixed
+
+* English and Chinese README now identify v0.3.0 as the stable release instead of directing users to the RC4 candidate
+* Package metadata now uses the `Development Status :: 5 - Production/Stable` classifier instead of the stale alpha classifier
+
 ## 0.3.0 — 2026-10-04
 
 ### Added

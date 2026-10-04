@@ -16,17 +16,15 @@ LabVault Scout runs locally. It does not upload research data, require an accoun
 
 ## Quick start
 
-Python 3.10 or newer is required. v0.2.0 remains the frozen stable release. To validate the published v0.3.0-rc4 candidate, install the RC4 tag explicitly:
+Python 3.10 or newer is required. v0.3.0 is the current stable release. Install the published stable tag explicitly:
 
 ```bash
-git clone --branch v0.3.0-rc4 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
+git clone --branch v0.3.0 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
 cd Labvault-Scout
 python -m pip install .
 labvault-scout --version
 labvault-scout scan /path/to/research
 ```
-
-For the stable v0.2.0 release, replace `v0.3.0-rc4` with `v0.2.0` in the clone command.
 
 By default the scanner creates `labvault-report/` containing:
 
@@ -55,7 +53,7 @@ Identification combines extension rules with read-only signature checks for ZIP,
 
 ## Compare scans
 
-The v0.3 development line can compare two LabVault Scout `scan.json` reports locally:
+v0.3 can compare two LabVault Scout `scan.json` reports locally:
 
 ```bash
 labvault-scout compare old-report/scan.json new-report/scan.json -o labvault-comparison
@@ -109,13 +107,13 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 
 ## Roadmap
 
-v0.2.0 is the current frozen stable release. v0.3.0-rc4 is the current published release candidate for user validation. The v0.3.0 line adds self-describing and verifiable reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, packaged JSON Schemas, and bounded structural evidence for NIfTI, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, DICOM Part 10, FCS 2.0/3.0/3.1/3.2 fixed headers, SPSS SAV/ZSAV fixed headers, and modern Stata DTA releases 117/118/119.
+v0.3.0 is the current stable release. The v0.3.0 line adds self-describing and verifiable reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, packaged JSON Schemas, and bounded structural evidence for NIfTI, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, DICOM Part 10, FCS 2.0/3.0/3.1/3.2 fixed headers, SPSS SAV/ZSAV fixed headers, and modern Stata DTA releases 117/118/119.
 
 See [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) for the bilingual development plan.
 
 ## Release notes
 
-The current v0.3.0 release candidate is documented in [v0.3.0-rc4 release notes](RELEASE_NOTES_0_3_0_RC4.md). See also [v0.3.0-rc3 release notes](RELEASE_NOTES_0_3_0_RC3.md). The current frozen stable release remains v0.2.0. See [v0.2.0 release notes](RELEASE_NOTES_0_2_0.md) and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
+The current stable release is documented in [v0.3.0 release notes](RELEASE_NOTES_0_3_0.md). The validation candidates remain available in [v0.3.0-rc4 release notes](RELEASE_NOTES_0_3_0_RC4.md) and [v0.3.0-rc3 release notes](RELEASE_NOTES_0_3_0_RC3.md). Earlier stable releases include [v0.2.0 release notes](RELEASE_NOTES_0_2_0.md) and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
 
 ## License
 

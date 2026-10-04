@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "labvault-scout"
-version = "0.3.0"
+version = "0.3.1"
 description = "Local, read-only scientific data preservation risk scanner."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,7 +15,7 @@ keywords = ["scientific-data", "data-preservation", "open-science", "research-so
 classifiers = [
   "Programming Language :: Python :: 3",
   "Operating System :: OS Independent",
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Topic :: Scientific/Engineering",
   "Topic :: System :: Archiving"
 ]
