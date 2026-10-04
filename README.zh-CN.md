@@ -17,14 +17,17 @@ LabVault Scout 是一个完全本地、只读、开源的科研数据保存风�
 
 ## 快速开始
 
-需要 Python 3.10 或更高版本。以下命令安装冻结的 v0.2.0 标签，不跟随持续变化的开发分支。
+需要 Python 3.10 或更高版本。v0.2.0 仍是当前冻结的稳定正式版。若要验证已经发布的 v0.3.0-rc4 候选版本，请明确安装 RC4 标签：
 
 ```bash
-git clone --branch v0.2.0 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
+git clone --branch v0.3.0-rc4 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
 cd Labvault-Scout
 python -m pip install .
+labvault-scout --version
 labvault-scout scan /path/to/research
 ```
+
+如果需要稳定版 v0.2.0，请在 clone 命令中把 `v0.3.0-rc4` 替换为 `v0.2.0`。
 
 报告默认写入 `labvault-report/`，包括 `report.html`、`files.csv`、`scan.json`、精确重复文件清单 `duplicates.csv`，以及按保存优先级排序的 `migration_plan.csv`。
 
@@ -87,13 +90,13 @@ v0.3 开发线在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 
 
 ## 当前状态
 
-v0.2.0 是当前冻结的稳定正式版。v0.3.0 开发线正在增加自描述且可验证的报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理、随包分发的 JSON Schema，以及 NIfTI、NetCDF、TIFF/BigTIFF、FITS、MATLAB Level 5、DICOM Part 10、FCS 2.0/3.0/3.1/3.2、SPSS SAV/ZSAV 和现代 Stata DTA 117/118/119 的有界结构证据。
+v0.2.0 是当前冻结的稳定正式版。v0.3.0-rc4 是当前已发布、用于用户验证的候选版本。v0.3.0 开发线正在增加自描述且可验证的报告、跨平台确定性路径与 inventory 指纹、多次扫描比较、优先级变化跟踪、复合扩展名处理、随包分发的 JSON Schema，以及 NIfTI、NetCDF、TIFF/BigTIFF、FITS、MATLAB Level 5、DICOM Part 10、FCS 2.0/3.0/3.1/3.2、SPSS SAV/ZSAV 和现代 Stata DTA 117/118/119 的有界结构证据。
 
 参见 [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) 中英双语开发计划。
 
 ## 发布说明
 
-当前 v0.3.0 发布候选版本参见 [v0.3.0-rc2 中英双语发布说明](RELEASE_NOTES_0_3_0_RC2.md)。另见 [v0.3.0-rc1 中英双语发布说明](RELEASE_NOTES_0_3_0_RC1.md)。当前冻结的稳定正式版仍为 v0.2.0。另见 [v0.2.0 中英双语发布说明](RELEASE_NOTES_0_2_0.md) 和 [v0.1.0 发布说明](RELEASE_NOTES_0_1_0.md)。
+当前 v0.3.0 发布候选版本参见 [v0.3.0-rc4 中英双语发布说明](RELEASE_NOTES_0_3_0_RC4.md)。另见 [v0.3.0-rc3 中英双语发布说明](RELEASE_NOTES_0_3_0_RC3.md)。当前冻结的稳定正式版仍为 v0.2.0。另见 [v0.2.0 中英双语发布说明](RELEASE_NOTES_0_2_0.md) 和 [v0.1.0 发布说明](RELEASE_NOTES_0_1_0.md)。
 
 ## 许可证
 
