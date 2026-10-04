@@ -1,8 +1,6 @@
 # Changelog
 
-## Unreleased 0.3.0
-
-Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
+## 0.3.0 — 2026-10-04
 
 ### Added
 
@@ -47,7 +45,7 @@ Development continues on `develop-v0.3.0`. See `ROADMAP_0_3_0.md`.
 
 ### Changed
 
-* Post-rc3 development package version advances to `0.3.0rc4.dev0`
+* Package version finalized at `0.3.0` after RC4 validation
 * Schema 1 report paths now reject NUL characters, absolute paths, parent traversal, dot segments, duplicate `/` separators, and trailing `/`; literal backslashes remain valid filename characters on POSIX systems
 * Bundle manifest paths now reject embedded NUL characters explicitly
 * Files that change size or modification time during hashing are recorded as `FileChangedDuringScan` instead of producing inconsistent size/hash records

@@ -31,7 +31,7 @@ The format-recognition regression sweep was completed for the formats already in
 
 rc4 does not introduce a new report schema version. Schema 1 scan, comparison, verification, and bundle-manifest contracts remain in use.
 
-The development package is still marked `0.3.0rc4.dev0` until the RC4 version-freeze step is performed. This release-notes file does not itself change the package version or create a release tag.
+The RC4 package version is frozen at `0.3.0rc4`. The published `v0.3.0-rc4` tag identifies the validated RC4 source.
 
 ### Safety and scope
 
@@ -41,7 +41,7 @@ The scientific-format checks are intentionally bounded. They provide identificat
 
 ### Validation status
 
-Development CI covers Linux, Windows, and macOS on Python 3.10 and Python 3.12. RC4 release preparation continues to require a fully green matrix before version freeze, release-branch work, tagging, or publication.
+RC4 validation completed with a fully green CI matrix on Linux, Windows, and macOS with Python 3.10 and Python 3.12 before tagging and publication.
 
 ## 中文
 
@@ -74,7 +74,7 @@ LabVault Scout v0.3.0-rc4 是一个重点加强数据完整性和科研格式保
 
 rc4 不引入新的报告 schema 版本。schema 1 的 scan、comparison、verification 和 bundle manifest 契约继续使用。
 
-开发包当前仍标记为 `0.3.0rc4.dev0`，直到后续 RC4 version freeze 步骤才会修改。本发布说明文件本身不会修改 package version，也不会创建 release tag。
+RC4 package version 已冻结为 `0.3.0rc4`。已发布的 `v0.3.0-rc4` tag 对应经过验证的 RC4 源代码。
 
 ### 安全与范围
 
@@ -84,4 +84,4 @@ LabVault Scout 继续保持本地、离线、源文件只读、开源、零成�
 
 ### 验证状态
 
-开发 CI 覆盖 Linux、Windows、macOS，以及 Python 3.10 和 Python 3.12。RC4 发布准备仍要求完整 CI matrix 全绿后，才进入版本冻结、release branch、tag 和正式发布步骤。
+RC4 在创建 tag 和发布前，已在 Linux、Windows、macOS，以及 Python 3.10 和 Python 3.12 上完成完整 CI matrix 并全部通过。
