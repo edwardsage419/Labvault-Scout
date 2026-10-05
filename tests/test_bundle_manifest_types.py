@@ -87,3 +87,17 @@ def test_bundle_manifest_rejects_symlink(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Bundle manifest must not be a symlink"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("bad_path", ["./scan.json", "nested//scan.json"])
+def test_bundle_manifest_rejects_noncanonical_paths(tmp_path: Path, bad_path: str) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["path"] = bad_path
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Unsafe bundle manifest path"):
+        load_bundle_manifest(tmp_path)
