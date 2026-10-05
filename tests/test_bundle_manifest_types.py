@@ -235,3 +235,36 @@ def test_bundle_manifest_rejects_extra_top_level_fields(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Bundle manifest has invalid top-level fields"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "bad_tool",
+    [
+        None,
+        [],
+        "LabVault Scout",
+        {},
+        {"name": "LabVault Scout"},
+        {"name": "LabVault Scout", "version": "0.3.1", "extra": "unexpected"},
+        {"name": None, "version": "0.3.1"},
+        {"name": "Other", "version": "0.3.1"},
+        {"name": "LabVault Scout", "version": None},
+        {"name": "LabVault Scout", "version": ""},
+        {"name": "LabVault Scout", "version": 1},
+    ],
+)
+def test_bundle_manifest_rejects_invalid_tool_metadata(
+    tmp_path: Path,
+    bad_tool: object,
+) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    payload = _base_manifest(entries)
+    payload["tool"] = bad_tool
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest tool metadata"):
+        load_bundle_manifest(tmp_path)
