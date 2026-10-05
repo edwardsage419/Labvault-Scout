@@ -103,8 +103,9 @@ def scan(root: Path, output: Path) -> int:
             else:
                 container_type = ""
             signature_status = extension_signature_status(path, signature, container_type)
+            confirmed_digest, _ = sha256_with_head(path)
             final_stat = path.stat()
-            if _file_changed_during_scan(stat, final_stat):
+            if digest != confirmed_digest or _file_changed_during_scan(stat, final_stat):
                 record_issue(path, "FileChangedDuringScan")
                 continue
             rows.append({
