@@ -23,6 +23,7 @@ from .risk import classify, load_rules, rules_sha256
 from .schema_registry import SCHEMA_FILES, load_schema_text
 from .scanner import iter_files
 from .spss_validation import validate_spss_product_identifier
+from .stata_validation import validate_stata_k_header
 from .tiff_validation import validate_tiff_first_ifd_offset
 
 
@@ -92,7 +93,7 @@ def scan(root: Path, output: Path) -> int:
             elif signature == "SPSS":
                 container_type = validate_spss_product_identifier(header, spss_container_from_header(header, stat.st_size))
             elif signature == "STATA_DTA":
-                container_type = stata_dta_container_from_header(header)
+                container_type = validate_stata_k_header(header, stata_dta_container_from_header(header))
             elif path.suffix.lower() == ".dcm":
                 container_type = validate_dicom_file_meta(header, dicom_container_from_header(header))
             elif path.suffix.lower() == ".nii":
