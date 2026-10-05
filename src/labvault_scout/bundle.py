@@ -165,7 +165,16 @@ def verify_bundle(output_dir: Path) -> dict:
         if is_symlink:
             problems.append({"path": member, "issue": "SYMLINK"})
             continue
-        if not path.exists():
+        try:
+            exists = path.exists()
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
+        if not exists:
             problems.append({"path": member, "issue": "MISSING"})
             continue
         if not path.is_file():
