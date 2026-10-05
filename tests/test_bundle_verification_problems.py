@@ -73,3 +73,26 @@ def test_verify_bundle_detects_sha256_mismatch(tmp_path: Path) -> None:
         "expected": expected_hash,
         "actual": actual_hash,
     }
+
+
+def test_verify_bundle_reports_missing_if_artifact_disappears_before_hash(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    original_sha256_file = bundle_module.sha256_file
+
+    def disappearing_sha256_file(path: Path) -> str:
+        if path == target:
+            path.unlink()
+        return original_sha256_file(path)
+
+    monkeypatch.setattr(bundle_module, "sha256_file", disappearing_sha256_file)
+
+    result = bundle_module.verify_bundle(output)
+
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {"path": "report.html", "issue": "MISSING"} in result["problems"]
