@@ -171,3 +171,30 @@ def test_verify_bundle_reports_io_error_if_artifact_stat_cannot_be_read(
         "issue": "IO_ERROR",
         "error": "PermissionError",
     } in result["problems"]
+
+
+def test_verify_bundle_reports_io_error_if_artifact_symlink_check_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    original_is_symlink = Path.is_symlink
+
+    def unreadable_is_symlink(path: Path) -> bool:
+        if path == target:
+            raise PermissionError("denied")
+        return original_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", unreadable_is_symlink)
+
+    result = bundle_module.verify_bundle(output)
+
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "report.html",
+        "issue": "IO_ERROR",
+        "error": "PermissionError",
+    } in result["problems"]
