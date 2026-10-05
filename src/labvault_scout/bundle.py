@@ -177,7 +177,16 @@ def verify_bundle(output_dir: Path) -> dict:
         if not exists:
             problems.append({"path": member, "issue": "MISSING"})
             continue
-        if not path.is_file():
+        try:
+            is_file = path.is_file()
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
+        if not is_file:
             problems.append({"path": member, "issue": "NOT_REGULAR_FILE"})
             continue
         try:
