@@ -74,3 +74,16 @@ def test_bundle_manifest_rejects_absolute_path(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Unsafe bundle manifest path"):
         load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_rejects_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "manifest-target.json"
+    target.write_text("{}", encoding="utf-8")
+    manifest = tmp_path / "bundle_manifest.json"
+    try:
+        manifest.symlink_to(target)
+    except OSError:
+        pytest.skip("symlink creation is unavailable in this environment")
+
+    with pytest.raises(ValueError, match="Bundle manifest must not be a symlink"):
+        load_bundle_manifest(tmp_path)
