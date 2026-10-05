@@ -114,3 +114,17 @@ def test_bundle_manifest_rejects_self_reference(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Invalid bundle manifest member"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("bad_path", [None, "", 1, "scan\x00.json"])
+def test_bundle_manifest_rejects_invalid_path_values(tmp_path: Path, bad_path: object) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["path"] = bad_path
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest path must be a non-empty string"):
+        load_bundle_manifest(tmp_path)
