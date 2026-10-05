@@ -10,6 +10,7 @@ from . import __version__
 from .bundle import verify_bundle
 from .compare import compare_reports, comparison_exit_code, load_scan_report, verify_report, write_comparison
 from .evidence import build_evidence
+from .fits_validation import validate_fits_mandatory_value_indicators
 from .hashing import sha256_with_head
 from .identifier import dicom_container_from_header, extension_signature_status, fcs_container_from_header, hdf5_container_from_header, inspect_fits_container, inspect_gzip_nifti, inspect_hdf5_container, inspect_signature, inspect_zip_container, matlab5_container_from_header, netcdf_container_from_header, nifti1_container_from_header, ole_container_from_header, signature_from_head, spss_container_from_header, stata_dta_container_from_header, tiff_container_from_header
 from .actions import recommended_action
@@ -78,7 +79,7 @@ def scan(root: Path, output: Path) -> int:
             elif signature == "TIFF":
                 container_type = validate_tiff_first_ifd_offset(header, tiff_container_from_header(header))
             elif signature == "FITS":
-                container_type = inspect_fits_container(path)
+                container_type = validate_fits_mandatory_value_indicators(header, inspect_fits_container(path))
             elif signature == "MAT5":
                 container_type = matlab5_container_from_header(header)
             elif signature == "DICOM":
