@@ -141,3 +141,17 @@ def test_bundle_manifest_rejects_dot_member(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Invalid bundle manifest member"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("bad_size", [None, "0", -1, True, 1.5])
+def test_bundle_manifest_rejects_invalid_sizes(tmp_path: Path, bad_size: object) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["size"] = bad_size
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest size"):
+        load_bundle_manifest(tmp_path)
