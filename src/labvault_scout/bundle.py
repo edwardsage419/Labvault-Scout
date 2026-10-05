@@ -167,6 +167,13 @@ def verify_bundle(output_dir: Path) -> dict:
         except FileNotFoundError:
             problems.append({"path": member, "issue": "MISSING"})
             continue
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
         if actual_size != entry["size"]:
             problems.append({
                 "path": member,
