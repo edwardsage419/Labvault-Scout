@@ -11,6 +11,7 @@ from .bundle import verify_bundle
 from .compare import compare_reports, comparison_exit_code, load_scan_report, verify_report, write_comparison
 from .dicom_validation import validate_dicom_file_meta
 from .evidence import build_evidence
+from .fcs_validation import validate_fcs_offset_pairs
 from .fits_validation import validate_fits_mandatory_value_indicators
 from .hashing import sha256_with_head
 from .identifier import dicom_container_from_header, extension_signature_status, fcs_container_from_header, hdf5_container_from_header, inspect_fits_container, inspect_gzip_nifti, inspect_hdf5_container, inspect_signature, inspect_zip_container, matlab5_container_from_header, netcdf_container_from_header, nifti1_container_from_header, ole_container_from_header, signature_from_head, spss_container_from_header, stata_dta_container_from_header, tiff_container_from_header
@@ -86,7 +87,7 @@ def scan(root: Path, output: Path) -> int:
             elif signature == "DICOM":
                 container_type = validate_dicom_file_meta(header, dicom_container_from_header(header))
             elif signature == "FCS":
-                container_type = fcs_container_from_header(header, stat.st_size)
+                container_type = validate_fcs_offset_pairs(header, fcs_container_from_header(header, stat.st_size))
             elif signature == "SPSS":
                 container_type = spss_container_from_header(header, stat.st_size)
             elif signature == "STATA_DTA":
