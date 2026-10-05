@@ -75,6 +75,46 @@ def test_verify_bundle_detects_sha256_mismatch(tmp_path: Path) -> None:
     }
 
 
+def test_verify_bundle_detects_artifact_changed_after_initial_hash(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    manifest = load_bundle_manifest(output)
+    expected_hash = next(
+        entry["sha256"] for entry in manifest["files"] if entry["path"] == "report.html"
+    )
+    original_sha256_file = bundle_module.sha256_file
+    changed = False
+
+    def changing_after_hash(path: Path) -> str:
+        nonlocal changed
+        digest = original_sha256_file(path)
+        if path == target and not changed:
+            original = path.read_bytes()
+            replacement = b"0" if original[:1] != b"0" else b"1"
+            path.write_bytes(replacement + original[1:])
+            changed = True
+        return digest
+
+    monkeypatch.setattr(bundle_module, "sha256_file", changing_after_hash)
+
+    result = bundle_module.verify_bundle(output)
+    actual_hash = original_sha256_file(target)
+
+    assert actual_hash != expected_hash
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "report.html",
+        "issue": "SHA256_MISMATCH",
+        "expected": expected_hash,
+        "actual": actual_hash,
+    } in result["problems"]
+
+
 def test_verify_bundle_reports_missing_if_artifact_disappears_before_hash(
     tmp_path: Path, monkeypatch
 ) -> None:
