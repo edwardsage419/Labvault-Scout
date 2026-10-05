@@ -244,6 +244,26 @@ def verify_bundle(output_dir: Path) -> dict:
                 "expected": entry["sha256"],
                 "actual": actual_hash,
             })
+            continue
+        try:
+            confirmed_hash = sha256_file(path)
+        except FileNotFoundError:
+            problems.append({"path": member, "issue": "MISSING"})
+            continue
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
+        if confirmed_hash != entry["sha256"]:
+            problems.append({
+                "path": member,
+                "issue": "SHA256_MISMATCH",
+                "expected": entry["sha256"],
+                "actual": confirmed_hash,
+            })
 
     return {
         "status": "VERIFIED" if not problems else "FAILED",
