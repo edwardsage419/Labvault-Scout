@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from labvault_scout.bundle import verify_bundle
+from labvault_scout.bundle import load_bundle_manifest, verify_bundle
 from labvault_scout.cli import scan
+from labvault_scout.hashing import sha256_file
 
 
 def _scanned_bundle(tmp_path: Path) -> Path:
@@ -42,4 +43,33 @@ def test_verify_bundle_detects_size_mismatch(tmp_path: Path) -> None:
         "issue": "SIZE_MISMATCH",
         "expected": expected_size,
         "actual": expected_size + 1,
+    }
+
+
+def test_verify_bundle_detects_sha256_mismatch(tmp_path: Path) -> None:
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    manifest = load_bundle_manifest(output)
+    expected_hash = next(
+        entry["sha256"] for entry in manifest["files"] if entry["path"] == "report.html"
+    )
+
+    original = target.read_bytes()
+    assert original
+    replacement = b"0" if original[:1] != b"0" else b"1"
+    target.write_bytes(replacement + original[1:])
+    assert target.stat().st_size == len(original)
+    actual_hash = sha256_file(target)
+    assert actual_hash != expected_hash
+
+    result = verify_bundle(output)
+
+    problem = next(item for item in result["problems"] if item["path"] == "report.html")
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert problem == {
+        "path": "report.html",
+        "issue": "SHA256_MISMATCH",
+        "expected": expected_hash,
+        "actual": actual_hash,
     }
