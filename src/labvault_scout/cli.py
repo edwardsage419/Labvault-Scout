@@ -19,6 +19,7 @@ from .report import write_reports
 from .risk import classify, load_rules, rules_sha256
 from .schema_registry import SCHEMA_FILES, load_schema_text
 from .scanner import iter_files
+from .tiff_validation import validate_tiff_first_ifd_offset
 
 
 def _file_changed_during_scan(before: stat_result, after: stat_result) -> bool:
@@ -75,7 +76,7 @@ def scan(root: Path, output: Path) -> int:
             elif signature == "NETCDF":
                 container_type = netcdf_container_from_header(header)
             elif signature == "TIFF":
-                container_type = tiff_container_from_header(header)
+                container_type = validate_tiff_first_ifd_offset(header, tiff_container_from_header(header))
             elif signature == "FITS":
                 container_type = inspect_fits_container(path)
             elif signature == "MAT5":
