@@ -39,3 +39,17 @@ def test_bundle_manifest_rejects_invalid_schema_versions(
 
     with pytest.raises(ValueError, match="Unsupported bundle manifest schema"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("bad_algorithm", [None, 1, True, "", "SHA256", "md5"])
+def test_bundle_manifest_rejects_invalid_algorithms(
+    tmp_path: Path,
+    bad_algorithm: object,
+) -> None:
+    payload = _base_manifest()
+    payload["algorithm"] = bad_algorithm
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Unsupported bundle manifest algorithm"):
+        load_bundle_manifest(tmp_path)
