@@ -9,6 +9,7 @@ from os import stat_result
 from . import __version__
 from .bundle import verify_bundle
 from .compare import compare_reports, comparison_exit_code, load_scan_report, verify_report, write_comparison
+from .dicom_validation import validate_dicom_file_meta
 from .evidence import build_evidence
 from .fits_validation import validate_fits_mandatory_value_indicators
 from .hashing import sha256_with_head
@@ -83,7 +84,7 @@ def scan(root: Path, output: Path) -> int:
             elif signature == "MAT5":
                 container_type = matlab5_container_from_header(header)
             elif signature == "DICOM":
-                container_type = dicom_container_from_header(header)
+                container_type = validate_dicom_file_meta(header, dicom_container_from_header(header))
             elif signature == "FCS":
                 container_type = fcs_container_from_header(header, stat.st_size)
             elif signature == "SPSS":
@@ -91,7 +92,7 @@ def scan(root: Path, output: Path) -> int:
             elif signature == "STATA_DTA":
                 container_type = stata_dta_container_from_header(header)
             elif path.suffix.lower() == ".dcm":
-                container_type = dicom_container_from_header(header)
+                container_type = validate_dicom_file_meta(header, dicom_container_from_header(header))
             elif path.suffix.lower() == ".nii":
                 container_type = nifti1_container_from_header(header)
                 if container_type.startswith("NIfTI-1 "):
