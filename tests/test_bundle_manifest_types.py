@@ -155,3 +155,20 @@ def test_bundle_manifest_rejects_invalid_sizes(tmp_path: Path, bad_size: object)
 
     with pytest.raises(ValueError, match="Invalid bundle manifest size"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "bad_sha256",
+    [None, 1, "", "0" * 63, "A" * 64, "g" * 64],
+)
+def test_bundle_manifest_rejects_invalid_sha256(tmp_path: Path, bad_sha256: object) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["sha256"] = bad_sha256
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest SHA-256"):
+        load_bundle_manifest(tmp_path)
