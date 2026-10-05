@@ -17,3 +17,28 @@ def test_bundle_manifest_replace_failure_leaves_no_temporary_file(tmp_path: Path
 
     assert manifest_path.is_dir()
     assert list(tmp_path.glob(f".{BUNDLE_MANIFEST_NAME}.*.tmp")) == []
+
+
+def test_bundle_manifest_replace_failure_preserves_existing_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import labvault_scout.safeio as safeio
+
+    for name in BUNDLE_FILES:
+        (tmp_path / name).write_bytes(b"content")
+
+    manifest_path = tmp_path / BUNDLE_MANIFEST_NAME
+    previous = b'{"previous":true}\n'
+    manifest_path.write_bytes(previous)
+
+    def fail_replace(source, target):
+        raise PermissionError("blocked replace")
+
+    monkeypatch.setattr(safeio.os, "replace", fail_replace)
+
+    with pytest.raises(PermissionError, match="blocked replace"):
+        write_bundle_manifest(tmp_path)
+
+    assert manifest_path.read_bytes() == previous
+    assert list(tmp_path.glob(f".{BUNDLE_MANIFEST_NAME}.*.tmp")) == []
