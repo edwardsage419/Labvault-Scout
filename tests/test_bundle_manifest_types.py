@@ -189,3 +189,16 @@ def test_bundle_manifest_rejects_missing_file_entry_fields(
 
     with pytest.raises(ValueError, match="Bundle manifest file entry has invalid fields"):
         load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_rejects_extra_file_entry_fields(tmp_path: Path) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["extra"] = "unexpected"
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest file entry has invalid fields"):
+        load_bundle_manifest(tmp_path)
