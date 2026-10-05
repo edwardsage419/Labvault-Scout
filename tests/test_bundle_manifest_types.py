@@ -1,0 +1,50 @@
+import json
+from pathlib import Path
+
+import pytest
+
+from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+
+
+def _write_manifest(output_dir: Path, payload: object) -> None:
+    (output_dir / "bundle_manifest.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+
+def _base_manifest(files: object) -> dict:
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.1"},
+        "algorithm": "sha256",
+        "files": files,
+    }
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    return payload
+
+
+@pytest.mark.parametrize("payload", [[], "manifest", 1, None])
+def test_bundle_manifest_rejects_non_object_root(tmp_path: Path, payload: object) -> None:
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest must be a JSON object"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("files", [{}, "scan.json", None])
+def test_bundle_manifest_rejects_non_list_files(tmp_path: Path, files: object) -> None:
+    payload = _base_manifest(files)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest files must be a list"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("entry", [None, [], "scan.json"])
+def test_bundle_manifest_rejects_non_object_file_entries(tmp_path: Path, entry: object) -> None:
+    payload = _base_manifest([entry])
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest contains a non-object file entry"):
+        load_bundle_manifest(tmp_path)
