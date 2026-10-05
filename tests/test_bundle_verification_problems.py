@@ -123,3 +123,51 @@ def test_verify_bundle_reports_io_error_if_artifact_hash_cannot_be_read(
         "issue": "IO_ERROR",
         "error": "PermissionError",
     } in result["problems"]
+
+
+def test_verify_bundle_reports_io_error_if_artifact_stat_cannot_be_read(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    original_is_symlink = Path.is_symlink
+    original_exists = Path.exists
+    original_is_file = Path.is_file
+    original_stat = Path.stat
+
+    def controlled_is_symlink(path: Path) -> bool:
+        if path == target:
+            return False
+        return original_is_symlink(path)
+
+    def controlled_exists(path: Path) -> bool:
+        if path == target:
+            return True
+        return original_exists(path)
+
+    def controlled_is_file(path: Path) -> bool:
+        if path == target:
+            return True
+        return original_is_file(path)
+
+    def unreadable_stat(path: Path, *args, **kwargs):
+        if path == target:
+            raise PermissionError("denied")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_symlink", controlled_is_symlink)
+    monkeypatch.setattr(Path, "exists", controlled_exists)
+    monkeypatch.setattr(Path, "is_file", controlled_is_file)
+    monkeypatch.setattr(Path, "stat", unreadable_stat)
+
+    result = bundle_module.verify_bundle(output)
+
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "report.html",
+        "issue": "IO_ERROR",
+        "error": "PermissionError",
+    } in result["problems"]
