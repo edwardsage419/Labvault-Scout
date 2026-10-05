@@ -47,6 +47,13 @@ def build_bundle_manifest(output_dir: Path) -> dict:
         fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
         if any(getattr(stat, field, None) != getattr(post_stat, field, None) for field in fields):
             raise ValueError(f"Report artifact changed while building bundle manifest: {name}")
+        confirmed_digest = sha256_file(path)
+        final_stat = path.stat()
+        if digest != confirmed_digest or any(
+            getattr(post_stat, field, None) != getattr(final_stat, field, None)
+            for field in fields
+        ):
+            raise ValueError(f"Report artifact changed while building bundle manifest: {name}")
         entries.append({
             "path": name,
             "size": stat.st_size,
