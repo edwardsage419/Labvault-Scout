@@ -84,7 +84,7 @@ labvault-scout schema bundle
 
 ## 格式结构证据
 
-v0.3 在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5、TIFF/BigTIFF、FITS primary header、MATLAB Level 5 MAT-file 与 DICOM Part 10 preamble/`DICM` 标记的有界只读检查。对于基于 HDF5 的 NetCDF-4 和 `.mat`，当前只报告保守的容器证据，不声称已经验证格式专用结构；FITS `SIMPLE=F` 会明确标记为 nonconforming 并进入容器复核。DICOM 检查只读取 Part 10 preamble/marker，不解析患者元数据或数据集内容。FCS 检查只验证 FCS 2.0、3.0、3.1、3.2 的固定 58 字节 HEADER 结构，不读取 TEXT 或 DATA 段。SPSS 检查对 ASCII 系 `$FL2` SAV 与 `$FL3` ZSAV 的 176 字节固定 HEADER、字节序和压缩代码做有界验证，不读取数据记录。Stata `.dta` 当前仅对现代 117、118、119 的 `<stata_dta>` 头、release 和 byteorder 进行有界验证；其他旧格式继续保守标记为未验证。
+v0.3 在现有 ZIP、OLE、HDF5、PDF、NIfTI 证据基础上，增加 NetCDF CDF-1/CDF-2/CDF-5、TIFF/BigTIFF、FITS primary header、MATLAB Level 5 MAT-file 与 DICOM Part 10 preamble/`DICM` 标记的有界只读检查。对于基于 HDF5 的 NetCDF-4 和 `.mat`，当前只报告保守的容器证据，不声称已经验证格式专用结构；FITS `SIMPLE=F` 会明确标记为 nonconforming 并进入容器复核。DICOM 检查在确认 Part 10 preamble/marker 后，仅在有界头部范围验证 File Meta Information 的 group-length element，不解析患者元数据或数据集内容。FCS 检查验证 FCS 2.0、3.0、3.1、3.2 的固定 58 字节 HEADER、primary TEXT offsets，以及 DATA/ANALYSIS offsets 的范围与 begin/end 配对一致性，不读取 TEXT 或 DATA payload。SPSS 检查对 ASCII 系 `$FL2` SAV 与 `$FL3` ZSAV 的 176 字节固定 HEADER、`@(#) SPSS DATA FILE` product identifier 前缀、字节序和压缩代码做有界验证，不读取数据记录。Stata `.dta` 当前对现代 117、118、119 的 `<stata_dta>` 头、release、byteorder，以及其后的 bounded `<K>...</K>` header marker 进行有界验证；其他旧格式继续保守标记为未验证。
 
 ## 当前状态
 
