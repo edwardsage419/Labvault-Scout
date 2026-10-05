@@ -96,3 +96,30 @@ def test_verify_bundle_reports_missing_if_artifact_disappears_before_hash(
     assert result["status"] == "FAILED"
     assert result["exit_code"] == 2
     assert {"path": "report.html", "issue": "MISSING"} in result["problems"]
+
+
+def test_verify_bundle_reports_io_error_if_artifact_hash_cannot_be_read(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    original_sha256_file = bundle_module.sha256_file
+
+    def unreadable_sha256_file(path: Path) -> str:
+        if path == target:
+            raise PermissionError("denied")
+        return original_sha256_file(path)
+
+    monkeypatch.setattr(bundle_module, "sha256_file", unreadable_sha256_file)
+
+    result = bundle_module.verify_bundle(output)
+
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "report.html",
+        "issue": "IO_ERROR",
+        "error": "PermissionError",
+    } in result["problems"]
