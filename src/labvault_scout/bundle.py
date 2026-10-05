@@ -42,10 +42,15 @@ def build_bundle_manifest(output_dir: Path) -> dict:
         if path.is_symlink() or not path.is_file():
             raise ValueError(f"Report artifact is not a regular file: {name}")
         stat = path.stat()
+        digest = sha256_file(path)
+        post_stat = path.stat()
+        fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if any(getattr(stat, field, None) != getattr(post_stat, field, None) for field in fields):
+            raise ValueError(f"Report artifact changed while building bundle manifest: {name}")
         entries.append({
             "path": name,
             "size": stat.st_size,
-            "sha256": sha256_file(path),
+            "sha256": digest,
         })
 
     payload = {
