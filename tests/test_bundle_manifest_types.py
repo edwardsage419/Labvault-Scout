@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+from labvault_scout.bundle import BUNDLE_FILES, load_bundle_manifest, manifest_payload_sha256
 
 
 def _write_manifest(output_dir: Path, payload: object) -> None:
@@ -47,4 +47,17 @@ def test_bundle_manifest_rejects_non_object_file_entries(tmp_path: Path, entry: 
     _write_manifest(tmp_path, payload)
 
     with pytest.raises(ValueError, match="Bundle manifest contains a non-object file entry"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_rejects_duplicate_paths(tmp_path: Path) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries.append(dict(entries[0]))
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Duplicate bundle manifest path"):
         load_bundle_manifest(tmp_path)
