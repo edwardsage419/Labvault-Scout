@@ -53,3 +53,30 @@ def test_bundle_manifest_rejects_invalid_algorithms(
 
     with pytest.raises(ValueError, match="Unsupported bundle manifest algorithm"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "bad_checksum",
+    [None, 1, True, "", "0" * 63, "A" * 64, "g" * 64],
+)
+def test_bundle_manifest_rejects_invalid_checksum_formats(
+    tmp_path: Path,
+    bad_checksum: object,
+) -> None:
+    payload = _base_manifest()
+    payload["manifest_sha256"] = bad_checksum
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest checksum"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_rejects_checksum_mismatch(tmp_path: Path) -> None:
+    payload = _base_manifest()
+    checksum = payload["manifest_sha256"]
+    replacement = "0" if checksum[0] != "0" else "1"
+    payload["manifest_sha256"] = replacement + checksum[1:]
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest checksum mismatch"):
+        load_bundle_manifest(tmp_path)
