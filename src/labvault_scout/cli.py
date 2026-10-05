@@ -22,6 +22,7 @@ from .report import write_reports
 from .risk import classify, load_rules, rules_sha256
 from .schema_registry import SCHEMA_FILES, load_schema_text
 from .scanner import iter_files
+from .spss_validation import validate_spss_product_identifier
 from .tiff_validation import validate_tiff_first_ifd_offset
 
 
@@ -89,7 +90,7 @@ def scan(root: Path, output: Path) -> int:
             elif signature == "FCS":
                 container_type = validate_fcs_offset_pairs(header, fcs_container_from_header(header, stat.st_size))
             elif signature == "SPSS":
-                container_type = spss_container_from_header(header, stat.st_size)
+                container_type = validate_spss_product_identifier(header, spss_container_from_header(header, stat.st_size))
             elif signature == "STATA_DTA":
                 container_type = stata_dta_container_from_header(header)
             elif path.suffix.lower() == ".dcm":
