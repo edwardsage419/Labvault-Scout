@@ -81,7 +81,11 @@ def _canonical_manifest_path(value: object) -> str:
 
 def load_bundle_manifest(output_dir: Path) -> dict:
     manifest_path = output_dir / BUNDLE_MANIFEST_NAME
-    if manifest_path.is_symlink():
+    try:
+        is_symlink = manifest_path.is_symlink()
+    except OSError as exc:
+        raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
+    if is_symlink:
         raise ValueError("Bundle manifest must not be a symlink")
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
