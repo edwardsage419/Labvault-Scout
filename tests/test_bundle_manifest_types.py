@@ -172,3 +172,20 @@ def test_bundle_manifest_rejects_invalid_sha256(tmp_path: Path, bad_sha256: obje
 
     with pytest.raises(ValueError, match="Invalid bundle manifest SHA-256"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("missing_field", ["path", "size", "sha256"])
+def test_bundle_manifest_rejects_missing_file_entry_fields(
+    tmp_path: Path,
+    missing_field: str,
+) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0].pop(missing_field)
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest file entry has invalid fields"):
+        load_bundle_manifest(tmp_path)
