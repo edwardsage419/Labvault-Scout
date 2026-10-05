@@ -16,10 +16,10 @@ LabVault Scout runs locally. It does not upload research data, require an accoun
 
 ## Quick start
 
-Python 3.10 or newer is required. v0.3.0 is the current stable release. Install the published stable tag explicitly:
+Python 3.10 or newer is required. v0.3.2 is the current stable release. Install the published stable tag explicitly:
 
 ```bash
-git clone --branch v0.3.0 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
+git clone --branch v0.3.2 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
 cd Labvault-Scout
 python -m pip install .
 labvault-scout --version
@@ -49,7 +49,7 @@ Risk labels are triage signals. They are not guarantees of future readability an
 
 The initial rules include common research and scientific formats such as CSV, TSV, TIFF, HDF5, NetCDF, MATLAB, SigmaPlot JNB, Origin OPJ and OPJU, GraphPad Prism PZF, SPSS SAV/ZSAV, Stata DTA, Igor IBW, SPC spectroscopy, FCS, NIfTI and DICOM.
 
-Identification combines extension rules with read-only signature checks for ZIP, OLE, HDF5, PDF, NetCDF CDF-1/CDF-2/CDF-5, TIFF/BigTIFF, FITS primary-header structure, NIfTI, MATLAB Level 5 MAT-files, DICOM Part 10 preamble/marker evidence, Flow Cytometry Standard 2.0/3.0/3.1/3.2 fixed headers, ASCII-based SPSS SAV/ZSAV fixed headers, and modern Stata DTA releases 117/118/119. ZIP structures for OOXML, OpenDocument, RO-Crate, and BagIt are inspected without extracting or executing file content; HDF5 detection also recognizes specification-defined user-block offsets. HDF5-based `.mat` and NetCDF-4 files remain conservative container-only evidence unless format-specific structure is proven.
+Identification combines extension rules with read-only signature checks for ZIP, OLE, HDF5, PDF, NetCDF CDF-1/CDF-2/CDF-5, TIFF/BigTIFF, FITS primary-header structure, NIfTI, MATLAB Level 5 MAT-files, DICOM Part 10 preamble/marker plus bounded File Meta Information group-length evidence, Flow Cytometry Standard 2.0/3.0/3.1/3.2 fixed headers with bounded TEXT and DATA/ANALYSIS offset checks, ASCII-based SPSS SAV/ZSAV 176-byte fixed headers including the `@(#) SPSS DATA FILE` product identifier prefix, byte order, and compression code, and modern Stata DTA releases 117/118/119 including release, byte order, and bounded `<K>...</K>` header evidence. ZIP structures for OOXML, OpenDocument, RO-Crate, and BagIt are inspected without extracting or executing file content; HDF5 detection also recognizes specification-defined user-block offsets. DICOM validation remains limited to bounded Part 10 header evidence and does not parse patient metadata or dataset content; FCS validation does not read TEXT or DATA payloads. HDF5-based `.mat` and NetCDF-4 files remain conservative container-only evidence unless format-specific structure is proven.
 
 ## Compare scans
 
@@ -107,13 +107,13 @@ CI tests Python 3.10 and 3.12 on Linux, Windows, and macOS.
 
 ## Roadmap
 
-v0.3.0 is the current stable release. The v0.3.0 line adds self-describing and verifiable reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, packaged JSON Schemas, and bounded structural evidence for NIfTI, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, DICOM Part 10, FCS 2.0/3.0/3.1/3.2 fixed headers, SPSS SAV/ZSAV fixed headers, and modern Stata DTA releases 117/118/119.
+v0.3.2 is the current stable release. The v0.3 line adds self-describing and verifiable reports, deterministic cross-platform paths and inventory fingerprints, repeated-scan comparison, priority-change tracking, compound-extension handling, packaged JSON Schemas, and bounded structural evidence for NIfTI, NetCDF, TIFF/BigTIFF, FITS, MATLAB Level 5, DICOM Part 10, FCS 2.0/3.0/3.1/3.2 fixed headers, SPSS SAV/ZSAV fixed headers, and modern Stata DTA releases 117/118/119.
 
 See [ROADMAP_0_3_0.md](ROADMAP_0_3_0.md) for the bilingual development plan.
 
 ## Release notes
 
-The current stable release is documented in [v0.3.0 release notes](RELEASE_NOTES_0_3_0.md). The validation candidates remain available in [v0.3.0-rc4 release notes](RELEASE_NOTES_0_3_0_RC4.md) and [v0.3.0-rc3 release notes](RELEASE_NOTES_0_3_0_RC3.md). Earlier stable releases include [v0.2.0 release notes](RELEASE_NOTES_0_2_0.md) and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md).
+The current stable release is documented in [v0.3.2 release notes](RELEASE_NOTES_0_3_2.md). Earlier stable releases include [v0.3.1 release notes](RELEASE_NOTES_0_3_1.md), [v0.3.0 release notes](RELEASE_NOTES_0_3_0.md), [v0.2.0 release notes](RELEASE_NOTES_0_2_0.md), and [v0.1.0 release notes](RELEASE_NOTES_0_1_0.md). The validation candidates remain available in [v0.3.0-rc4 release notes](RELEASE_NOTES_0_3_0_RC4.md) and [v0.3.0-rc3 release notes](RELEASE_NOTES_0_3_0_RC3.md).
 
 ## License
 

@@ -3696,7 +3696,15 @@ def test_truncated_matlab5_header_is_reviewed(tmp_path: Path):
 
 
 def _dicom_part10_bytes() -> bytes:
-    return b"\x00" * 128 + b"DICM" + b"\x00" * 64
+    return (
+        b"\x00" * 128
+        + b"DICM"
+        + b"\x02\x00\x00\x00"
+        + b"UL"
+        + (4).to_bytes(2, "little")
+        + (12).to_bytes(4, "little")
+        + b"\x00" * 12
+    )
 
 
 def test_dicom_part10_header_evidence():

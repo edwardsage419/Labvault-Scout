@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.2 — 2026-10-05
+
+### Fixed
+
+* TIFF/BigTIFF verification now rejects invalid first-IFD offsets before assigning verified structural evidence
+* FITS verification now requires valid mandatory value indicators in the bounded primary-header checks
+* DICOM Part 10 verification now validates bounded File Meta Information evidence after the `DICM` marker
+* FCS verification now rejects inconsistent DATA/ANALYSIS begin/end offset pairs, including invalid FCS 2.0 DATA fallback combinations
+* SPSS SAV/ZSAV verification now requires the fixed-header product identifier prefix before assigning verified evidence
+* Modern Stata DTA verification now requires the mandatory bounded `<K>...</K>` header marker after the byte-order field
+
+### Changed
+
+* Regression coverage now includes malformed bundle-manifest types, malformed scan/compare report JSON, files disappearing during scanning, and additional scientific-format corruption cases
+
 ## 0.3.1 — 2026-10-04
 
 ### Fixed
