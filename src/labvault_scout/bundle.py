@@ -162,7 +162,11 @@ def verify_bundle(output_dir: Path) -> dict:
         if not path.is_file():
             problems.append({"path": member, "issue": "NOT_REGULAR_FILE"})
             continue
-        actual_size = path.stat().st_size
+        try:
+            actual_size = path.stat().st_size
+        except FileNotFoundError:
+            problems.append({"path": member, "issue": "MISSING"})
+            continue
         if actual_size != entry["size"]:
             problems.append({
                 "path": member,
@@ -171,7 +175,11 @@ def verify_bundle(output_dir: Path) -> dict:
                 "actual": actual_size,
             })
             continue
-        actual_hash = sha256_file(path)
+        try:
+            actual_hash = sha256_file(path)
+        except FileNotFoundError:
+            problems.append({"path": member, "issue": "MISSING"})
+            continue
         if actual_hash != entry["sha256"]:
             problems.append({
                 "path": member,
