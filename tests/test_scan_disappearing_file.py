@@ -92,7 +92,7 @@ def test_scan_detects_same_size_change_with_restored_mtime_on_windows(
     target.write_bytes(b"abcd")
     output = tmp_path / "report"
     original_stat = target.stat()
-    original_sha256_with_head = cli.sha256_with_head
+    original_sha256_with_head = cli.hashing_module.sha256_with_head
 
     def changing_after_hash(path: Path, *, expected_stat=None):
         digest, header = original_sha256_with_head(
@@ -106,7 +106,7 @@ def test_scan_detects_same_size_change_with_restored_mtime_on_windows(
             )
         return digest, header
 
-    monkeypatch.setattr(cli, "sha256_with_head", changing_after_hash)
+    monkeypatch.setattr(cli.hashing_module, "sha256_with_head", changing_after_hash)
 
     assert cli.scan(source, output) == 0
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
