@@ -71,3 +71,22 @@ def test_hash_rejects_file_change_during_read(tmp_path: Path, monkeypatch: pytes
 
     with pytest.raises(OSError, match="File changed during read"):
         sha256_with_head(target, expected_stat=expected_stat)
+
+
+def test_hash_rejects_path_identity_change_during_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "target.bin"
+    target.write_bytes(b"inside")
+    expected_stat = target.lstat()
+    changed_path_stat = SimpleNamespace(
+        st_dev=expected_stat.st_dev,
+        st_ino=expected_stat.st_ino + 1,
+        st_mode=expected_stat.st_mode,
+        st_size=expected_stat.st_size,
+        st_mtime_ns=expected_stat.st_mtime_ns,
+    )
+    monkeypatch.setattr(hashing.Path, "lstat", lambda _self: changed_path_stat)
+
+    with pytest.raises(OSError, match="File identity changed during read"):
+        sha256_with_head(target, expected_stat=expected_stat)

@@ -47,6 +47,9 @@ def sha256_with_head(
             final_stat = os.fstat(handle.fileno())
             if _file_identity_changed(opened_stat, final_stat):
                 raise FileChangedDuringScan("File changed during read")
+            final_path_stat = path.lstat()
+            if _file_identity_changed(opened_stat, final_path_stat):
+                raise FileChangedDuringScan("File identity changed during read")
     finally:
         if fd != -1:
             os.close(fd)
