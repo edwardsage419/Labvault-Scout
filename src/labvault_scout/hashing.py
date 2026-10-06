@@ -44,6 +44,9 @@ def sha256_with_head(
                     need = head_size - len(head)
                     head.extend(chunk[:need])
                 digest.update(chunk)
+            final_stat = os.fstat(handle.fileno())
+            if _file_identity_changed(opened_stat, final_stat):
+                raise FileChangedDuringScan("File changed during read")
     finally:
         if fd != -1:
             os.close(fd)

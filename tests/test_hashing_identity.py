@@ -46,3 +46,28 @@ def test_hash_ignores_ctime_only_difference_between_path_and_open_handle(
 
     assert digest == hashlib.sha256(content).hexdigest()
     assert head == content
+
+
+def test_hash_rejects_file_change_during_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    target = tmp_path / "target.bin"
+    target.write_bytes(b"inside")
+    expected_stat = target.lstat()
+    opened_stat = SimpleNamespace(
+        st_dev=expected_stat.st_dev,
+        st_ino=expected_stat.st_ino,
+        st_mode=expected_stat.st_mode,
+        st_size=expected_stat.st_size,
+        st_mtime_ns=expected_stat.st_mtime_ns,
+    )
+    changed_stat = SimpleNamespace(
+        st_dev=expected_stat.st_dev,
+        st_ino=expected_stat.st_ino,
+        st_mode=expected_stat.st_mode,
+        st_size=expected_stat.st_size + 1,
+        st_mtime_ns=expected_stat.st_mtime_ns + 1,
+    )
+    stats = iter((opened_stat, changed_stat))
+    monkeypatch.setattr(hashing.os, "fstat", lambda _fd: next(stats))
+
+    with pytest.raises(OSError, match="File changed during read"):
+        sha256_with_head(target, expected_stat=expected_stat)
