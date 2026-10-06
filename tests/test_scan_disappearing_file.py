@@ -94,9 +94,9 @@ def test_scan_detects_same_size_change_with_restored_mtime_on_windows(
     original_stat = target.stat()
     original_sha256_with_head = cli.hashing_module.sha256_with_head
 
-    def changing_after_hash(path: Path, *, expected_stat=None):
+    def changing_after_hash(path: Path, *args, expected_stat=None, **kwargs):
         digest, header = original_sha256_with_head(
-            path, expected_stat=expected_stat
+            path, *args, expected_stat=expected_stat, **kwargs
         )
         if path == target:
             path.write_bytes(b"wxyz")
