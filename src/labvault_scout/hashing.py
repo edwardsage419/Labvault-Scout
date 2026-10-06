@@ -24,7 +24,9 @@ def sha256_with_head(
     expected_stat: stat_result | None = None,
 ) -> tuple[str, bytes]:
     """Hash a stable regular file and capture its bounded header in one read."""
-    checked_stat = expected_stat if expected_stat is not None else path.lstat()
+    checked_stat = path.lstat()
+    if expected_stat is not None and _file_identity_changed(expected_stat, checked_stat):
+        raise FileChangedDuringScan("File identity changed before read")
     if not stat_module.S_ISREG(checked_stat.st_mode):
         raise FileChangedDuringScan("File identity changed before read")
 
