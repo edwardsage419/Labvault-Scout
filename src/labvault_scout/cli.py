@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import stat as stat_module
 import sys
 from pathlib import Path
 from os import stat_result
@@ -60,6 +61,10 @@ def scan(root: Path, output: Path) -> int:
 
     for path in iter_files(root, excluded=excluded_output, on_error=record_error):
         try:
+            entry_stat = path.lstat()
+            if not stat_module.S_ISREG(entry_stat.st_mode):
+                record_issue(path, "FileChangedDuringScan")
+                continue
             stat = path.stat()
             rule = classify(path, rules)
             digest, header = sha256_with_head(path)
