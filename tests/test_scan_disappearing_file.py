@@ -26,6 +26,35 @@ def test_scan_records_file_disappearing_before_read(tmp_path: Path, monkeypatch)
     assert payload["errors"] == [{"path": "vanished.bin", "error": "FileNotFoundError"}]
 
 
+def test_scan_rejects_file_replaced_by_symlink_before_read(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    target = source / "swapped.bin"
+    target.write_bytes(b"inside")
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"outside")
+    output = tmp_path / "report"
+
+    def symlink_swap_iter(root, excluded=None, on_error=None):
+        target.unlink()
+        try:
+            target.symlink_to(outside)
+        except OSError:
+            pytest.skip("symlink creation is unavailable")
+        yield target
+
+    monkeypatch.setattr(cli, "iter_files", symlink_swap_iter)
+
+    assert cli.scan(source, output) == 0
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert payload["files"] == []
+    assert payload["errors"] == [
+        {"path": "swapped.bin", "error": "FileChangedDuringScan"}
+    ]
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows metadata semantics")
 def test_scan_detects_same_size_change_with_restored_mtime_on_windows(
     tmp_path: Path, monkeypatch
