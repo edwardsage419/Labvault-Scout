@@ -1,7 +1,10 @@
+import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+import labvault_scout.hashing as hashing
 from labvault_scout.hashing import sha256_with_head
 
 
@@ -20,3 +23,26 @@ def test_hash_rejects_path_identity_change_before_read(tmp_path: Path) -> None:
 
     with pytest.raises(OSError, match="File identity changed before read"):
         sha256_with_head(target, expected_stat=expected_stat)
+
+
+def test_hash_ignores_ctime_only_difference_between_path_and_open_handle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "target.bin"
+    content = b"inside"
+    target.write_bytes(content)
+    expected_stat = target.lstat()
+    opened_stat = SimpleNamespace(
+        st_dev=expected_stat.st_dev,
+        st_ino=expected_stat.st_ino,
+        st_mode=expected_stat.st_mode,
+        st_size=expected_stat.st_size,
+        st_mtime_ns=expected_stat.st_mtime_ns,
+        st_ctime_ns=expected_stat.st_ctime_ns + 1,
+    )
+    monkeypatch.setattr(hashing.os, "fstat", lambda _fd: opened_stat)
+
+    digest, head = sha256_with_head(target, expected_stat=expected_stat)
+
+    assert digest == hashlib.sha256(content).hexdigest()
+    assert head == content

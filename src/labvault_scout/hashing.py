@@ -12,7 +12,7 @@ class FileChangedDuringScan(OSError):
 
 
 def _file_identity_changed(expected: stat_result, actual: stat_result) -> bool:
-    fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+    fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns")
     return any(getattr(expected, field, None) != getattr(actual, field, None) for field in fields)
 
 
