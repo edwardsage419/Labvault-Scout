@@ -67,7 +67,7 @@ def scan(root: Path, output: Path) -> int:
                 continue
             stat = path.stat()
             rule = classify(path, rules)
-            digest, header = sha256_with_head(path)
+            digest, header = sha256_with_head(path, expected_stat=entry_stat)
             post_stat = path.stat()
             if _file_changed_during_scan(stat, post_stat):
                 record_issue(path, "FileChangedDuringScan")

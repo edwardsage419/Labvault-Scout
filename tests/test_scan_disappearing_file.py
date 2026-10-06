@@ -55,6 +55,42 @@ def test_scan_rejects_file_replaced_by_symlink_before_read(
     ]
 
 
+def test_scan_binds_first_hash_to_entry_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    target = source / "changed.bin"
+    target.write_bytes(b"original")
+    output = tmp_path / "report"
+    original_classify = cli.classify
+    original_sha256_with_head = cli.sha256_with_head
+
+    def replacing_classify(path: Path, rules):
+        rule = original_classify(path, rules)
+        if path == target:
+            path.unlink()
+            path.write_bytes(b"replacement-content")
+        return rule
+
+    def guarded_hash(path: Path, *args, expected_stat=None, **kwargs):
+        if expected_stat is None:
+            raise AssertionError("scan did not bind entry identity")
+        return original_sha256_with_head(
+            path, *args, expected_stat=expected_stat, **kwargs
+        )
+
+    monkeypatch.setattr(cli, "classify", replacing_classify)
+    monkeypatch.setattr(cli, "sha256_with_head", guarded_hash)
+
+    assert cli.scan(source, output) == 0
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert payload["files"] == []
+    assert payload["errors"] == [
+        {"path": "changed.bin", "error": "FileChangedDuringScan"}
+    ]
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows metadata semantics")
 def test_scan_detects_same_size_change_with_restored_mtime_on_windows(
     tmp_path: Path, monkeypatch
@@ -67,8 +103,10 @@ def test_scan_detects_same_size_change_with_restored_mtime_on_windows(
     original_stat = target.stat()
     original_sha256_with_head = cli.sha256_with_head
 
-    def changing_after_hash(path: Path):
-        digest, header = original_sha256_with_head(path)
+    def changing_after_hash(path: Path, *, expected_stat=None):
+        digest, header = original_sha256_with_head(
+            path, expected_stat=expected_stat
+        )
         if path == target:
             path.write_bytes(b"wxyz")
             os.utime(
