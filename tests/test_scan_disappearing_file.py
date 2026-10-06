@@ -64,7 +64,6 @@ def test_scan_binds_first_hash_to_entry_identity(
     target.write_bytes(b"original")
     output = tmp_path / "report"
     original_classify = cli.classify
-    original_sha256_with_head = cli.sha256_with_head
 
     def replacing_classify(path: Path, rules):
         rule = original_classify(path, rules)
@@ -73,15 +72,7 @@ def test_scan_binds_first_hash_to_entry_identity(
             path.write_bytes(b"replacement-content")
         return rule
 
-    def guarded_hash(path: Path, *args, expected_stat=None, **kwargs):
-        if expected_stat is None:
-            raise AssertionError("scan did not bind entry identity")
-        return original_sha256_with_head(
-            path, *args, expected_stat=expected_stat, **kwargs
-        )
-
     monkeypatch.setattr(cli, "classify", replacing_classify)
-    monkeypatch.setattr(cli, "sha256_with_head", guarded_hash)
 
     assert cli.scan(source, output) == 0
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))

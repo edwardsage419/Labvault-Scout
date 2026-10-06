@@ -8,6 +8,7 @@ from pathlib import Path
 from os import stat_result
 
 from . import __version__
+from . import hashing as hashing_module
 from .bundle import verify_bundle
 from .compare import compare_reports, comparison_exit_code, load_scan_report, verify_report, write_comparison
 from .dicom_validation import validate_dicom_file_meta
@@ -67,7 +68,9 @@ def scan(root: Path, output: Path) -> int:
                 continue
             stat = path.stat()
             rule = classify(path, rules)
-            digest, header = sha256_with_head(path, expected_stat=entry_stat)
+            digest, header = hashing_module.sha256_with_head(
+                path, expected_stat=entry_stat
+            )
             post_stat = path.stat()
             if _file_changed_during_scan(stat, post_stat):
                 record_issue(path, "FileChangedDuringScan")
