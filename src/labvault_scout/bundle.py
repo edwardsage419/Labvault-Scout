@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import stat as stat_module
 from pathlib import Path, PurePosixPath
 
 from . import __version__
@@ -91,6 +93,46 @@ def _canonical_manifest_path(value: object) -> str:
     return value
 
 
+def _read_manifest_text(path: Path) -> str:
+    """Read one stable regular manifest without following replacement links."""
+    before = path.lstat()
+    if not stat_module.S_ISREG(before.st_mode):
+        raise ValueError("Bundle manifest must be a regular file")
+
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns")
+        if not stat_module.S_ISREG(opened.st_mode) or any(
+            getattr(before, field) != getattr(opened, field)
+            for field in fields
+        ):
+            raise ValueError("Bundle manifest changed during read")
+
+        handle = os.fdopen(fd, "r", encoding="utf-8")
+        fd = -1
+        with handle:
+            content = handle.read()
+            final = os.fstat(handle.fileno())
+            final_path = path.lstat()
+        if any(
+            getattr(before, field) != getattr(actual, field)
+            for actual in (final, final_path)
+            for field in fields
+        ):
+            raise ValueError("Bundle manifest changed during read")
+        return content
+    finally:
+        if fd != -1:
+            os.close(fd)
+
+
 def load_bundle_manifest(output_dir: Path) -> dict:
     manifest_path = output_dir / BUNDLE_MANIFEST_NAME
     try:
@@ -100,7 +142,7 @@ def load_bundle_manifest(output_dir: Path) -> dict:
     if is_symlink:
         raise ValueError("Bundle manifest must not be a symlink")
     try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        payload = json.loads(_read_manifest_text(manifest_path))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
 
