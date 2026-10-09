@@ -248,7 +248,8 @@ def verify_bundle(output_dir: Path) -> dict:
             problems.append({"path": member, "issue": "NOT_REGULAR_FILE"})
             continue
         try:
-            actual_size = path.stat().st_size
+            checked_stat = path.stat()
+            actual_size = checked_stat.st_size
         except FileNotFoundError:
             problems.append({"path": member, "issue": "MISSING"})
             continue
@@ -305,6 +306,29 @@ def verify_bundle(output_dir: Path) -> dict:
                 "issue": "SHA256_MISMATCH",
                 "expected": entry["sha256"],
                 "actual": confirmed_hash,
+            })
+            continue
+        try:
+            final_stat = path.stat()
+        except FileNotFoundError:
+            problems.append({"path": member, "issue": "MISSING"})
+            continue
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
+        fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if any(
+            getattr(checked_stat, field, None) != getattr(final_stat, field, None)
+            for field in fields
+        ):
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": "FileChangedDuringScan",
             })
 
     return {

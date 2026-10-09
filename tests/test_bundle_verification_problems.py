@@ -115,6 +115,41 @@ def test_verify_bundle_detects_artifact_changed_after_initial_hash(
     } in result["problems"]
 
 
+
+def test_verify_bundle_detects_same_content_file_replacement_between_hashes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    original_hash = bundle_module.sha256_file
+    replaced = False
+
+    def replacing_after_first_hash(path: Path) -> str:
+        nonlocal replaced
+        digest = original_hash(path)
+        if path == target and not replaced:
+            replacement = output / "replacement.tmp"
+            replacement.write_bytes(target.read_bytes())
+            replacement.replace(target)
+            replaced = True
+        return digest
+
+    monkeypatch.setattr(bundle_module, "sha256_file", replacing_after_first_hash)
+
+    result = bundle_module.verify_bundle(output)
+
+    assert replaced
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "report.html",
+        "issue": "IO_ERROR",
+        "error": "FileChangedDuringScan",
+    } in result["problems"]
+
+
 def test_verify_bundle_reports_missing_if_artifact_disappears_before_hash(
     tmp_path: Path, monkeypatch
 ) -> None:
