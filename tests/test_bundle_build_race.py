@@ -49,3 +49,36 @@ def test_build_bundle_manifest_rejects_same_size_change_with_restored_mtime_on_w
 
     with pytest.raises(ValueError, match="Report artifact changed while building bundle manifest: scan.json"):
         bundle.build_bundle_manifest(tmp_path)
+
+
+def test_build_bundle_manifest_rejects_symlink_swap_after_initial_check(
+    tmp_path: Path, monkeypatch
+) -> None:
+    for name in bundle.BUNDLE_FILES:
+        (tmp_path / name).write_bytes(b"abc")
+
+    target = tmp_path / "scan.json"
+    external = tmp_path / "external.bin"
+    external.write_bytes(b"abc")
+    original_is_symlink = Path.is_symlink
+    swapped = False
+
+    def swap_after_check(path: Path) -> bool:
+        nonlocal swapped
+        result = original_is_symlink(path)
+        if path == target and not swapped:
+            assert not result
+            target.unlink()
+            try:
+                target.symlink_to(external)
+            except (OSError, NotImplementedError):
+                pytest.skip("Symlinks unavailable")
+            swapped = True
+        return result
+
+    monkeypatch.setattr(Path, "is_symlink", swap_after_check)
+
+    with pytest.raises(ValueError, match="Report artifact is not a regular file: scan.json"):
+        bundle.build_bundle_manifest(tmp_path)
+
+    assert swapped
