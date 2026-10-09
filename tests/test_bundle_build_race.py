@@ -82,3 +82,40 @@ def test_build_bundle_manifest_rejects_symlink_swap_after_initial_check(
         bundle.build_bundle_manifest(tmp_path)
 
     assert swapped
+
+
+def test_build_bundle_manifest_rejects_transient_replacement_during_hash(
+    tmp_path: Path, monkeypatch
+) -> None:
+    for name in bundle.BUNDLE_FILES:
+        (tmp_path / name).write_bytes(b"abc")
+
+    target = tmp_path / "scan.json"
+    alternate = tmp_path / "alternate.bin"
+    alternate.write_bytes(b"xyz")
+    original_sha256_file = bundle.sha256_file
+    replaced = False
+
+    def transient_replacement(path: Path) -> str:
+        nonlocal replaced
+        if path != target or replaced:
+            return original_sha256_file(path)
+        replaced = True
+        saved = tmp_path / "saved.bin"
+        target.replace(saved)
+        alternate.replace(target)
+        try:
+            return original_sha256_file(path)
+        finally:
+            target.unlink()
+            saved.replace(target)
+
+    monkeypatch.setattr(bundle, "sha256_file", transient_replacement)
+
+    with pytest.raises(
+        ValueError,
+        match="Report artifact changed while building bundle manifest: scan.json",
+    ):
+        bundle.build_bundle_manifest(tmp_path)
+
+    assert replaced
