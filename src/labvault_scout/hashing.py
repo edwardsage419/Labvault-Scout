@@ -30,7 +30,12 @@ def sha256_with_head(
     if not stat_module.S_ISREG(checked_stat.st_mode):
         raise FileChangedDuringScan("File identity changed before read")
 
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    # A path can become a FIFO after lstat; opening it must not block.
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     fd = os.open(path, flags)
     try:
         opened_stat = os.fstat(fd)

@@ -1,4 +1,5 @@
 import hashlib
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,6 +24,36 @@ def test_hash_rejects_path_identity_change_before_read(tmp_path: Path) -> None:
 
     with pytest.raises(OSError, match="File identity changed before read"):
         sha256_with_head(target, expected_stat=expected_stat)
+
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"),
+    reason="POSIX FIFO support is required",
+)
+def test_hash_rejects_fifo_swap_before_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "target.bin"
+    target.write_bytes(b"original")
+    original_open = hashing.os.open
+    swapped = False
+
+    def swap_to_fifo_before_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if path == target and not swapped:
+            swapped = True
+            target.unlink()
+            os.mkfifo(target)
+            assert flags & os.O_NONBLOCK, "FIFO open must be nonblocking"
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(hashing.os, "open", swap_to_fifo_before_open)
+
+    with pytest.raises(hashing.FileChangedDuringScan, match="File identity changed before read"):
+        sha256_with_head(target)
+
+    assert swapped
 
 
 def test_hash_rejects_symlink_to_same_identity_before_read(
