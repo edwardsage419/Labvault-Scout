@@ -114,3 +114,33 @@ def test_scan_detects_same_size_change_with_restored_mtime_on_windows(
     assert payload["errors"] == [
         {"path": "changed.bin", "error": "FileChangedDuringScan"}
     ]
+
+
+def test_scan_records_directory_symlink_check_error_and_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    inaccessible = source / "unreadable"
+    inaccessible.mkdir()
+    (inaccessible / "skipped.bin").write_bytes(b"not scanned")
+    (source / "healthy.bin").write_bytes(b"safe")
+    output = tmp_path / "report"
+
+    original_is_symlink = Path.is_symlink
+
+    def failing_directory_check(path: Path) -> bool:
+        if path == inaccessible:
+            raise PermissionError("cannot inspect directory")
+        return original_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", failing_directory_check)
+
+    assert cli.scan(source, output) == 1
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert [row["path"] for row in payload["files"]] == ["healthy.bin"]
+    assert payload["errors"] == [
+        {"path": "unreadable", "error": "PermissionError"}
+    ]
+    assert payload["summary"]["file_count"] == 1
+    assert payload["summary"]["error_count"] == 1
