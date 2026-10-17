@@ -148,7 +148,7 @@ def load_bundle_manifest(output_dir: Path) -> dict:
         raise ValueError("Bundle manifest must not be a symlink")
     try:
         payload = json.loads(_read_manifest_text(manifest_path))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
 
     if not isinstance(payload, dict):

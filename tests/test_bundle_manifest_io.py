@@ -124,3 +124,11 @@ def test_load_bundle_manifest_rejects_same_size_change_with_restored_mtime(
         load_bundle_manifest(tmp_path)
 
     assert changed
+
+
+def test_load_bundle_manifest_rejects_excessive_json_nesting(tmp_path: Path) -> None:
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_text("[" * 4000 + "0" + "]" * 4000, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest"):
+        load_bundle_manifest(tmp_path)
