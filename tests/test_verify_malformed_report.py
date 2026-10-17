@@ -102,6 +102,47 @@ def test_direct_integrity_rejects_non_array_legacy_errors(
     assert comparison["after"]["integrity_status"] == "MISMATCH"
 
 
+
+@pytest.mark.parametrize("bad_path", ["", None, 0])
+def test_direct_integrity_rejects_invalid_legacy_file_paths(
+    tmp_path: Path, bad_path: object,
+) -> None:
+    from labvault_scout.compare import report_integrity_status, verify_report
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert verify_report(valid)["status"] == "VERIFIED"
+
+    bad_row = {**row, "path": bad_path}
+    malformed = {
+        **valid,
+        "files": [bad_row],
+        "summary": build_summary([bad_row], [], []),
+    }
+    assert report_integrity_status(malformed) == "MISMATCH"
+    result = verify_report(malformed)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+
+    report = tmp_path / "bad_legacy_path.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid file row"):
+        load_scan_report(report)
+
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:

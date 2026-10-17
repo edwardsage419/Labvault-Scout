@@ -324,6 +324,9 @@ def report_integrity_status(payload: dict) -> str:
 
     if not isinstance(payload.get("files"), list):
         return "MISMATCH"
+    for row in payload["files"]:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str) or not row["path"]:
+            return "MISMATCH"
     if "errors" in payload and not isinstance(payload["errors"], list):
         return "MISMATCH"
 
