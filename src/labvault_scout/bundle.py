@@ -110,7 +110,7 @@ def _read_manifest_text(path: Path) -> str:
     fd = os.open(path, flags)
     try:
         opened = os.fstat(fd)
-        fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns")
+        fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
         if not stat_module.S_ISREG(opened.st_mode) or any(
             getattr(before, field) != getattr(opened, field)
             for field in fields

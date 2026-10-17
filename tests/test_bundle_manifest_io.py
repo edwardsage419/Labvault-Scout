@@ -1,3 +1,5 @@
+import json
+import os
 from pathlib import Path
 
 import pytest
@@ -68,3 +70,57 @@ def test_load_bundle_manifest_rejects_symlink_swap_after_check(
         load_bundle_manifest(tmp_path)
 
     assert swapped
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows st_ctime tracks creation time")
+def test_load_bundle_manifest_rejects_same_size_change_with_restored_mtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from labvault_scout.bundle import BUNDLE_FILES, manifest_payload_sha256
+
+    manifest = tmp_path / "bundle_manifest.json"
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.2"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    original_lstat = Path.lstat
+    manifest_checks = 0
+    changed = False
+
+    def changing_lstat(path: Path, *args, **kwargs):
+        nonlocal manifest_checks, changed
+        if path == manifest:
+            manifest_checks += 1
+            # is_symlink(), pre-read lstat(), then post-read lstat().
+            if manifest_checks == 3:
+                before = original_lstat(path, *args, **kwargs)
+                content = manifest.read_bytes()
+                replaced = content.replace(
+                    b'"algorithm": "sha256"',
+                    b'"algorithm": "sha25x"',
+                )
+                assert len(replaced) == len(content)
+                assert replaced != content
+                manifest.write_bytes(replaced)
+                os.utime(manifest, ns=(before.st_atime_ns, before.st_mtime_ns))
+                if original_lstat(path, *args, **kwargs).st_ctime_ns == before.st_ctime_ns:
+                    pytest.skip("File system cannot distinguish metadata changes")
+                changed = True
+        return original_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", changing_lstat)
+
+    with pytest.raises(ValueError, match="Bundle manifest changed during read"):
+        from labvault_scout.bundle import load_bundle_manifest
+
+        load_bundle_manifest(tmp_path)
+
+    assert changed
