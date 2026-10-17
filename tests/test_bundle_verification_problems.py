@@ -29,6 +29,39 @@ def test_verify_bundle_detects_non_regular_core_file(tmp_path: Path) -> None:
     assert {"path": "report.html", "issue": "NOT_REGULAR_FILE"} in result["problems"]
 
 
+def test_verify_bundle_reports_file_change_if_directory_swapped_after_file_check(
+    tmp_path: Path, monkeypatch
+) -> None:
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    saved = output / "saved-report.tmp"
+    original_is_file = Path.is_file
+    swapped = False
+
+    def swap_after_file_check(path: Path, *args, **kwargs) -> bool:
+        nonlocal swapped
+        result = original_is_file(path, *args, **kwargs)
+        if path == target and not swapped:
+            assert result
+            target.replace(saved)
+            target.mkdir()
+            swapped = True
+        return result
+
+    monkeypatch.setattr(Path, "is_file", swap_after_file_check)
+
+    result = verify_bundle(output)
+
+    assert swapped
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "report.html",
+        "issue": "IO_ERROR",
+        "error": "FileChangedDuringScan",
+    } in result["problems"]
+
+
 def test_verify_bundle_detects_size_mismatch(tmp_path: Path) -> None:
     output = _scanned_bundle(tmp_path)
     target = output / "report.html"

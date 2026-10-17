@@ -290,7 +290,6 @@ def verify_bundle(output_dir: Path) -> dict:
             continue
         try:
             checked_stat = path.stat()
-            actual_size = checked_stat.st_size
         except FileNotFoundError:
             problems.append({"path": member, "issue": "MISSING"})
             continue
@@ -301,6 +300,14 @@ def verify_bundle(output_dir: Path) -> dict:
                 "error": type(exc).__name__,
             })
             continue
+        if not stat_module.S_ISREG(checked_stat.st_mode):
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": "FileChangedDuringScan",
+            })
+            continue
+        actual_size = checked_stat.st_size
         if actual_size != entry["size"]:
             problems.append({
                 "path": member,
