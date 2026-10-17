@@ -1901,6 +1901,44 @@ def test_comparison_schema_complete_requires_supported_error_free_sources():
         assert partial["comparison_status"] == "PARTIAL"
 
 
+
+def test_comparison_schema_partial_requires_source_issue():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("comparison_status")
+        == {"const": "PARTIAL"}
+    )
+    assert clause == {
+        "if": {
+            "properties": {"comparison_status": {"const": "PARTIAL"}},
+            "required": ["comparison_status"],
+        },
+        "then": {
+            "anyOf": [
+                {"properties": {"before": {"properties": {"error_count": {"minimum": 1}}}}},
+                {"properties": {"after": {"properties": {"error_count": {"minimum": 1}}}}},
+                {"properties": {"before": {"properties": {"schema_supported": {"const": False}}}}},
+                {"properties": {"after": {"properties": {"schema_supported": {"const": False}}}}},
+                {"properties": {"before": {"properties": {"integrity_status": {"const": "MISMATCH"}}}}},
+                {"properties": {"after": {"properties": {"integrity_status": {"const": "MISMATCH"}}}}},
+            ],
+        },
+    }
+
+    clean = {"files": [], "errors": []}
+    assert compare_payloads(clean, clean)["comparison_status"] == "COMPLETE"
+    for source in (
+        {"files": [], "errors": [{"path": "blocked", "error": "PermissionError"}]},
+        {"schema_version": "99", "files": [], "errors": []},
+        {"files": [], "errors": [], "summary": {"inventory_sha256": "0" * 64}},
+    ):
+        assert compare_payloads(clean, source)["comparison_status"] == "PARTIAL"
+
+
 def test_comparison_schema_zero_change_count_matches_empty_changes():
     from labvault_scout.compare import compare_payloads
     from labvault_scout.schema_registry import load_schema_text
