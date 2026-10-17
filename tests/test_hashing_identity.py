@@ -114,7 +114,7 @@ def test_hash_never_opens_symlink_target_after_check(
     assert exc_info.value.errno == errno.ELOOP
 
 
-def test_hash_ignores_ctime_only_difference_between_path_and_open_handle(
+def test_hash_checks_ctime_difference_according_to_platform(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     target = tmp_path / "target.bin"
@@ -131,10 +131,13 @@ def test_hash_ignores_ctime_only_difference_between_path_and_open_handle(
     )
     monkeypatch.setattr(hashing.os, "fstat", lambda _fd: opened_stat)
 
-    digest, head = sha256_with_head(target, expected_stat=expected_stat)
-
-    assert digest == hashlib.sha256(content).hexdigest()
-    assert head == content
+    if os.name != "nt":
+        with pytest.raises(hashing.FileChangedDuringScan, match="File identity changed before read"):
+            sha256_with_head(target, expected_stat=expected_stat)
+    else:
+        digest, head = sha256_with_head(target, expected_stat=expected_stat)
+        assert digest == hashlib.sha256(content).hexdigest()
+        assert head == content
 
 
 def test_hash_rejects_file_change_during_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,6 +150,7 @@ def test_hash_rejects_file_change_during_read(tmp_path: Path, monkeypatch: pytes
         st_mode=expected_stat.st_mode,
         st_size=expected_stat.st_size,
         st_mtime_ns=expected_stat.st_mtime_ns,
+        st_ctime_ns=expected_stat.st_ctime_ns,
     )
     changed_stat = SimpleNamespace(
         st_dev=expected_stat.st_dev,
@@ -154,6 +158,7 @@ def test_hash_rejects_file_change_during_read(tmp_path: Path, monkeypatch: pytes
         st_mode=expected_stat.st_mode,
         st_size=expected_stat.st_size + 1,
         st_mtime_ns=expected_stat.st_mtime_ns + 1,
+        st_ctime_ns=expected_stat.st_ctime_ns + 1,
     )
     stats = iter((opened_stat, changed_stat))
     monkeypatch.setattr(hashing.os, "fstat", lambda _fd: next(stats))
@@ -179,3 +184,35 @@ def test_hash_rejects_path_identity_change_during_read(
 
     with pytest.raises(OSError, match="File identity changed before read"):
         sha256_with_head(target, expected_stat=expected_stat)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows ctime represents file creation time")
+def test_hash_detects_same_size_rewrite_with_restored_mtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "target.bin"
+    target.write_bytes(b"original")
+    before = target.lstat()
+    original_fstat = hashing.os.fstat
+    changed = False
+
+    def change_after_open(fd):
+        nonlocal changed
+        result = original_fstat(fd)
+        if not changed:
+            changed = True
+            target.write_bytes(b"modified")
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+            after = target.lstat()
+            assert after.st_size == before.st_size
+            assert after.st_mtime_ns == before.st_mtime_ns
+            if after.st_ctime_ns == before.st_ctime_ns:
+                pytest.skip("Filesystem does not distinguish rapid metadata changes")
+        return result
+
+    monkeypatch.setattr(hashing.os, "fstat", change_after_open)
+
+    with pytest.raises(hashing.FileChangedDuringScan, match="File changed during read"):
+        sha256_with_head(target, expected_stat=before)
+
+    assert changed
