@@ -132,8 +132,9 @@ def test_load_bundle_manifest_wraps_json_parser_recursion_error(
     manifest = tmp_path / "bundle_manifest.json"
     manifest.write_text("[" * 4000 + "0" + "]" * 4000, encoding="utf-8")
 
-    def raise_recursion_error(text: str) -> object:
+    def raise_recursion_error(text: str, *, object_pairs_hook: object = None) -> object:
         assert text.startswith("[" * 4000)
+        assert callable(object_pairs_hook)
         raise RecursionError("JSON nesting exceeds parser recursion limit")
 
     monkeypatch.setattr(json, "loads", raise_recursion_error)
