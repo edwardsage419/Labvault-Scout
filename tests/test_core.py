@@ -2587,6 +2587,39 @@ def test_compare_marks_tampered_inventory_partial(tmp_path: Path):
     assert comparison_exit_code(result) == 2
 
 
+
+def test_schema1_checksum_is_required_for_direct_integrity_checks(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads, report_integrity_status, verify_report
+
+    source = tmp_path / "checksum_required_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "checksum_required_report"
+    scan(source, output)
+
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert report_integrity_status(original) == "VERIFIED"
+
+    for omit in (True, False):
+        malformed = json.loads(json.dumps(original))
+        if omit:
+            del malformed["report_sha256"]
+        else:
+            malformed["report_sha256"] = None
+        assert report_integrity_status(malformed) == "MISMATCH"
+        verified = verify_report(malformed)
+        assert verified["status"] == "FAILED"
+        assert verified["exit_code"] == 2
+        comparison = compare_payloads(original, malformed)
+        assert comparison["comparison_status"] == "PARTIAL"
+        assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+    legacy = json.loads(json.dumps(original))
+    del legacy["schema_version"]
+    del legacy["report_sha256"]
+    assert report_integrity_status(legacy) == "VERIFIED"
+
+
 def test_legacy_report_integrity_is_unknown_not_failure():
     from labvault_scout.compare import compare_payloads
 

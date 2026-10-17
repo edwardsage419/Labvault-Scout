@@ -320,6 +320,8 @@ def report_integrity_status(payload: dict) -> str:
         return "UNKNOWN"
 
     report_checksum = payload.get("report_sha256")
+    if payload.get("schema_version") == "1" and report_checksum is None:
+        return "MISMATCH"
     if report_checksum is not None:
         if not isinstance(report_checksum, str) or not report_checksum:
             return "MISMATCH"
