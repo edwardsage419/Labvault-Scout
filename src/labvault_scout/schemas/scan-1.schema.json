@@ -96,6 +96,14 @@
           "additionalProperties": {
             "type": "integer",
             "minimum": 0
+          },
+          "propertyNames": {
+            "enum": [
+              "SAFE",
+              "WATCH",
+              "RESCUE",
+              "UNKNOWN"
+            ]
           }
         },
         "priority_counts": {
@@ -103,6 +111,13 @@
           "additionalProperties": {
             "type": "integer",
             "minimum": 0
+          },
+          "propertyNames": {
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ]
           }
         },
         "open_copy_count": {

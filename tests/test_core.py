@@ -3379,6 +3379,46 @@ def test_scan_schema_file_count_matches_file_presence():
         assert (summary["file_count"] == 0) == (len(rows) == 0)
 
 
+
+def test_scan_schema_summary_count_keys_match_file_enums():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    file_properties = schema["properties"]["files"]["items"]["properties"]
+    summary_properties = schema["properties"]["summary"]["properties"]
+
+    for file_field, summary_field, unexpected in (
+        ("risk", "risk_counts", "INVALID_RISK"),
+        ("priority", "priority_counts", "URGENT"),
+    ):
+        allowed = file_properties[file_field]["enum"]
+        count_schema = summary_properties[summary_field]
+        assert count_schema["propertyNames"] == {"enum": allowed}
+        assert count_schema["additionalProperties"] == {"type": "integer", "minimum": 0}
+        assert unexpected not in count_schema["propertyNames"]["enum"]
+
+    rows = [
+        {
+            "path": f"file_{index}.csv",
+            "size": 1,
+            "sha256": "a" * 64,
+            "risk": risk,
+            "priority": priority,
+            "open_copy": "",
+        }
+        for index, (risk, priority) in enumerate((
+            ("SAFE", "LOW"),
+            ("WATCH", "MEDIUM"),
+            ("RESCUE", "HIGH"),
+            ("UNKNOWN", "MEDIUM"),
+        ))
+    ]
+    summary = build_summary(rows, [], [])
+    assert set(summary["risk_counts"]) == set(file_properties["risk"]["enum"])
+    assert set(summary["priority_counts"]) == set(file_properties["priority"]["enum"])
+
+
 def test_scan_schema_enforces_relative_posix_paths():
     import re
     from labvault_scout.schema_registry import load_schema_text
