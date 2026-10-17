@@ -183,9 +183,8 @@ def test_verify_bundle_detects_artifact_changed_after_initial_hash(
     assert result["exit_code"] == 2
     assert {
         "path": "report.html",
-        "issue": "SHA256_MISMATCH",
-        "expected": expected_hash,
-        "actual": actual_hash,
+        "issue": "IO_ERROR",
+        "error": "FileChangedDuringScan",
     } in result["problems"]
 
 
