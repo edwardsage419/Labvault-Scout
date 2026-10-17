@@ -2511,29 +2511,29 @@ def test_comparison_schema_rule_status_requires_appropriate_fingerprint_presence
         assert result["after"]["rules_sha256"] == after_hash
 
 
-def test_compare_reports_rule_context_status():
-    from labvault_scout.compare import compare_payloads
+def test_compare_reports_rule_context_status(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads, report_integrity_status
+    from labvault_scout.report import report_payload_sha256
 
-    base = {
-        "schema_version": "1",
-        "provenance": {"rules_sha256": "a" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
-        "files": [{"path": "data.csv", "sha256": "same"}],
-        "errors": [],
-    }
-    same = {
-        "schema_version": "1",
-        "provenance": {"rules_sha256": "a" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
-        "files": [{"path": "data.csv", "sha256": "same"}],
-        "errors": [],
-    }
-    changed = {
-        "schema_version": "1",
-        "provenance": {"rules_sha256": "b" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
-        "files": [{"path": "data.csv", "sha256": "same"}],
-        "errors": [],
-    }
+    source = tmp_path / "rules_context_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\\n1\\n", encoding="utf-8")
+    output = tmp_path / "rules_context_report"
+    scan(source, output)
+
+    base = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    base["provenance"]["rules_sha256"] = "a" * 64
+    base["report_sha256"] = report_payload_sha256(base)
+    same = json.loads(json.dumps(base))
+    changed = json.loads(json.dumps(base))
+    changed["provenance"]["rules_sha256"] = "b" * 64
+    changed["report_sha256"] = report_payload_sha256(changed)
+
+    assert report_integrity_status(base) == "VERIFIED"
+    assert report_integrity_status(changed) == "VERIFIED"
 
     same_result = compare_payloads(base, same)
+    assert same_result["comparison_status"] == "COMPLETE"
     assert same_result["rules_status"] == "SAME"
     assert not any("Rule-set fingerprint changed" in warning for warning in same_result["warnings"])
 
@@ -2541,7 +2541,6 @@ def test_compare_reports_rule_context_status():
     assert changed_result["comparison_status"] == "COMPLETE"
     assert changed_result["rules_status"] == "CHANGED"
     assert any("Rule-set fingerprint changed" in warning for warning in changed_result["warnings"])
-
 
 def test_compare_legacy_rule_context_is_unknown():
     from labvault_scout.compare import compare_payloads
