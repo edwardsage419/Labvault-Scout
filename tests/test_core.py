@@ -3306,6 +3306,35 @@ def test_cli_schema_outputs_packaged_schema(monkeypatch, capsys):
     assert payload["title"] == "LabVault Scout scan report schema 1"
 
 
+
+def test_scan_schema_error_count_matches_error_presence():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    assert schema["allOf"] == [{
+        "if": {
+            "properties": {
+                "summary": {
+                    "properties": {"error_count": {"const": 0}},
+                    "required": ["error_count"],
+                },
+            },
+            "required": ["summary"],
+        },
+        "then": {"properties": {"errors": {"maxItems": 0}}},
+        "else": {"properties": {"errors": {"minItems": 1}}},
+    }]
+
+    for errors, expected in (
+        ([], 0),
+        ([{"path": "blocked.csv", "error": "PermissionError"}], 1),
+    ):
+        summary = build_summary([], errors, [])
+        assert summary["error_count"] == expected
+        assert (summary["error_count"] == 0) == (len(errors) == 0)
+
+
 def test_scan_schema_enforces_relative_posix_paths():
     import re
     from labvault_scout.schema_registry import load_schema_text

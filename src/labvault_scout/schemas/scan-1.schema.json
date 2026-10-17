@@ -319,5 +319,40 @@
       "pattern": "^[0-9a-f]{64}$"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "error_count": {
+                "const": 0
+              }
+            },
+            "required": [
+              "error_count"
+            ]
+          }
+        },
+        "required": [
+          "summary"
+        ]
+      },
+      "then": {
+        "properties": {
+          "errors": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "errors": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
 }
