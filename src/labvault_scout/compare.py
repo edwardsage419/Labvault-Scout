@@ -123,12 +123,18 @@ def _validate_schema1_payload(payload: dict) -> None:
             raise ValueError(f"Schema 1 report has invalid summary {field}")
     if not isinstance(summary["inventory_sha256"], str) or not SHA256_RE.fullmatch(summary["inventory_sha256"]):
         raise ValueError("Schema 1 report has invalid inventory_sha256")
-    for field in ("risk_counts", "priority_counts"):
+    for field, allowed in (("risk_counts", SCHEMA1_RISKS), ("priority_counts", SCHEMA1_PRIORITY)):
         counts = summary[field]
         if not isinstance(counts, dict):
             raise ValueError(f"Schema 1 report has invalid summary {field}")
         for key, value in counts.items():
-            if not isinstance(key, str) or not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            if (
+                not isinstance(key, str)
+                or key not in allowed
+                or not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < 1
+            ):
                 raise ValueError(f"Schema 1 report has invalid summary {field}")
 
     if not isinstance(payload["files"], list):

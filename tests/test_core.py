@@ -4950,6 +4950,52 @@ def test_schema1_runtime_validation_rejects_invalid_summary_types(tmp_path: Path
         load_scan_report(path)
 
 
+
+def test_schema1_runtime_summary_category_counts_match_schema(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report, report_integrity_status
+    from labvault_scout.report import report_payload_sha256
+    from labvault_scout.schema_registry import load_schema_text
+
+    source = tmp_path / "category_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "category_report"
+    scan(source, output)
+
+    report = output / "scan.json"
+    original = json.loads(report.read_text(encoding="utf-8"))
+    assert report_integrity_status(load_scan_report(report)) == "VERIFIED"
+
+    schema = json.loads(load_schema_text("scan"))
+    summary_props = schema["properties"]["summary"]["properties"]
+    cases = []
+    for field, bad_category in (
+        ("risk_counts", "INVALID_RISK"),
+        ("priority_counts", "INVALID_PRIORITY"),
+    ):
+        valid_keys = summary_props[field]["propertyNames"]["enum"]
+        assert original["summary"][field]
+        assert set(original["summary"][field]).issubset(valid_keys)
+        assert summary_props[field]["additionalProperties"]["minimum"] == 1
+
+        wrong_key = json.loads(json.dumps(original))
+        wrong_key["summary"][field] = {bad_category: 1}
+        cases.append(wrong_key)
+
+        zero_count = json.loads(json.dumps(original))
+        real_category = next(iter(zero_count["summary"][field]))
+        zero_count["summary"][field][real_category] = 0
+        cases.append(zero_count)
+
+    for index, payload in enumerate(cases):
+        payload["report_sha256"] = report_payload_sha256(payload)
+        path = tmp_path / f"bad_category_summary_{index}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(ValueError, match="invalid summary"):
+            load_scan_report(path)
+
+
 def test_schema1_runtime_validation_handles_non_string_enum_without_typeerror(tmp_path: Path):
     import pytest
     from labvault_scout.compare import load_scan_report
