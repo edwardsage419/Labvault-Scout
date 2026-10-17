@@ -3369,6 +3369,7 @@ def test_scan_schema_file_count_matches_file_presence():
                         "risk_counts": {"maxProperties": 0},
                         "priority_counts": {"maxProperties": 0},
                         "total_bytes": {"const": 0},
+                        "open_copy_count": {"const": 0},
                     },
                 },
             },
@@ -3407,6 +3408,7 @@ def test_scan_schema_empty_file_list_has_empty_category_counts():
         "risk_counts": {"maxProperties": 0},
         "priority_counts": {"maxProperties": 0},
         "total_bytes": {"const": 0},
+        "open_copy_count": {"const": 0},
     }
 
     empty = build_summary([], [], [])
@@ -3463,6 +3465,43 @@ def test_scan_schema_empty_scan_total_bytes_is_zero():
     nonempty_file = build_summary([row], [], [])
     assert nonempty_file["file_count"] == 1
     assert nonempty_file["total_bytes"] == 12
+
+
+
+def test_scan_schema_empty_scan_has_no_open_copies():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    zero_files_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    assert zero_files_clause["then"]["properties"]["summary"]["properties"]["open_copy_count"] == {
+        "const": 0,
+    }
+
+    empty = build_summary([], [], [])
+    assert empty["file_count"] == 0
+    assert empty["open_copy_count"] == 0
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    without_copy = build_summary([row], [], [])
+    assert without_copy["file_count"] == 1
+    assert without_copy["open_copy_count"] == 0
+
+    row["open_copy"] = "data.txt"
+    with_copy = build_summary([row], [], [])
+    assert with_copy["file_count"] == 1
+    assert with_copy["open_copy_count"] == 1
 
 
 def test_scan_schema_summary_count_keys_match_file_enums():

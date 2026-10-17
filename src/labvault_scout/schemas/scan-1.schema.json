@@ -402,6 +402,9 @@
               },
               "total_bytes": {
                 "const": 0
+              },
+              "open_copy_count": {
+                "const": 0
               }
             }
           }
