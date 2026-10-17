@@ -420,9 +420,16 @@ def _priority_change(before: dict | None, after: dict | None) -> tuple[str, int 
         delta = None
     else:
         try:
-            delta = int(after_score) - int(before_score)
+            before_value = int(before_score)
+            after_value = int(after_score)
         except (TypeError, ValueError):
             delta = None
+        else:
+            delta = (
+                after_value - before_value
+                if 0 <= before_value <= 100 and 0 <= after_value <= 100
+                else None
+            )
 
     if delta is not None:
         if delta > 0:
