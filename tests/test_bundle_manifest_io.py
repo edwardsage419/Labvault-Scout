@@ -126,9 +126,16 @@ def test_load_bundle_manifest_rejects_same_size_change_with_restored_mtime(
     assert changed
 
 
-def test_load_bundle_manifest_rejects_excessive_json_nesting(tmp_path: Path) -> None:
+def test_load_bundle_manifest_wraps_json_parser_recursion_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     manifest = tmp_path / "bundle_manifest.json"
     manifest.write_text("[" * 4000 + "0" + "]" * 4000, encoding="utf-8")
 
+    def raise_recursion_error(text: str) -> object:
+        assert text.startswith("[" * 4000)
+        raise RecursionError("JSON nesting exceeds parser recursion limit")
+
+    monkeypatch.setattr(json, "loads", raise_recursion_error)
     with pytest.raises(ValueError, match="Cannot read bundle manifest"):
         load_bundle_manifest(tmp_path)
