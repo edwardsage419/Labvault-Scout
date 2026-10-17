@@ -438,7 +438,7 @@ def inspect_zip_container(path: Path) -> str:
             if "META-INF/MANIFEST.MF" in names:
                 return "JAR compatible ZIP"
             return "ZIP archive"
-    except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError):
+    except (zipfile.BadZipFile, RuntimeError, NotImplementedError):
         return "Invalid ZIP container"
 
 

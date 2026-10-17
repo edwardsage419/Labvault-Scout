@@ -217,3 +217,40 @@ def test_scan_records_unresolvable_source_path_and_continues(
     ]
     assert payload["summary"]["file_count"] == 1
     assert payload["summary"]["error_count"] == 1
+
+
+def test_scan_records_zip_container_read_error_and_preserves_report_integrity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import labvault_scout.identifier as identifier
+    from labvault_scout.compare import load_scan_report, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    blocked = source / "blocked.zip"
+    blocked.write_bytes(bytes.fromhex("504b0304") + b"synthetic")
+    (source / "healthy.csv").write_text("sample data", encoding="utf-8")
+    output = tmp_path / "report"
+
+    original_zipfile = identifier.zipfile.ZipFile
+
+    def fail_zip_container_open(path, *args, **kwargs):
+        if Path(path) == blocked:
+            raise PermissionError("ZIP container read denied")
+        return original_zipfile(path, *args, **kwargs)
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_zip_container_open)
+
+    assert cli.scan(source, output) == 1
+
+    payload = load_scan_report(output / "scan.json")
+    assert [row["path"] for row in payload["files"]] == ["healthy.csv"]
+    assert payload["errors"] == [
+        {"path": "blocked.zip", "error": "PermissionError"}
+    ]
+    assert payload["summary"]["file_count"] == 1
+    assert payload["summary"]["error_count"] == 1
+
+    verification = verify_report(payload)
+    assert verification["status"] == "VERIFIED"
+    assert verification["error_count"] == 1
