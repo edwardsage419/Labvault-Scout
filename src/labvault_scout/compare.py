@@ -411,10 +411,17 @@ def _priority_change(before: dict | None, after: dict | None) -> tuple[str, int 
 
     before_score = before.get("priority_score")
     after_score = after.get("priority_score")
-    try:
-        delta = int(after_score) - int(before_score)
-    except (TypeError, ValueError):
+    if any(
+        isinstance(score, float) and not score.is_integer()
+        for score in (before_score, after_score)
+    ):
+        # Legacy fractional scores cannot support an integer priority delta.
         delta = None
+    else:
+        try:
+            delta = int(after_score) - int(before_score)
+        except (TypeError, ValueError):
+            delta = None
 
     if delta is not None:
         if delta > 0:
