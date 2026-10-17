@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import stat as stat_module
@@ -153,6 +154,14 @@ def _reject_nonstandard_manifest_constant(value: str) -> None:
     raise ValueError(f"Non-standard bundle manifest JSON constant: {value}")
 
 
+def _parse_finite_manifest_float(value: str) -> float:
+    """Reject JSON numbers outside the finite floating-point range."""
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("Bundle manifest JSON number exceeds floating-point range")
+    return parsed
+
+
 def load_bundle_manifest(output_dir: Path) -> dict:
     manifest_path = output_dir / BUNDLE_MANIFEST_NAME
     try:
@@ -170,6 +179,7 @@ def load_bundle_manifest(output_dir: Path) -> dict:
             manifest_text,
             object_pairs_hook=_reject_duplicate_manifest_keys,
             parse_constant=_reject_nonstandard_manifest_constant,
+            parse_float=_parse_finite_manifest_float,
         )
     except (ValueError, RecursionError) as exc:
         raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
