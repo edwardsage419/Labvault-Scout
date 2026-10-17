@@ -1869,6 +1869,38 @@ def test_comparison_carries_inventory_fingerprints(tmp_path: Path):
     assert result["before"]["inventory_sha256"] == result["after"]["inventory_sha256"]
 
 
+def test_comparison_schema_complete_requires_supported_error_free_sources():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clause = schema["allOf"][0]
+    assert clause["if"] == {
+        "properties": {"comparison_status": {"const": "COMPLETE"}},
+        "required": ["comparison_status"],
+    }
+    for side in ("before", "after"):
+        properties = clause["then"]["properties"][side]["properties"]
+        assert properties == {
+            "error_count": {"const": 0},
+            "schema_supported": {"const": True},
+            "integrity_status": {"enum": ["VERIFIED", "UNKNOWN"]},
+        }
+
+    valid = {"files": [], "errors": []}
+    complete = compare_payloads(valid, valid)
+    assert complete["comparison_status"] == "COMPLETE"
+    assert complete["before"]["integrity_status"] == "UNKNOWN"
+
+    for invalid in (
+        {"files": [], "errors": [{"path": "blocked", "error": "PermissionError"}]},
+        {"schema_version": "99", "files": [], "errors": []},
+        {"files": [], "errors": [], "summary": {"inventory_sha256": "0" * 64}},
+    ):
+        partial = compare_payloads(valid, invalid)
+        assert partial["comparison_status"] == "PARTIAL"
+
+
 def test_comparison_schema_assessment_changes_have_real_differences():
     from labvault_scout.schema_registry import load_schema_text
 

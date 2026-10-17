@@ -721,5 +721,55 @@
       }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "comparison_status": {
+            "const": "COMPLETE"
+          }
+        },
+        "required": [
+          "comparison_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "before": {
+            "properties": {
+              "error_count": {
+                "const": 0
+              },
+              "schema_supported": {
+                "const": true
+              },
+              "integrity_status": {
+                "enum": [
+                  "VERIFIED",
+                  "UNKNOWN"
+                ]
+              }
+            }
+          },
+          "after": {
+            "properties": {
+              "error_count": {
+                "const": 0
+              },
+              "schema_supported": {
+                "const": true
+              },
+              "integrity_status": {
+                "enum": [
+                  "VERIFIED",
+                  "UNKNOWN"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }
