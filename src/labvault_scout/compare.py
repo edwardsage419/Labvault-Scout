@@ -146,6 +146,7 @@ def _validate_schema1_payload(payload: dict) -> None:
 
     required_file_fields = set(FIELDS)
     string_fields = required_file_fields - {"size", "priority_score"}
+    seen_file_paths: set[str] = set()
     for row in payload["files"]:
         if not isinstance(row, dict):
             raise ValueError("Schema 1 report contains a non-object file row")
@@ -156,7 +157,10 @@ def _validate_schema1_payload(payload: dict) -> None:
             raise ValueError(f"Schema 1 file row is missing fields: {', '.join(missing)}")
         if extra:
             raise ValueError(f"Schema 1 file row has unexpected fields: {', '.join(extra)}")
-        _validate_report_path(row["path"])
+        path = _validate_report_path(row["path"])
+        if path in seen_file_paths:
+            raise ValueError(f"Duplicate path in scan report: {path}")
+        seen_file_paths.add(path)
         if not isinstance(row["size"], int) or isinstance(row["size"], bool) or row["size"] < 0:
             raise ValueError(f"Schema 1 file row has invalid size: {row['path']}")
         if not isinstance(row["sha256"], str) or not SHA256_RE.fullmatch(row["sha256"]):

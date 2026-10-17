@@ -2673,6 +2673,41 @@ def test_schema1_direct_integrity_rejects_invalid_structure_with_valid_checksum(
             load_scan_report(path)
 
 
+
+def test_schema1_direct_integrity_rejects_duplicate_file_paths(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report, report_integrity_status
+    from labvault_scout.report import (
+        build_summary, duplicate_groups, report_payload_sha256,
+    )
+
+    source = tmp_path / "duplicate_path_source"
+    source.mkdir()
+    (source / "first.csv").write_text("identical", encoding="utf-8")
+    (source / "second.csv").write_text("identical", encoding="utf-8")
+    output = tmp_path / "duplicate_path_report"
+    scan(source, output)
+
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert len(original["files"]) == 2
+    assert report_integrity_status(original) == "VERIFIED"
+
+    duplicate = json.loads(json.dumps(original))
+    duplicate["files"][1]["path"] = duplicate["files"][0]["path"]
+    duplicate["summary"] = build_summary(
+        duplicate["files"], duplicate["errors"], duplicate_groups(duplicate["files"])
+    )
+    duplicate["report_sha256"] = report_payload_sha256(duplicate)
+    assert duplicate["summary"]["file_count"] == 2
+    assert duplicate["summary"]["duplicate_group_count"] == 1
+    assert report_integrity_status(duplicate) == "MISMATCH"
+
+    path = tmp_path / "duplicate_path_scan.json"
+    path.write_text(json.dumps(duplicate), encoding="utf-8")
+    with pytest.raises(ValueError, match="Duplicate path"):
+        load_scan_report(path)
+
+
 def test_legacy_report_integrity_is_unknown_not_failure():
     from labvault_scout.compare import compare_payloads
 
