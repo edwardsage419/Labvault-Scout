@@ -325,6 +325,55 @@ def test_legacy_invalid_size_string_cannot_have_verified_inventory(
     assert comparison["after"]["integrity_status"] == "MISMATCH"
 
 
+
+@pytest.mark.parametrize("invalid_size", [True, False, 0.9, 7.9])
+def test_legacy_boolean_or_fractional_size_cannot_have_verified_inventory(
+    tmp_path: Path, invalid_size: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, inventory_sha256
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    whole_float = json.loads(json.dumps(valid))
+    whole_float["files"][0]["size"] = 1.0
+    whole_float["summary"] = build_summary(whole_float["files"], [], [])
+    assert report_integrity_status(whole_float) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["size"] = invalid_size
+    malformed["summary"]["inventory_sha256"] = inventory_sha256(malformed["files"])
+    malformed["summary"]["total_bytes"] = 0
+
+    report = tmp_path / "noninteger-numeric-size-legacy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["files"][0]["size"] == invalid_size
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+    assert compared["after"]["metrics"]["total_bytes"] == 0
+
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
