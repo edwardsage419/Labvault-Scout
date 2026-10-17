@@ -2361,7 +2361,14 @@ def test_comparison_schema_rule_status_requires_appropriate_fingerprint_presence
     from labvault_scout.schema_registry import load_schema_text
 
     clauses = json.loads(load_schema_text("comparison"))["allOf"]
-    known, unknown = clauses[-2:]
+    known = next(
+        clause for clause in clauses
+        if clause["if"]["properties"].get("rules_status") == {"enum": ["SAME", "CHANGED"]}
+    )
+    unknown = next(
+        clause for clause in clauses
+        if clause["if"]["properties"].get("rules_status") == {"const": "UNKNOWN"}
+    )
     assert known["if"]["properties"]["rules_status"] == {"enum": ["SAME", "CHANGED"]}
     assert known["if"]["required"] == ["rules_status"]
     for side in ("before", "after"):
