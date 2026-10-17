@@ -2323,6 +2323,43 @@ def test_scan_json_records_non_sensitive_provenance(tmp_path: Path):
     assert str(source) not in json.dumps(provenance)
 
 
+def test_comparison_schema_rule_status_requires_appropriate_fingerprint_presence():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    clauses = json.loads(load_schema_text("comparison"))["allOf"]
+    known, unknown = clauses[-2:]
+    assert known["if"]["properties"]["rules_status"] == {"enum": ["SAME", "CHANGED"]}
+    assert known["if"]["required"] == ["rules_status"]
+    for side in ("before", "after"):
+        assert known["then"]["properties"][side]["properties"]["rules_sha256"] == {
+            "minLength": 64
+        }
+
+    assert unknown["if"] == {
+        "properties": {"rules_status": {"const": "UNKNOWN"}},
+        "required": ["rules_status"],
+    }
+    assert unknown["then"]["anyOf"] == [
+        {"properties": {"before": {"properties": {"rules_sha256": {"const": ""}}}}},
+        {"properties": {"after": {"properties": {"rules_sha256": {"const": ""}}}}},
+    ]
+
+    for before_hash, after_hash, expected_status in (
+        ("", "", "UNKNOWN"),
+        ("a" * 64, "", "UNKNOWN"),
+        ("", "b" * 64, "UNKNOWN"),
+        ("a" * 64, "a" * 64, "SAME"),
+        ("a" * 64, "b" * 64, "CHANGED"),
+    ):
+        before = {"files": [], "errors": [], "provenance": {"rules_sha256": before_hash}}
+        after = {"files": [], "errors": [], "provenance": {"rules_sha256": after_hash}}
+        result = compare_payloads(before, after)
+        assert result["rules_status"] == expected_status
+        assert result["before"]["rules_sha256"] == before_hash
+        assert result["after"]["rules_sha256"] == after_hash
+
+
 def test_compare_reports_rule_context_status():
     from labvault_scout.compare import compare_payloads
 
