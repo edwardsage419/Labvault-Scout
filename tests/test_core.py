@@ -3361,7 +3361,17 @@ def test_scan_schema_file_count_matches_file_presence():
             },
             "required": ["summary"],
         },
-        "then": {"properties": {"files": {"maxItems": 0}}},
+        "then": {
+            "properties": {
+                "files": {"maxItems": 0},
+                "summary": {
+                    "properties": {
+                        "risk_counts": {"maxProperties": 0},
+                        "priority_counts": {"maxProperties": 0},
+                    },
+                },
+            },
+        },
         "else": {"properties": {"files": {"minItems": 1}}},
     }
 
@@ -3378,6 +3388,42 @@ def test_scan_schema_file_count_matches_file_presence():
         assert summary["file_count"] == expected
         assert (summary["file_count"] == 0) == (len(rows) == 0)
 
+
+
+
+def test_scan_schema_empty_file_list_has_empty_category_counts():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    zero_files_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    count_properties = zero_files_clause["then"]["properties"]["summary"]["properties"]
+    assert count_properties == {
+        "risk_counts": {"maxProperties": 0},
+        "priority_counts": {"maxProperties": 0},
+    }
+
+    empty = build_summary([], [], [])
+    assert empty["file_count"] == 0
+    assert empty["risk_counts"] == {}
+    assert empty["priority_counts"] == {}
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    populated = build_summary([row], [], [])
+    assert populated["file_count"] == 1
+    assert populated["risk_counts"] == {"SAFE": 1}
+    assert populated["priority_counts"] == {"LOW": 1}
 
 
 def test_scan_schema_summary_count_keys_match_file_enums():
