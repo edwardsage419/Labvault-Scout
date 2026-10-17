@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import html
 import json
+import math
 import re
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
@@ -183,12 +184,27 @@ def _reject_duplicate_scan_report_keys(pairs: list[tuple[str, object]]) -> dict:
     return result
 
 
+def _reject_nonstandard_scan_json_constant(value: str) -> None:
+    """Reject NaN and Infinity, which are not valid JSON numbers."""
+    raise ValueError(f"Non-standard scan report JSON constant: {value}")
+
+
+def _parse_finite_scan_json_float(value: str) -> float:
+    """Reject JSON floating-point values that overflow to infinity."""
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("Scan report JSON number exceeds floating-point range")
+    return parsed
+
+
 def load_scan_report(path: Path) -> dict:
     """Load a LabVault Scout scan report with version-aware validation."""
     try:
         payload = json.loads(
             path.read_text(encoding="utf-8"),
             object_pairs_hook=_reject_duplicate_scan_report_keys,
+            parse_constant=_reject_nonstandard_scan_json_constant,
+            parse_float=_parse_finite_scan_json_float,
         )
     except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"Cannot read scan report: {path}") from exc

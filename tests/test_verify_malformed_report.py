@@ -92,10 +92,13 @@ def test_load_scan_report_wraps_json_parser_recursion_error(
     original_loads = json.loads
 
     def raise_recursion_error(
-        text: str, *, object_pairs_hook: object = None
+        text: str, *, object_pairs_hook: object = None,
+        parse_constant: object = None, parse_float: object = None
     ) -> object:
         assert text.startswith("[" * 4000)
         assert callable(object_pairs_hook)
+        assert callable(parse_constant)
+        assert callable(parse_float)
         raise RecursionError("JSON nesting exceeds parser recursion limit")
 
     with monkeypatch.context() as patched:
@@ -126,3 +129,55 @@ def test_load_scan_report_wraps_json_parser_recursion_error(
     assert result["status"] == "INVALID"
     assert result["exit_code"] == 2
     assert "Cannot read scan report" in result["error"]
+
+
+@pytest.mark.parametrize(
+    ("number", "expected_cause"),
+    [
+        ("NaN", "Non-standard scan report JSON constant: NaN"),
+        ("Infinity", "Non-standard scan report JSON constant: Infinity"),
+        ("-Infinity", "Non-standard scan report JSON constant: -Infinity"),
+        ("1e999", "Scan report JSON number exceeds floating-point range"),
+        ("-1e999", "Scan report JSON number exceeds floating-point range"),
+    ],
+)
+def test_invalid_nonfinite_scan_number_is_rejected_by_verify_and_compare(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    number: str,
+    expected_cause: str,
+) -> None:
+    bad = tmp_path / "invalid-numeric-report.json"
+    bad.write_text(
+        '{"files": [{"path": "data.csv", "size": ' + number + '}], "errors": []}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Cannot read scan report") as exc_info:
+        load_scan_report(bad)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert expected_cause in str(exc_info.value.__cause__)
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    result = json.loads(captured.out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read scan report" in result["error"]
+
+    good = tmp_path / "good-legacy-report.json"
+    good.write_text('{"files": [{"path": "data.csv", "size": 1}], "errors": []}', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "compare", str(bad), str(good)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Cannot read scan report" in captured.err
+    assert "Traceback" not in captured.err
