@@ -139,3 +139,19 @@ def test_load_bundle_manifest_wraps_json_parser_recursion_error(
     monkeypatch.setattr(json, "loads", raise_recursion_error)
     with pytest.raises(ValueError, match="Cannot read bundle manifest"):
         load_bundle_manifest(tmp_path)
+
+
+def test_load_bundle_manifest_wraps_excessive_integer_digits(tmp_path: Path) -> None:
+    number = "9" * 5000
+    try:
+        json.loads(number)
+    except ValueError:
+        pass
+    else:
+        pytest.skip("JSON parser does not enforce an integer digit limit")
+
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_text(number, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest"):
+        load_bundle_manifest(tmp_path)
