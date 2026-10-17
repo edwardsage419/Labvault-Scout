@@ -143,6 +143,51 @@ def test_direct_integrity_rejects_invalid_legacy_file_paths(
         load_scan_report(report)
 
 
+
+def test_direct_integrity_rejects_duplicate_legacy_file_paths(tmp_path: Path) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, duplicate_groups
+
+    rows = [
+        {
+            "path": path,
+            "size": 1,
+            "sha256": "a" * 64,
+            "risk": "SAFE",
+            "priority": "LOW",
+            "open_copy": "",
+        }
+        for path in ("first.csv", "second.csv")
+    ]
+    valid = {
+        "files": rows,
+        "errors": [],
+        "summary": build_summary(rows, [], duplicate_groups(rows)),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert verify_report(valid)["status"] == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][1]["path"] = malformed["files"][0]["path"]
+    malformed["summary"] = build_summary(
+        malformed["files"], [], duplicate_groups(malformed["files"])
+    )
+    assert malformed["summary"]["duplicate_group_count"] == 1
+    assert report_integrity_status(malformed) == "MISMATCH"
+    result = verify_report(malformed)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+
+    report = tmp_path / "duplicate_legacy_paths.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(ValueError, match="Duplicate path"):
+        load_scan_report(report)
+    with pytest.raises(ValueError, match="Path collision after legacy normalization"):
+        compare_payloads(valid, malformed)
+
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:

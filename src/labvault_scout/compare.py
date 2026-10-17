@@ -324,9 +324,13 @@ def report_integrity_status(payload: dict) -> str:
 
     if not isinstance(payload.get("files"), list):
         return "MISMATCH"
+    seen_paths: set[str] = set()
     for row in payload["files"]:
         if not isinstance(row, dict) or not isinstance(row.get("path"), str) or not row["path"]:
             return "MISMATCH"
+        if row["path"] in seen_paths:
+            return "MISMATCH"
+        seen_paths.add(row["path"])
     if "errors" in payload and not isinstance(payload["errors"], list):
         return "MISMATCH"
 
@@ -405,7 +409,7 @@ def report_identity(payload: dict) -> dict:
     inventory = summary.get("inventory_sha256", "") if isinstance(summary, dict) else ""
     try:
         _, legacy_paths_normalized = _file_index(payload)
-    except (AttributeError, KeyError, TypeError):
+    except (AttributeError, KeyError, TypeError, ValueError):
         if report_integrity_status(payload) != "MISMATCH":
             raise
         legacy_paths_normalized = False
