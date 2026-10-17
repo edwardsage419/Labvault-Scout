@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from labvault_scout.bundle import load_bundle_manifest, verify_bundle
 from labvault_scout.cli import scan
 from labvault_scout.hashing import sha256_file
@@ -272,4 +274,45 @@ def test_verify_bundle_reports_io_error_if_artifact_symlink_check_fails(
         "path": "report.html",
         "issue": "IO_ERROR",
         "error": "PermissionError",
+    } in result["problems"]
+
+
+def test_verify_bundle_detects_symlink_swap_after_second_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    external = output / "original-report.tmp"
+    original_hash = bundle_module.sha256_file
+    hash_calls = 0
+    swapped = False
+
+    def swapping_after_second_hash(path: Path) -> str:
+        nonlocal hash_calls, swapped
+        digest = original_hash(path)
+        if path == target:
+            hash_calls += 1
+            if hash_calls == 2:
+                target.replace(external)
+                try:
+                    target.symlink_to(external)
+                except (OSError, NotImplementedError):
+                    pytest.skip("Symlink creation is unavailable")
+                swapped = True
+        return digest
+
+    monkeypatch.setattr(bundle_module, "sha256_file", swapping_after_second_hash)
+
+    result = bundle_module.verify_bundle(output)
+
+    assert swapped
+    assert hash_calls == 2
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "report.html",
+        "issue": "IO_ERROR",
+        "error": "FileChangedDuringScan",
     } in result["problems"]

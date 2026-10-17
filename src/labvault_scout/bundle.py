@@ -350,7 +350,7 @@ def verify_bundle(output_dir: Path) -> dict:
             })
             continue
         try:
-            final_stat = path.stat()
+            final_stat = path.lstat()
         except FileNotFoundError:
             problems.append({"path": member, "issue": "MISSING"})
             continue
