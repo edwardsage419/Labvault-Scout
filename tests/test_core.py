@@ -1997,6 +1997,54 @@ def test_comparison_schema_zero_change_count_matches_empty_changes():
     assert len(added["changes"]) == 1
 
 
+
+def test_comparison_schema_nonzero_changes_require_category_count():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("change_count") == {"minimum": 1}
+    )
+    categories = (
+        "added_count",
+        "removed_count",
+        "moved_count",
+        "content_changed_count",
+        "assessment_changed_count",
+    )
+    assert clause == {
+        "if": {
+            "properties": {
+                "summary": {
+                    "properties": {"change_count": {"minimum": 1}},
+                    "required": ["change_count"],
+                },
+            },
+            "required": ["summary"],
+        },
+        "then": {
+            "properties": {
+                "summary": {
+                    "anyOf": [
+                        {"properties": {name: {"minimum": 1}}}
+                        for name in categories
+                    ],
+                },
+            },
+        },
+    }
+
+    empty = {"files": [], "errors": []}
+    one_file = {"files": [{"path": "data.csv", "sha256": "a" * 64}], "errors": []}
+    for before, after in ((empty, one_file), (one_file, empty)):
+        summary = compare_payloads(before, after)["summary"]
+        assert summary["change_count"] == 1
+        assert any(summary[name] > 0 for name in categories)
+
+
 def test_comparison_schema_assessment_changes_have_real_differences():
     from labvault_scout.schema_registry import load_schema_text
 
