@@ -227,3 +227,53 @@ def test_compare_legacy_out_of_range_priority_score_uses_category_fallback(
     assert change["change_type"] == "ASSESSMENT_CHANGED"
     assert change["priority_direction"] == expected_direction
     assert change["priority_delta"] == expected_delta
+
+
+@pytest.mark.parametrize(
+    ("size_text", "expected_bytes"),
+    [
+        ("7.9", 0),
+        ("1e3", 0),
+        ("1_0", 0),
+        (" +7", 0),
+        (" 7 ", 0),
+        ("٧", 0),
+        ("7", 7),
+        ("007", 7),
+    ],
+)
+def test_compare_legacy_size_strings_require_ascii_decimal_digits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    size_text: str,
+    expected_bytes: int,
+) -> None:
+    before = tmp_path / "before-legacy.json"
+    after = tmp_path / "after-legacy.json"
+    output = tmp_path / "comparison"
+    before.write_text(
+        json.dumps({
+            "files": [{"path": "data.csv", "sha256": "same", "size": size_text}],
+            "errors": [],
+        }),
+        encoding="utf-8",
+    )
+    after.write_text(
+        json.dumps({
+            "files": [{"path": "data.csv", "sha256": "same", "size": "7"}],
+            "errors": [],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys, "argv",
+        ["labvault-scout", "compare", str(before), str(after), "-o", str(output)],
+    )
+
+    main()
+
+    result = json.loads((output / "comparison.json").read_text(encoding="utf-8"))
+    assert result["before"]["metrics"]["file_count"] == 1
+    assert result["before"]["metrics"]["total_bytes"] == expected_bytes
+    assert result["after"]["metrics"]["total_bytes"] == 7
+    assert result["metrics_delta"]["total_bytes"] == 7 - expected_bytes

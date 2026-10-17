@@ -260,6 +260,9 @@ def scan_metrics(payload: dict) -> dict:
     total_bytes = 0
     for row in payload["files"]:
         raw_size = row.get("size", 0)
+        if isinstance(raw_size, str) and not re.fullmatch(r"[0-9]+", raw_size):
+            # Do not let int() accept whitespace, signs, underscores, or Unicode digits.
+            raw_size = None
         if not isinstance(raw_size, bool) and not (
             isinstance(raw_size, float) and not raw_size.is_integer()
         ):
