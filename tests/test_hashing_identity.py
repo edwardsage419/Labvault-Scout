@@ -78,6 +78,42 @@ def test_hash_rejects_symlink_to_same_identity_before_read(
         sha256_with_head(target, expected_stat=expected_stat)
 
 
+@pytest.mark.skipif(
+    not hasattr(os, "O_NOFOLLOW"),
+    reason="O_NOFOLLOW is required to prevent following a swapped symlink",
+)
+def test_hash_never_opens_symlink_target_after_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import errno
+
+    target = tmp_path / "target.bin"
+    target.write_bytes(b"inside")
+    moved = tmp_path / "moved.bin"
+    original_open = hashing.os.open
+    swapped = False
+
+    def swap_to_symlink_before_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if path == target and not swapped:
+            target.rename(moved)
+            try:
+                target.symlink_to(moved)
+            except (OSError, NotImplementedError):
+                pytest.skip("Symlink creation is unavailable")
+            swapped = True
+            assert flags & os.O_NOFOLLOW, "Hash opening must not follow symlinks"
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(hashing.os, "open", swap_to_symlink_before_open)
+
+    with pytest.raises(OSError) as exc_info:
+        sha256_with_head(target)
+
+    assert swapped
+    assert exc_info.value.errno == errno.ELOOP
+
+
 def test_hash_ignores_ctime_only_difference_between_path_and_open_handle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
