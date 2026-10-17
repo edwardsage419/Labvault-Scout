@@ -3243,6 +3243,33 @@ def test_verification_schema_status_integrity_constraints_match_runtime():
             assert properties["integrity_status"] == {"const": integrity}
 
 
+
+def test_verification_schema_inventory_fingerprint_presence_matches_runtime(tmp_path: Path):
+    from labvault_scout.compare import load_scan_report, verify_report
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("verification"))["oneOf"][0]
+    options = {
+        option["properties"]["status"]["const"]: option["properties"]
+        for option in schema["allOf"][0]["oneOf"]
+    }
+    assert options["VERIFIED"]["inventory_sha256"] == {"minLength": 64}
+    assert options["UNKNOWN"]["inventory_sha256"] == {"const": ""}
+
+    source = tmp_path / "verification_fingerprint_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x,1", encoding="utf-8")
+    output = tmp_path / "verification_fingerprint_report"
+    scan(source, output)
+    verified = verify_report(load_scan_report(output / "scan.json"))
+    assert verified["status"] == "VERIFIED"
+    assert len(verified["inventory_sha256"]) == 64
+
+    unknown = verify_report({"files": [], "errors": []})
+    assert unknown["status"] == "UNKNOWN"
+    assert unknown["inventory_sha256"] == ""
+
+
 def test_verification_schema_hash_fields_match_runtime_normalization():
     from labvault_scout.schema_registry import load_schema_text
 

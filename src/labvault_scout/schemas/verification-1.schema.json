@@ -97,6 +97,9 @@
                 },
                 "integrity_status": {
                   "const": "VERIFIED"
+                },
+                "inventory_sha256": {
+                  "minLength": 64
                 }
               },
               "required": [
@@ -117,6 +120,9 @@
                 },
                 "integrity_status": {
                   "const": "UNKNOWN"
+                },
+                "inventory_sha256": {
+                  "const": ""
                 }
               },
               "required": [
