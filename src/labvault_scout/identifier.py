@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import zipfile
+import zlib
 from pathlib import Path
 from typing import BinaryIO
 
@@ -397,7 +398,7 @@ def inspect_gzip_nifti(path: Path) -> str:
         with gzip.open(path, "rb") as handle:
             header = handle.read(348)
         return nifti1_container_from_header(header)
-    except (OSError, EOFError):
+    except (gzip.BadGzipFile, EOFError, zlib.error):
         return "Invalid GZIP container"
 
 

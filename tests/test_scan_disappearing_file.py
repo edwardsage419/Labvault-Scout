@@ -296,3 +296,58 @@ def test_scan_records_hdf5_container_read_error_without_false_format_claim(
     verification = verify_report(payload)
     assert verification["status"] == "VERIFIED"
     assert verification["error_count"] == 1
+
+
+def test_scan_records_gzip_nifti_inspection_io_error_and_keeps_valid_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import gzip
+
+    import labvault_scout.identifier as identifier
+    from labvault_scout.compare import load_scan_report, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    blocked = source / "blocked.nii.gz"
+    blocked.write_bytes(gzip.compress(bytes(348)))
+    (source / "healthy.csv").write_text("sample data", encoding="utf-8")
+    output = tmp_path / "report"
+
+    original_open = identifier.gzip.open
+
+    def fail_gzip_open(path, *args, **kwargs):
+        if Path(path) == blocked:
+            raise PermissionError("GZIP content read denied")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(identifier.gzip, "open", fail_gzip_open)
+
+    assert cli.scan(source, output) == 1
+    payload = load_scan_report(output / "scan.json")
+    assert [row["path"] for row in payload["files"]] == ["healthy.csv"]
+    assert payload["errors"] == [
+        {"path": "blocked.nii.gz", "error": "PermissionError"}
+    ]
+    assert payload["summary"]["file_count"] == 1
+    assert payload["summary"]["error_count"] == 1
+    verification = verify_report(payload)
+    assert verification["status"] == "VERIFIED"
+    assert verification["error_count"] == 1
+
+
+def test_scan_invalid_gzip_stream_remains_format_evidence(tmp_path: Path) -> None:
+    from labvault_scout.compare import load_scan_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    # GZIP magic followed by an invalid compression method.
+    (source / "corrupt.nii.gz").write_bytes(bytes.fromhex("1f8b00") + bytes(32))
+    output = tmp_path / "report"
+
+    assert cli.scan(source, output) == 1
+
+    payload = load_scan_report(output / "scan.json")
+    assert payload["errors"] == []
+    assert [row["path"] for row in payload["files"]] == ["corrupt.nii.gz"]
+    assert payload["files"][0]["signature"] == "GZIP"
+    assert payload["files"][0]["container_type"] == "Invalid GZIP container"
