@@ -2620,6 +2620,60 @@ def test_schema1_checksum_is_required_for_direct_integrity_checks(tmp_path: Path
     assert report_integrity_status(legacy) == "VERIFIED"
 
 
+
+def test_schema1_direct_integrity_rejects_invalid_structure_with_valid_checksum(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import (
+        compare_payloads, load_scan_report, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "schema1_structure_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\\n1\\n", encoding="utf-8")
+    output = tmp_path / "schema1_structure_report"
+    scan(source, output)
+
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert report_integrity_status(original) == "VERIFIED"
+
+    cases = []
+    bad_tool = json.loads(json.dumps(original))
+    bad_tool["tool"]["name"] = "Other Tool"
+    cases.append(bad_tool)
+
+    bad_provenance = json.loads(json.dumps(original))
+    bad_provenance["provenance"]["source_access"] = "read-write"
+    cases.append(bad_provenance)
+
+    bad_score = json.loads(json.dumps(original))
+    bad_score["files"][0]["priority_score"] = 101
+    cases.append(bad_score)
+
+    extra_field = json.loads(json.dumps(original))
+    extra_field["files"][0]["unexpected"] = "invalid"
+    cases.append(extra_field)
+
+    missing_summary = json.loads(json.dumps(original))
+    missing_summary["summary"] = {}
+    cases.append(missing_summary)
+
+    for index, malformed in enumerate(cases):
+        malformed["report_sha256"] = report_payload_sha256(malformed)
+        assert report_integrity_status(malformed) == "MISMATCH"
+        checked = verify_report(malformed)
+        assert checked["status"] == "FAILED"
+        assert checked["exit_code"] == 2
+        comparison = compare_payloads(original, malformed)
+        assert comparison["comparison_status"] == "PARTIAL"
+        assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+        path = tmp_path / f"bad_schema1_structure_{index}.json"
+        path.write_text(json.dumps(malformed), encoding="utf-8")
+        with pytest.raises(ValueError):
+            load_scan_report(path)
+
+
 def test_legacy_report_integrity_is_unknown_not_failure():
     from labvault_scout.compare import compare_payloads
 

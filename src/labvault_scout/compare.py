@@ -312,6 +312,12 @@ def metrics_delta(before: dict, after: dict) -> dict:
 
 def report_integrity_status(payload: dict) -> str:
     """Validate embedded inventory and summary consistency when available."""
+    if payload.get("schema_version") == "1":
+        try:
+            _validate_schema1_payload(payload)
+        except (ValueError, TypeError, KeyError):
+            return "MISMATCH"
+
     summary = payload.get("summary")
     if not isinstance(summary, dict):
         return "UNKNOWN"
