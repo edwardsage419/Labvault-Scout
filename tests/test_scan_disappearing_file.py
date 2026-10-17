@@ -254,3 +254,45 @@ def test_scan_records_zip_container_read_error_and_preserves_report_integrity(
     verification = verify_report(payload)
     assert verification["status"] == "VERIFIED"
     assert verification["error_count"] == 1
+
+
+def test_scan_records_hdf5_container_read_error_without_false_format_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from labvault_scout.compare import load_scan_report, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    blocked = source / "blocked.h5"
+    blocked.write_bytes(
+        b"U" * 512 + bytes.fromhex("894844460d0a1a0a") + bytes([2]) + bytes(32)
+    )
+    (source / "healthy.csv").write_text("sample data", encoding="utf-8")
+    output = tmp_path / "report"
+
+    original_open = Path.open
+    blocked_opens = 0
+
+    def deny_second_hdf5_open(path: Path, *args, **kwargs):
+        nonlocal blocked_opens
+        if path == blocked:
+            blocked_opens += 1
+            if blocked_opens == 2:
+                raise PermissionError("HDF5 superblock read denied")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny_second_hdf5_open)
+
+    assert cli.scan(source, output) == 1
+    assert blocked_opens == 2
+
+    payload = load_scan_report(output / "scan.json")
+    assert [row["path"] for row in payload["files"]] == ["healthy.csv"]
+    assert payload["errors"] == [
+        {"path": "blocked.h5", "error": "PermissionError"}
+    ]
+    assert payload["summary"]["file_count"] == 1
+    assert payload["summary"]["error_count"] == 1
+    verification = verify_report(payload)
+    assert verification["status"] == "VERIFIED"
+    assert verification["error_count"] == 1

@@ -263,16 +263,13 @@ def hdf5_container_from_header(header: bytes) -> str:
 
 def inspect_hdf5_container(path: Path) -> str:
     """Validate HDF5 superblock evidence without parsing datasets."""
-    try:
-        size = path.stat().st_size
-        with path.open("rb") as handle:
-            offset = _find_hdf5_signature_offset(handle, size)
-            if offset is None:
-                return ""
-            handle.seek(offset)
-            return hdf5_container_from_header(handle.read(16))
-    except OSError:
-        return "Unreadable HDF5 container"
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        offset = _find_hdf5_signature_offset(handle, size)
+        if offset is None:
+            return ""
+        handle.seek(offset)
+        return hdf5_container_from_header(handle.read(16))
 
 
 def spss_container_from_header(header: bytes, size: int) -> str:
