@@ -3312,7 +3312,12 @@ def test_scan_schema_error_count_matches_error_presence():
     from labvault_scout.schema_registry import load_schema_text
 
     schema = json.loads(load_schema_text("scan"))
-    assert schema["allOf"] == [{
+    error_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("error_count") == {"const": 0}
+    )
+    assert error_clause == {
         "if": {
             "properties": {
                 "summary": {
@@ -3324,7 +3329,7 @@ def test_scan_schema_error_count_matches_error_presence():
         },
         "then": {"properties": {"errors": {"maxItems": 0}}},
         "else": {"properties": {"errors": {"minItems": 1}}},
-    }]
+    }
 
     for errors, expected in (
         ([], 0),
@@ -3333,6 +3338,45 @@ def test_scan_schema_error_count_matches_error_presence():
         summary = build_summary([], errors, [])
         assert summary["error_count"] == expected
         assert (summary["error_count"] == 0) == (len(errors) == 0)
+
+
+
+def test_scan_schema_file_count_matches_file_presence():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    file_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    assert file_clause == {
+        "if": {
+            "properties": {
+                "summary": {
+                    "properties": {"file_count": {"const": 0}},
+                    "required": ["file_count"],
+                },
+            },
+            "required": ["summary"],
+        },
+        "then": {"properties": {"files": {"maxItems": 0}}},
+        "else": {"properties": {"files": {"minItems": 1}}},
+    }
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    for rows, expected in (([], 0), ([row], 1)):
+        summary = build_summary(rows, [], [])
+        assert summary["file_count"] == expected
+        assert (summary["file_count"] == 0) == (len(rows) == 0)
 
 
 def test_scan_schema_enforces_relative_posix_paths():

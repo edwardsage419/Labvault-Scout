@@ -353,6 +353,39 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "file_count": {
+                "const": 0
+              }
+            },
+            "required": [
+              "file_count"
+            ]
+          }
+        },
+        "required": [
+          "summary"
+        ]
+      },
+      "then": {
+        "properties": {
+          "files": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "files": {
+            "minItems": 1
+          }
+        }
+      }
     }
   ]
 }
