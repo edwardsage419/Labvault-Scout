@@ -420,7 +420,7 @@ def inspect_zip_container(path: Path) -> str:
                 try:
                     with archive.open("mimetype") as member:
                         media_type = member.read(256).decode("ascii", errors="strict").strip()
-                except (KeyError, UnicodeDecodeError, RuntimeError, OSError):
+                except (KeyError, UnicodeDecodeError, RuntimeError):
                     media_type = ""
                 odf_types = {
                     "application/vnd.oasis.opendocument.spreadsheet": "OpenDocument Spreadsheet",

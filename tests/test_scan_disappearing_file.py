@@ -351,3 +351,45 @@ def test_scan_invalid_gzip_stream_remains_format_evidence(tmp_path: Path) -> Non
     assert [row["path"] for row in payload["files"]] == ["corrupt.nii.gz"]
     assert payload["files"][0]["signature"] == "GZIP"
     assert payload["files"][0]["container_type"] == "Invalid GZIP container"
+
+
+def test_scan_records_zip_mimetype_member_io_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import zipfile
+
+    import labvault_scout.identifier as identifier
+    from labvault_scout.compare import load_scan_report, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    blocked = source / "unreadable.ods"
+    with zipfile.ZipFile(blocked, "w") as archive:
+        archive.writestr(
+            "mimetype",
+            "application/vnd.oasis.opendocument.spreadsheet",
+        )
+    (source / "healthy.csv").write_text("sample data", encoding="utf-8")
+    output = tmp_path / "report"
+
+    original_open = identifier.zipfile.ZipFile.open
+
+    def fail_mimetype_open(archive, member, *args, **kwargs):
+        if Path(archive.filename) == blocked and member == "mimetype":
+            raise PermissionError("ZIP mimetype member read denied")
+        return original_open(archive, member, *args, **kwargs)
+
+    monkeypatch.setattr(identifier.zipfile.ZipFile, "open", fail_mimetype_open)
+
+    assert cli.scan(source, output) == 1
+
+    payload = load_scan_report(output / "scan.json")
+    assert [row["path"] for row in payload["files"]] == ["healthy.csv"]
+    assert payload["errors"] == [
+        {"path": "unreadable.ods", "error": "PermissionError"}
+    ]
+    assert payload["summary"]["file_count"] == 1
+    assert payload["summary"]["error_count"] == 1
+    verified = verify_report(payload)
+    assert verified["status"] == "VERIFIED"
+    assert verified["error_count"] == 1
