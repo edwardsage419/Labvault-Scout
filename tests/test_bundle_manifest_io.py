@@ -219,3 +219,59 @@ def test_load_bundle_manifest_rejects_float_overflow(
     assert "Bundle manifest JSON number exceeds floating-point range" in str(
         exc_info.value.__cause__
     )
+
+
+@pytest.mark.parametrize("number", ["1e-999", "-1e-999", "1E-999"])
+def test_load_bundle_manifest_rejects_float_underflow(
+    tmp_path: Path, number: str
+) -> None:
+    from labvault_scout.bundle import BUNDLE_FILES, manifest_payload_sha256
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.2"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    encoded = json.dumps(payload)
+    assert '"size": 0' in encoded
+    malformed = encoded.replace('"size": 0', f'"size": {number}', 1)
+    (tmp_path / "bundle_manifest.json").write_text(malformed, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest") as exc_info:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "Bundle manifest JSON number underflows floating-point range" in str(
+        exc_info.value.__cause__
+    )
+
+
+def test_load_bundle_manifest_does_not_classify_exact_float_zero_as_underflow(
+    tmp_path: Path,
+) -> None:
+    from labvault_scout.bundle import BUNDLE_FILES, manifest_payload_sha256
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.2"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in BUNDLE_FILES
+        ],
+    }
+    payload["files"][0]["size"] = 0.0
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    encoded = json.dumps(payload)
+    assert '"size": 0.0' in encoded
+    (tmp_path / "bundle_manifest.json").write_text(
+        encoded.replace('"size": 0.0', '"size": 0e-999', 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest size"):
+        load_bundle_manifest(tmp_path)

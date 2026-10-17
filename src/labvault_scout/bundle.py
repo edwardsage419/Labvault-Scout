@@ -155,10 +155,13 @@ def _reject_nonstandard_manifest_constant(value: str) -> None:
 
 
 def _parse_finite_manifest_float(value: str) -> float:
-    """Reject JSON numbers outside the finite floating-point range."""
+    """Reject JSON numbers that overflow or underflow to zero."""
     parsed = float(value)
     if not math.isfinite(parsed):
         raise ValueError("Bundle manifest JSON number exceeds floating-point range")
+    significand = value.split("e", 1)[0].split("E", 1)[0]
+    if parsed == 0.0 and any(digit in "123456789" for digit in significand):
+        raise ValueError("Bundle manifest JSON number underflows floating-point range")
     return parsed
 
 
