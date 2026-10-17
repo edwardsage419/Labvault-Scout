@@ -841,6 +841,39 @@
           }
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "change_count": {
+                "const": 0
+              }
+            },
+            "required": [
+              "change_count"
+            ]
+          }
+        },
+        "required": [
+          "summary"
+        ]
+      },
+      "then": {
+        "properties": {
+          "changes": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "changes": {
+            "minItems": 1
+          }
+        }
+      }
     }
   ]
 }

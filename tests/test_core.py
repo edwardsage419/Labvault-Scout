@@ -1901,6 +1901,39 @@ def test_comparison_schema_complete_requires_supported_error_free_sources():
         assert partial["comparison_status"] == "PARTIAL"
 
 
+def test_comparison_schema_zero_change_count_matches_empty_changes():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    zero_clause = schema["allOf"][-1]
+    assert zero_clause == {
+        "if": {
+            "properties": {
+                "summary": {
+                    "properties": {"change_count": {"const": 0}},
+                    "required": ["change_count"],
+                },
+            },
+            "required": ["summary"],
+        },
+        "then": {"properties": {"changes": {"maxItems": 0}}},
+        "else": {"properties": {"changes": {"minItems": 1}}},
+    }
+
+    empty = {"files": [], "errors": []}
+    unchanged = compare_payloads(empty, empty)
+    assert unchanged["summary"]["change_count"] == 0
+    assert unchanged["changes"] == []
+
+    added = compare_payloads(
+        empty,
+        {"files": [{"path": "data.csv", "sha256": "a" * 64}], "errors": []},
+    )
+    assert added["summary"]["change_count"] == 1
+    assert len(added["changes"]) == 1
+
+
 def test_comparison_schema_assessment_changes_have_real_differences():
     from labvault_scout.schema_registry import load_schema_text
 
