@@ -420,6 +420,36 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "file_count": {
+                "const": 1
+              }
+            },
+            "required": [
+              "file_count"
+            ]
+          }
+        },
+        "required": [
+          "summary"
+        ]
+      },
+      "then": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "duplicate_group_count": {
+                "const": 0
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }

@@ -3543,6 +3543,54 @@ def test_scan_schema_empty_scan_has_no_duplicate_groups():
     assert two_copies["duplicate_group_count"] == 1
 
 
+
+def test_scan_schema_single_file_has_no_duplicate_groups():
+    from labvault_scout.report import build_summary, duplicate_groups
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    one_file_clauses = [
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 1}
+    ]
+    assert one_file_clauses == [{
+        "if": {
+            "properties": {
+                "summary": {
+                    "properties": {"file_count": {"const": 1}},
+                    "required": ["file_count"],
+                },
+            },
+            "required": ["summary"],
+        },
+        "then": {
+            "properties": {
+                "summary": {
+                    "properties": {"duplicate_group_count": {"const": 0}},
+                },
+            },
+        },
+    }]
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    single = build_summary([row], [], duplicate_groups([row]))
+    assert single["file_count"] == 1
+    assert single["duplicate_group_count"] == 0
+
+    copies = [row, {**row, "path": "copy.csv"}]
+    duplicated = build_summary(copies, [], duplicate_groups(copies))
+    assert duplicated["file_count"] == 2
+    assert duplicated["duplicate_group_count"] == 1
+
+
 def test_scan_schema_summary_count_keys_match_file_enums():
     from labvault_scout.report import build_summary
     from labvault_scout.schema_registry import load_schema_text
