@@ -144,3 +144,38 @@ def test_scan_records_directory_symlink_check_error_and_continues(
     ]
     assert payload["summary"]["file_count"] == 1
     assert payload["summary"]["error_count"] == 1
+
+
+def test_scan_excludes_report_directory_when_path_resolution_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "healthy.bin").write_bytes(b"source data")
+    output = source / "report"
+    output.mkdir()
+    (output / "old-report.bin").write_bytes(b"previous report")
+
+    original_resolve = Path.resolve
+    output_resolve_calls = 0
+
+    def failing_report_resolve(path: Path, *args, **kwargs) -> Path:
+        nonlocal output_resolve_calls
+        if path == output:
+            output_resolve_calls += 1
+            # scan() and iter_files() first canonicalize the output directory.
+            if output_resolve_calls > 2:
+                raise PermissionError("cannot resolve existing report directory")
+        elif output in path.parents:
+            raise PermissionError("cannot resolve file in report directory")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", failing_report_resolve)
+
+    assert cli.scan(source, output) == 1
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert [row["path"] for row in payload["files"]] == ["healthy.bin"]
+    assert payload["errors"] == []
+    assert payload["summary"]["file_count"] == 1
+    assert payload["summary"]["error_count"] == 0

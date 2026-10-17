@@ -9,6 +9,9 @@ from typing import Callable, Iterator
 def _is_within(path: Path, excluded: Path | None) -> bool:
     if excluded is None:
         return False
+    # A known report subtree remains excluded even if resolving it fails.
+    if path.is_relative_to(excluded):
+        return True
     try:
         path.resolve().relative_to(excluded)
         return True
