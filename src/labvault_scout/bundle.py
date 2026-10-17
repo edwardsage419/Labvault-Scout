@@ -317,7 +317,7 @@ def verify_bundle(output_dir: Path) -> dict:
             })
             continue
         try:
-            actual_hash = sha256_file(path)
+            actual_hash = sha256_file(path, expected_stat=checked_stat)
         except FileNotFoundError:
             problems.append({"path": member, "issue": "MISSING"})
             continue
@@ -337,7 +337,7 @@ def verify_bundle(output_dir: Path) -> dict:
             })
             continue
         try:
-            confirmed_hash = sha256_file(path)
+            confirmed_hash = sha256_file(path, expected_stat=checked_stat)
         except FileNotFoundError:
             problems.append({"path": member, "issue": "MISSING"})
             continue

@@ -163,9 +163,9 @@ def test_verify_bundle_detects_artifact_changed_after_initial_hash(
     original_sha256_file = bundle_module.sha256_file
     changed = False
 
-    def changing_after_hash(path: Path) -> str:
+    def changing_after_hash(path: Path, **kwargs) -> str:
         nonlocal changed
-        digest = original_sha256_file(path)
+        digest = original_sha256_file(path, **kwargs)
         if path == target and not changed:
             original = path.read_bytes()
             replacement = b"0" if original[:1] != b"0" else b"1"
@@ -200,9 +200,9 @@ def test_verify_bundle_detects_same_content_file_replacement_between_hashes(
     original_hash = bundle_module.sha256_file
     replaced = False
 
-    def replacing_after_first_hash(path: Path) -> str:
+    def replacing_after_first_hash(path: Path, **kwargs) -> str:
         nonlocal replaced
-        digest = original_hash(path)
+        digest = original_hash(path, **kwargs)
         if path == target and not replaced:
             replacement = output / "replacement.tmp"
             replacement.write_bytes(target.read_bytes())
@@ -233,10 +233,10 @@ def test_verify_bundle_reports_missing_if_artifact_disappears_before_hash(
     target = output / "report.html"
     original_sha256_file = bundle_module.sha256_file
 
-    def disappearing_sha256_file(path: Path) -> str:
+    def disappearing_sha256_file(path: Path, **kwargs) -> str:
         if path == target:
             path.unlink()
-        return original_sha256_file(path)
+        return original_sha256_file(path, **kwargs)
 
     monkeypatch.setattr(bundle_module, "sha256_file", disappearing_sha256_file)
 
@@ -256,10 +256,10 @@ def test_verify_bundle_reports_io_error_if_artifact_hash_cannot_be_read(
     target = output / "report.html"
     original_sha256_file = bundle_module.sha256_file
 
-    def unreadable_sha256_file(path: Path) -> str:
+    def unreadable_sha256_file(path: Path, **kwargs) -> str:
         if path == target:
             raise PermissionError("denied")
-        return original_sha256_file(path)
+        return original_sha256_file(path, **kwargs)
 
     monkeypatch.setattr(bundle_module, "sha256_file", unreadable_sha256_file)
 
@@ -361,9 +361,9 @@ def test_verify_bundle_detects_symlink_swap_after_second_hash(
     hash_calls = 0
     swapped = False
 
-    def swapping_after_second_hash(path: Path) -> str:
+    def swapping_after_second_hash(path: Path, **kwargs) -> str:
         nonlocal hash_calls, swapped
-        digest = original_hash(path)
+        digest = original_hash(path, **kwargs)
         if path == target:
             hash_calls += 1
             if hash_calls == 2:
@@ -381,6 +381,48 @@ def test_verify_bundle_detects_symlink_swap_after_second_hash(
 
     assert swapped
     assert hash_calls == 2
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "report.html",
+        "issue": "IO_ERROR",
+        "error": "FileChangedDuringScan",
+    } in result["problems"]
+
+
+
+def test_verify_bundle_rejects_transient_same_content_swap_during_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    saved = output / "saved-original.tmp"
+    replacement = output / "matching-content.tmp"
+    replacement.write_bytes(target.read_bytes())
+    original_sha256_file = bundle_module.sha256_file
+    swapped = False
+
+    def transient_swap(path: Path, **kwargs) -> str:
+        nonlocal swapped
+        if path != target or swapped:
+            return original_sha256_file(path, **kwargs)
+
+        swapped = True
+        target.replace(saved)
+        replacement.replace(target)
+        try:
+            return original_sha256_file(path, **kwargs)
+        finally:
+            target.unlink()
+            saved.replace(target)
+
+    monkeypatch.setattr(bundle_module, "sha256_file", transient_swap)
+
+    result = bundle_module.verify_bundle(output)
+
+    assert swapped
     assert result["status"] == "FAILED"
     assert result["exit_code"] == 2
     assert {

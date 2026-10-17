@@ -64,6 +64,13 @@ def sha256_with_head(
     return digest.hexdigest(), bytes(head)
 
 
-def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
-    digest, _ = sha256_with_head(path, head_size=0, chunk_size=chunk_size)
+def sha256_file(
+    path: Path,
+    chunk_size: int = 1024 * 1024,
+    *,
+    expected_stat: stat_result | None = None,
+) -> str:
+    digest, _ = sha256_with_head(
+        path, head_size=0, chunk_size=chunk_size, expected_stat=expected_stat
+    )
     return digest
