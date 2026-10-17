@@ -417,6 +417,16 @@
         "properties": {
           "files": {
             "minItems": 1
+          },
+          "summary": {
+            "properties": {
+              "risk_counts": {
+                "minProperties": 1
+              },
+              "priority_counts": {
+                "minProperties": 1
+              }
+            }
           }
         }
       }

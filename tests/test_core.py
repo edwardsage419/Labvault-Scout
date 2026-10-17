@@ -3375,7 +3375,17 @@ def test_scan_schema_file_count_matches_file_presence():
                 },
             },
         },
-        "else": {"properties": {"files": {"minItems": 1}}},
+        "else": {
+            "properties": {
+                "files": {"minItems": 1},
+                "summary": {
+                    "properties": {
+                        "risk_counts": {"minProperties": 1},
+                        "priority_counts": {"minProperties": 1},
+                    },
+                },
+            },
+        },
     }
 
     row = {
@@ -3664,6 +3674,49 @@ def test_scan_schema_only_records_positive_category_counts():
     assert all(count > 0 for counts in (
         summary["risk_counts"], summary["priority_counts"]
     ) for count in counts.values())
+
+
+
+def test_scan_schema_nonempty_scan_requires_category_counts():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    zero_files_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    nonempty = zero_files_clause["else"]["properties"]["summary"]["properties"]
+    assert nonempty == {
+        "risk_counts": {"minProperties": 1},
+        "priority_counts": {"minProperties": 1},
+    }
+
+    empty = build_summary([], [], [])
+    assert empty["file_count"] == 0
+    assert empty["risk_counts"] == {}
+    assert empty["priority_counts"] == {}
+
+    rows = [
+        {
+            "path": f"data_{index}.csv",
+            "size": 1,
+            "sha256": "a" * 64,
+            "risk": risk,
+            "priority": priority,
+            "open_copy": "",
+        }
+        for index, (risk, priority) in enumerate((
+            ("SAFE", "LOW"),
+            ("WATCH", "MEDIUM"),
+        ))
+    ]
+    for selected in (rows[:1], rows):
+        summary = build_summary(selected, [], [])
+        assert summary["file_count"] == len(selected)
+        assert summary["risk_counts"]
+        assert summary["priority_counts"]
 
 
 def test_scan_schema_enforces_relative_posix_paths():
