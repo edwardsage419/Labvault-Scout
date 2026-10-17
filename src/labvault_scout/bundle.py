@@ -138,6 +138,16 @@ def _read_manifest_text(path: Path) -> str:
             os.close(fd)
 
 
+def _reject_duplicate_manifest_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Reject ambiguous JSON object keys at every nesting level."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate bundle manifest JSON key: {key}")
+        result[key] = value
+    return result
+
+
 def load_bundle_manifest(output_dir: Path) -> dict:
     manifest_path = output_dir / BUNDLE_MANIFEST_NAME
     try:
@@ -151,7 +161,7 @@ def load_bundle_manifest(output_dir: Path) -> dict:
     except (OSError, UnicodeDecodeError) as exc:
         raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
     try:
-        payload = json.loads(manifest_text)
+        payload = json.loads(manifest_text, object_pairs_hook=_reject_duplicate_manifest_keys)
     except (ValueError, RecursionError) as exc:
         raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
 

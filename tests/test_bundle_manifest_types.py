@@ -50,6 +50,37 @@ def test_bundle_manifest_rejects_non_object_file_entries(tmp_path: Path, entry: 
         load_bundle_manifest(tmp_path)
 
 
+@pytest.mark.parametrize(
+    "duplicate_key_value",
+    [
+        '"algorithm": "sha256"',
+        '"version": "0.3.1"',
+        '"path": "scan.json"',
+    ],
+)
+def test_bundle_manifest_rejects_duplicate_json_object_keys(
+    tmp_path: Path, duplicate_key_value: str
+) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    payload = _base_manifest(entries)
+    encoded = json.dumps(payload)
+    assert duplicate_key_value in encoded
+    duplicated = encoded.replace(
+        duplicate_key_value,
+        duplicate_key_value + ", " + duplicate_key_value,
+        1,
+    )
+    (tmp_path / "bundle_manifest.json").write_text(duplicated, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest") as exc_info:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "Duplicate bundle manifest JSON key" in str(exc_info.value.__cause__)
+
+
 def test_bundle_manifest_rejects_duplicate_paths(tmp_path: Path) -> None:
     entries = [
         {"path": member, "size": 0, "sha256": "0" * 64}
