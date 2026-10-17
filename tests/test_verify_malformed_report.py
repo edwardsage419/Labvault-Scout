@@ -188,6 +188,50 @@ def test_direct_integrity_rejects_duplicate_legacy_file_paths(tmp_path: Path) ->
         compare_payloads(valid, malformed)
 
 
+
+def test_direct_integrity_rejects_legacy_path_normalization_collisions() -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, duplicate_groups
+
+    rows = [
+        {
+            "path": path,
+            "size": 1,
+            "sha256": digest,
+            "risk": "SAFE",
+            "priority": "LOW",
+            "open_copy": "",
+        }
+        for path, digest in (
+            ("nested\\data.csv", "a" * 64),
+            ("other.csv", "b" * 64),
+        )
+    ]
+    valid = {
+        "files": rows,
+        "errors": [],
+        "summary": build_summary(rows, [], duplicate_groups(rows)),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert verify_report(valid)["status"] == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][1]["path"] = "nested/data.csv"
+    malformed["summary"] = build_summary(
+        malformed["files"], [], duplicate_groups(malformed["files"])
+    )
+    assert malformed["files"][0]["path"] != malformed["files"][1]["path"]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    with pytest.raises(ValueError, match="Path collision after legacy normalization"):
+        compare_payloads(valid, malformed)
+
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -324,13 +324,15 @@ def report_integrity_status(payload: dict) -> str:
 
     if not isinstance(payload.get("files"), list):
         return "MISMATCH"
+    legacy = "schema_version" not in payload
     seen_paths: set[str] = set()
     for row in payload["files"]:
         if not isinstance(row, dict) or not isinstance(row.get("path"), str) or not row["path"]:
             return "MISMATCH"
-        if row["path"] in seen_paths:
+        canonical = row["path"].replace("\\", "/") if legacy else row["path"]
+        if canonical in seen_paths:
             return "MISMATCH"
-        seen_paths.add(row["path"])
+        seen_paths.add(canonical)
     if "errors" in payload and not isinstance(payload["errors"], list):
         return "MISMATCH"
 
