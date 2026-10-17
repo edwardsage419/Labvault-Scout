@@ -403,7 +403,12 @@ def report_identity(payload: dict) -> dict:
     error_count = len(errors) if isinstance(errors, list) else 0
     summary = payload.get("summary")
     inventory = summary.get("inventory_sha256", "") if isinstance(summary, dict) else ""
-    _, legacy_paths_normalized = _file_index(payload)
+    try:
+        _, legacy_paths_normalized = _file_index(payload)
+    except (AttributeError, KeyError, TypeError):
+        if report_integrity_status(payload) != "MISMATCH":
+            raise
+        legacy_paths_normalized = False
     provenance = payload.get("provenance")
     if not isinstance(provenance, dict):
         provenance = {}
