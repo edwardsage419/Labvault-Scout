@@ -399,6 +399,9 @@
               },
               "priority_counts": {
                 "maxProperties": 0
+              },
+              "total_bytes": {
+                "const": 0
               }
             }
           }

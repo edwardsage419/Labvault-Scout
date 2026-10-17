@@ -3368,6 +3368,7 @@ def test_scan_schema_file_count_matches_file_presence():
                     "properties": {
                         "risk_counts": {"maxProperties": 0},
                         "priority_counts": {"maxProperties": 0},
+                        "total_bytes": {"const": 0},
                     },
                 },
             },
@@ -3405,6 +3406,7 @@ def test_scan_schema_empty_file_list_has_empty_category_counts():
     assert count_properties == {
         "risk_counts": {"maxProperties": 0},
         "priority_counts": {"maxProperties": 0},
+        "total_bytes": {"const": 0},
     }
 
     empty = build_summary([], [], [])
@@ -3424,6 +3426,43 @@ def test_scan_schema_empty_file_list_has_empty_category_counts():
     assert populated["file_count"] == 1
     assert populated["risk_counts"] == {"SAFE": 1}
     assert populated["priority_counts"] == {"LOW": 1}
+
+
+
+def test_scan_schema_empty_scan_total_bytes_is_zero():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    empty_scan = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    assert empty_scan["then"]["properties"]["summary"]["properties"]["total_bytes"] == {
+        "const": 0,
+    }
+
+    empty = build_summary([], [], [])
+    assert empty["file_count"] == 0
+    assert empty["total_bytes"] == 0
+
+    row = {
+        "path": "empty.csv",
+        "size": 0,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    zero_byte_file = build_summary([row], [], [])
+    assert zero_byte_file["file_count"] == 1
+    assert zero_byte_file["total_bytes"] == 0
+
+    row["size"] = 12
+    nonempty_file = build_summary([row], [], [])
+    assert nonempty_file["file_count"] == 1
+    assert nonempty_file["total_bytes"] == 12
 
 
 def test_scan_schema_summary_count_keys_match_file_enums():
