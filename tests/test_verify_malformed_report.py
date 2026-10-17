@@ -37,6 +37,40 @@ def test_cli_verify_malformed_json_is_concise_and_json_capable(
 
 
 
+
+@pytest.mark.parametrize("invalid_files", [{}, ""])
+def test_direct_integrity_rejects_non_array_legacy_files(
+    tmp_path: Path, invalid_files: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert verify_report(valid)["status"] == "VERIFIED"
+
+    malformed = {**valid, "files": invalid_files}
+    assert report_integrity_status(malformed) == "MISMATCH"
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+    report = tmp_path / "non_array_legacy_scan.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid scan report"):
+        load_scan_report(report)
+
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:

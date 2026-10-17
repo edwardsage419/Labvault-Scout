@@ -322,6 +322,9 @@ def report_integrity_status(payload: dict) -> str:
         except (ValueError, TypeError, KeyError):
             return "MISMATCH"
 
+    if not isinstance(payload.get("files"), list):
+        return "MISMATCH"
+
     summary = payload.get("summary")
     if not isinstance(summary, dict):
         return "UNKNOWN"
