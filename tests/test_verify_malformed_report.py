@@ -80,3 +80,49 @@ def test_verify_rejects_duplicate_scan_report_json_keys(
     assert result["status"] == "INVALID"
     assert result["exit_code"] == 2
     assert "Cannot read scan report" in result["error"]
+
+
+def test_load_scan_report_wraps_json_parser_recursion_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    report = tmp_path / "deeply-nested-report.json"
+    report.write_text("[" * 4000 + "0" + "]" * 4000, encoding="utf-8")
+    original_loads = json.loads
+
+    def raise_recursion_error(
+        text: str, *, object_pairs_hook: object = None
+    ) -> object:
+        assert text.startswith("[" * 4000)
+        assert callable(object_pairs_hook)
+        raise RecursionError("JSON nesting exceeds parser recursion limit")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(json, "loads", raise_recursion_error)
+
+        with pytest.raises(ValueError, match="Cannot read scan report") as exc_info:
+            load_scan_report(report)
+        assert isinstance(exc_info.value.__cause__, RecursionError)
+
+        patched.setattr(sys, "argv", ["labvault-scout", "verify", str(report)])
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err.startswith("Error:")
+        assert "Cannot read scan report" in captured.err
+        assert "Traceback" not in captured.err
+
+        patched.setattr(sys, "argv", ["labvault-scout", "verify", str(report), "--json"])
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    result = original_loads(captured.out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read scan report" in result["error"]

@@ -190,7 +190,7 @@ def load_scan_report(path: Path) -> dict:
             path.read_text(encoding="utf-8"),
             object_pairs_hook=_reject_duplicate_scan_report_keys,
         )
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"Cannot read scan report: {path}") from exc
 
     if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
