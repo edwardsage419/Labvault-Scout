@@ -95,7 +95,7 @@
           "type": "object",
           "additionalProperties": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 1
           },
           "propertyNames": {
             "enum": [
@@ -110,7 +110,7 @@
           "type": "object",
           "additionalProperties": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 1
           },
           "propertyNames": {
             "enum": [

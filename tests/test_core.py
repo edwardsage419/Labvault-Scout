@@ -3606,7 +3606,7 @@ def test_scan_schema_summary_count_keys_match_file_enums():
         allowed = file_properties[file_field]["enum"]
         count_schema = summary_properties[summary_field]
         assert count_schema["propertyNames"] == {"enum": allowed}
-        assert count_schema["additionalProperties"] == {"type": "integer", "minimum": 0}
+        assert count_schema["additionalProperties"] == {"type": "integer", "minimum": 1}
         assert unexpected not in count_schema["propertyNames"]["enum"]
 
     rows = [
@@ -3628,6 +3628,42 @@ def test_scan_schema_summary_count_keys_match_file_enums():
     summary = build_summary(rows, [], [])
     assert set(summary["risk_counts"]) == set(file_properties["risk"]["enum"])
     assert set(summary["priority_counts"]) == set(file_properties["priority"]["enum"])
+
+
+
+def test_scan_schema_only_records_positive_category_counts():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    summary_props = schema["properties"]["summary"]["properties"]
+    for key in ("risk_counts", "priority_counts"):
+        assert summary_props[key]["additionalProperties"] == {
+            "type": "integer",
+            "minimum": 1,
+        }
+
+    rows = [
+        {
+            "path": name,
+            "size": 1,
+            "sha256": "a" * 64,
+            "risk": risk,
+            "priority": priority,
+            "open_copy": "",
+        }
+        for name, risk, priority in (
+            ("first.csv", "SAFE", "LOW"),
+            ("second.csv", "SAFE", "LOW"),
+            ("third.csv", "WATCH", "MEDIUM"),
+        )
+    ]
+    summary = build_summary(rows, [], [])
+    assert summary["risk_counts"] == {"SAFE": 2, "WATCH": 1}
+    assert summary["priority_counts"] == {"LOW": 2, "MEDIUM": 1}
+    assert all(count > 0 for counts in (
+        summary["risk_counts"], summary["priority_counts"]
+    ) for count in counts.values())
 
 
 def test_scan_schema_enforces_relative_posix_paths():
