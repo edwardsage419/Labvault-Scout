@@ -26,6 +26,10 @@ The schemas describe the current versioned output contracts. LabVault Scout itse
 
 这些 schema 描述当前版本化输出契约。LabVault Scout 本身不依赖外部 JSON Schema 验证器；运行时校验仍使用 Python 标准库在本地实现。
 
+For bundle manifest schema 1, `files[].size` must be a non-negative JSON integer token. Runtime validation rejects integral-valued floating-point forms such as `0.0`, `-0.0`, and `1e0`. JSON Schema's `type: integer` checks the mathematical value, not the original number spelling, so a schema validator may accept those forms. A JSON integer token `-0` is parsed as zero and accepted. Use `verify-bundle` for the stricter runtime checks; schema validation alone is not equivalent.
+
+对于 Bundle manifest schema 1，`files[].size` 必须使用非负 JSON 整数形式。运行时会拒绝 `0.0`、`-0.0`、`1e0` 等数值为整数的浮点写法。JSON Schema 的 `type: integer` 判断数学数值而非原始数字写法，因此 Schema 验证器可能接受这些形式。JSON 整数写法 `-0` 会解析为零并被接受。严格校验应使用 `verify-bundle`；仅通过 Schema 验证不等于通过运行时验证。
+
 For schema 1 scan reports, file paths are canonical relative POSIX paths whose separators are `/`. Absolute paths, parent traversal, NUL characters, duplicate `/` separators, dot segments, and trailing `/` are rejected. On POSIX systems, a literal backslash may be part of a filename and is preserved as such. Error paths follow the same rules, with `.` reserved for an error applying to the scan root.
 
 对于 schema 1 扫描报告，文件路径必须是规范的相对 POSIX 路径，路径分隔符统一使用 `/`。绝对路径、父目录穿越、NUL 字符、重复 `/` 分隔符、点路径段和末尾 `/` 都会被拒绝。在 POSIX 系统中，字面反斜杠可以作为文件名字符并会原样保留。错误路径采用相同规则，其中 `.` 专门表示扫描根目录本身的错误。

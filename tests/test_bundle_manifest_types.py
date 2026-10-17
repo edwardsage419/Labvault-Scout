@@ -174,6 +174,43 @@ def test_bundle_manifest_rejects_dot_member(tmp_path: Path) -> None:
         load_bundle_manifest(tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("number_token", "value"),
+    [("0.0", 0.0), ("-0.0", -0.0), ("1e0", 1.0)],
+)
+def test_bundle_manifest_rejects_integral_float_tokens(
+    tmp_path: Path, number_token: str, value: float
+) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["size"] = value
+    payload = _base_manifest(entries)
+    encoded = json.dumps(payload)
+    original = f'"size": {json.dumps(value)}'
+    assert original in encoded
+    encoded = encoded.replace(original, f'"size": {number_token}', 1)
+    (tmp_path / "bundle_manifest.json").write_text(encoded, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest size"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_accepts_json_integer_negative_zero(tmp_path: Path) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    payload = _base_manifest(entries)
+    encoded = json.dumps(payload)
+    assert '"size": 0' in encoded
+    encoded = encoded.replace('"size": 0', '"size": -0', 1)
+    (tmp_path / "bundle_manifest.json").write_text(encoded, encoding="utf-8")
+
+    assert load_bundle_manifest(tmp_path) == payload
+
+
 @pytest.mark.parametrize("bad_size", [None, "0", -1, True, 1.5])
 def test_bundle_manifest_rejects_invalid_sizes(tmp_path: Path, bad_size: object) -> None:
     entries = [
