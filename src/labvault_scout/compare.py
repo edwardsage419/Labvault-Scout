@@ -173,11 +173,24 @@ def _validate_schema1_payload(payload: dict) -> None:
         if not isinstance(error["error"], str) or not error["error"]:
             raise ValueError("Schema 1 report contains an invalid error type")
 
+def _reject_duplicate_scan_report_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Reject ambiguous JSON object keys at every nesting level."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate scan report JSON key: {key}")
+        result[key] = value
+    return result
+
+
 def load_scan_report(path: Path) -> dict:
     """Load a LabVault Scout scan report with version-aware validation."""
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        payload = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_reject_duplicate_scan_report_keys,
+        )
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise ValueError(f"Cannot read scan report: {path}") from exc
 
     if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
