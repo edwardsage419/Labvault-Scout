@@ -316,6 +316,10 @@ def metrics_delta(before: dict, after: dict) -> dict:
 
 def report_integrity_status(payload: dict) -> str:
     """Validate embedded inventory and summary consistency when available."""
+    if "schema_version" in payload and (
+        not isinstance(payload["schema_version"], str) or not payload["schema_version"]
+    ):
+        return "MISMATCH"
     if payload.get("schema_version") == "1":
         try:
             _validate_schema1_payload(payload)
@@ -419,7 +423,7 @@ def report_identity(payload: dict) -> dict:
     if not isinstance(provenance, dict):
         provenance = {}
     raw_schema_version = payload.get("schema_version")
-    if raw_schema_version is None:
+    if "schema_version" not in payload:
         schema_version = "legacy"
     elif isinstance(raw_schema_version, str) and raw_schema_version:
         schema_version = raw_schema_version

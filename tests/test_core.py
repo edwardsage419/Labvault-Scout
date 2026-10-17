@@ -3020,7 +3020,9 @@ def test_legacy_loader_remains_lenient_for_minimal_rows(tmp_path: Path):
 
 def test_loader_rejects_non_string_or_empty_explicit_schema_version(tmp_path: Path):
     import pytest
-    from labvault_scout.compare import load_scan_report, verify_report
+    from labvault_scout.compare import (
+        load_scan_report, report_integrity_status, verify_report,
+    )
 
     source = tmp_path / "schema_type_source"
     source.mkdir()
@@ -3029,7 +3031,7 @@ def test_loader_rejects_non_string_or_empty_explicit_schema_version(tmp_path: Pa
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
 
-    for value in (1, True, ""):
+    for value in (None, 1, True, ""):
         mutated = json.loads(json.dumps(payload))
         mutated["schema_version"] = value
         report = tmp_path / ("bad-schema-version-" + str(type(value).__name__) + "-" + str(value) + ".json")
@@ -3037,12 +3039,12 @@ def test_loader_rejects_non_string_or_empty_explicit_schema_version(tmp_path: Pa
         with pytest.raises(ValueError, match="Invalid scan schema_version"):
             load_scan_report(report)
 
-    direct = json.loads(json.dumps(payload))
-    direct["schema_version"] = 1
-    result = verify_report(direct)
-    assert result["status"] == "UNSUPPORTED"
-    assert result["schema_version"] == "invalid"
-    assert result["schema_supported"] is False
+        assert report_integrity_status(mutated) == "MISMATCH"
+        result = verify_report(mutated)
+        assert result["status"] == "UNSUPPORTED"
+        assert result["exit_code"] == 2
+        assert result["schema_version"] == "invalid"
+        assert result["schema_supported"] is False
 
 
 def test_unknown_future_schema_uses_minimum_validation_only(tmp_path: Path):
