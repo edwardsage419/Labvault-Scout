@@ -260,7 +260,9 @@ def scan_metrics(payload: dict) -> dict:
     total_bytes = 0
     for row in payload["files"]:
         raw_size = row.get("size", 0)
-        if not isinstance(raw_size, bool):
+        if not isinstance(raw_size, bool) and not (
+            isinstance(raw_size, float) and not raw_size.is_integer()
+        ):
             try:
                 size = int(raw_size)
             except (TypeError, ValueError):

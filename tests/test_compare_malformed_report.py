@@ -35,3 +35,38 @@ def test_cli_compare_malformed_json_exits_two_without_traceback(
     assert captured.err.startswith("Error:")
     assert "Cannot read scan report" in captured.err
     assert "Traceback" not in captured.err
+
+
+@pytest.mark.parametrize("fractional_size", [7.9, 0.9, -0.9])
+def test_compare_legacy_fractional_size_is_not_truncated_into_byte_count(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fractional_size: float,
+) -> None:
+    before = tmp_path / "fractional-legacy.json"
+    after = tmp_path / "integer-legacy.json"
+    output = tmp_path / "comparison"
+    before.write_text(
+        json.dumps({"files": [
+            {"path": "fractional.csv", "sha256": "before", "size": fractional_size}
+        ], "errors": []}),
+        encoding="utf-8",
+    )
+    after.write_text(
+        json.dumps({"files": [
+            {"path": "whole.csv", "sha256": "after", "size": "7"}
+        ], "errors": []}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys, "argv",
+        ["labvault-scout", "compare", str(before), str(after), "-o", str(output)],
+    )
+
+    main()
+
+    result = json.loads((output / "comparison.json").read_text(encoding="utf-8"))
+    assert result["before"]["metrics"]["file_count"] == 1
+    assert result["before"]["metrics"]["total_bytes"] == 0
+    assert result["after"]["metrics"]["total_bytes"] == 7
+    assert result["metrics_delta"]["total_bytes"] == 7
