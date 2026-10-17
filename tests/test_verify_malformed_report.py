@@ -232,6 +232,51 @@ def test_direct_integrity_rejects_legacy_path_normalization_collisions() -> None
         compare_payloads(valid, malformed)
 
 
+
+@pytest.mark.parametrize("invalid_size", [-1, -1.5, "-1"])
+def test_legacy_negative_size_cannot_have_verified_inventory(
+    tmp_path: Path, invalid_size: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["size"] = invalid_size
+    malformed["summary"] = build_summary(malformed["files"], [], [])
+    malformed["summary"]["total_bytes"] = 0
+    assert malformed["summary"]["inventory_sha256"] != valid["summary"]["inventory_sha256"]
+
+    # The legacy loader stays lenient for comparison, but must not confer trust.
+    report = tmp_path / "negative-size-legacy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["files"][0]["size"] == invalid_size
+
+    assert report_integrity_status(malformed) == "MISMATCH"
+    result = verify_report(malformed)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
