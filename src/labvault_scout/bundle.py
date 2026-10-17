@@ -148,6 +148,11 @@ def _reject_duplicate_manifest_keys(pairs: list[tuple[str, object]]) -> dict:
     return result
 
 
+def _reject_nonstandard_manifest_constant(value: str) -> None:
+    """Disallow NaN and infinities, which are not valid JSON numbers."""
+    raise ValueError(f"Non-standard bundle manifest JSON constant: {value}")
+
+
 def load_bundle_manifest(output_dir: Path) -> dict:
     manifest_path = output_dir / BUNDLE_MANIFEST_NAME
     try:
@@ -161,7 +166,11 @@ def load_bundle_manifest(output_dir: Path) -> dict:
     except (OSError, UnicodeDecodeError) as exc:
         raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
     try:
-        payload = json.loads(manifest_text, object_pairs_hook=_reject_duplicate_manifest_keys)
+        payload = json.loads(
+            manifest_text,
+            object_pairs_hook=_reject_duplicate_manifest_keys,
+            parse_constant=_reject_nonstandard_manifest_constant,
+        )
     except (ValueError, RecursionError) as exc:
         raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
 

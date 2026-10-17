@@ -132,9 +132,12 @@ def test_load_bundle_manifest_wraps_json_parser_recursion_error(
     manifest = tmp_path / "bundle_manifest.json"
     manifest.write_text("[" * 4000 + "0" + "]" * 4000, encoding="utf-8")
 
-    def raise_recursion_error(text: str, *, object_pairs_hook: object = None) -> object:
+    def raise_recursion_error(
+        text: str, *, object_pairs_hook: object = None, parse_constant: object = None
+    ) -> object:
         assert text.startswith("[" * 4000)
         assert callable(object_pairs_hook)
+        assert callable(parse_constant)
         raise RecursionError("JSON nesting exceeds parser recursion limit")
 
     monkeypatch.setattr(json, "loads", raise_recursion_error)
@@ -156,3 +159,32 @@ def test_load_bundle_manifest_wraps_excessive_integer_digits(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="Cannot read bundle manifest"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_load_bundle_manifest_rejects_nonstandard_json_constant(
+    tmp_path: Path, constant: str
+) -> None:
+    from labvault_scout.bundle import BUNDLE_FILES, manifest_payload_sha256
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.2"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    encoded = json.dumps(payload)
+    assert '"size": 0' in encoded
+    malformed = encoded.replace('"size": 0', f'"size": {constant}', 1)
+    (tmp_path / "bundle_manifest.json").write_text(malformed, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest") as exc_info:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert f"Non-standard bundle manifest JSON constant: {constant}" in str(
+        exc_info.value.__cause__
+    )
