@@ -2999,6 +2999,30 @@ def test_verification_schema_status_exit_code_pairs_match_runtime():
     }
 
 
+def test_verification_schema_status_integrity_constraints_match_runtime():
+    from labvault_scout.schema_registry import load_schema_text
+
+    choices = json.loads(load_schema_text("verification"))["oneOf"][0]["allOf"][0]["oneOf"]
+    properties_by_status = {
+        option["properties"]["status"]["const"]: option["properties"]
+        for option in choices
+    }
+
+    for status, supported, integrity in (
+        ("VERIFIED", True, "VERIFIED"),
+        ("UNKNOWN", True, "UNKNOWN"),
+        ("FAILED", True, "MISMATCH"),
+        ("UNSUPPORTED", False, None),
+    ):
+        properties = properties_by_status[status]
+        assert properties["schema_supported"] == {"const": supported}
+        if integrity is None:
+            # Unsupported schemas can have any of the declared integrity states.
+            assert "integrity_status" not in properties
+        else:
+            assert properties["integrity_status"] == {"const": integrity}
+
+
 def test_verification_schema_hash_fields_match_runtime_normalization():
     from labvault_scout.schema_registry import load_schema_text
 

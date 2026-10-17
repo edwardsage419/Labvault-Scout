@@ -91,6 +91,12 @@
                 },
                 "exit_code": {
                   "const": 0
+                },
+                "schema_supported": {
+                  "const": true
+                },
+                "integrity_status": {
+                  "const": "VERIFIED"
                 }
               },
               "required": [
@@ -105,6 +111,12 @@
                 },
                 "exit_code": {
                   "const": 1
+                },
+                "schema_supported": {
+                  "const": true
+                },
+                "integrity_status": {
+                  "const": "UNKNOWN"
                 }
               },
               "required": [
@@ -119,6 +131,12 @@
                 },
                 "exit_code": {
                   "const": 2
+                },
+                "schema_supported": {
+                  "const": true
+                },
+                "integrity_status": {
+                  "const": "MISMATCH"
                 }
               },
               "required": [
@@ -133,6 +151,9 @@
                 },
                 "exit_code": {
                   "const": 2
+                },
+                "schema_supported": {
+                  "const": false
                 }
               },
               "required": [
