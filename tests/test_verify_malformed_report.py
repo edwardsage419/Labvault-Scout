@@ -71,6 +71,37 @@ def test_direct_integrity_rejects_non_array_legacy_files(
         load_scan_report(report)
 
 
+
+@pytest.mark.parametrize("invalid_errors", [{}, "", None, {"path": "bad.csv"}])
+def test_direct_integrity_rejects_non_array_legacy_errors(
+    invalid_errors: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    without_errors = {key: value for key, value in valid.items() if key != "errors"}
+    assert report_integrity_status(without_errors) == "VERIFIED"
+
+    malformed = {**valid, "errors": invalid_errors}
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
