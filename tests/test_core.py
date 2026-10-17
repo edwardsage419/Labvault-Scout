@@ -3370,6 +3370,7 @@ def test_scan_schema_file_count_matches_file_presence():
                         "priority_counts": {"maxProperties": 0},
                         "total_bytes": {"const": 0},
                         "open_copy_count": {"const": 0},
+                        "duplicate_group_count": {"const": 0},
                     },
                 },
             },
@@ -3409,6 +3410,7 @@ def test_scan_schema_empty_file_list_has_empty_category_counts():
         "priority_counts": {"maxProperties": 0},
         "total_bytes": {"const": 0},
         "open_copy_count": {"const": 0},
+        "duplicate_group_count": {"const": 0},
     }
 
     empty = build_summary([], [], [])
@@ -3502,6 +3504,43 @@ def test_scan_schema_empty_scan_has_no_open_copies():
     with_copy = build_summary([row], [], [])
     assert with_copy["file_count"] == 1
     assert with_copy["open_copy_count"] == 1
+
+
+
+def test_scan_schema_empty_scan_has_no_duplicate_groups():
+    from labvault_scout.report import build_summary, duplicate_groups
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    zero_files_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    assert zero_files_clause["then"]["properties"]["summary"]["properties"]["duplicate_group_count"] == {
+        "const": 0,
+    }
+
+    empty = build_summary([], [], duplicate_groups([]))
+    assert empty["file_count"] == 0
+    assert empty["duplicate_group_count"] == 0
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    one_file = build_summary([row], [], duplicate_groups([row]))
+    assert one_file["file_count"] == 1
+    assert one_file["duplicate_group_count"] == 0
+
+    rows = [row, {**row, "path": "copy.csv"}]
+    two_copies = build_summary(rows, [], duplicate_groups(rows))
+    assert two_copies["file_count"] == 2
+    assert two_copies["duplicate_group_count"] == 1
 
 
 def test_scan_schema_summary_count_keys_match_file_enums():

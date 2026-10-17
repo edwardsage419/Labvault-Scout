@@ -405,6 +405,9 @@
               },
               "open_copy_count": {
                 "const": 0
+              },
+              "duplicate_group_count": {
+                "const": 0
               }
             }
           }
