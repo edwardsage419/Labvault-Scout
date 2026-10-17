@@ -179,3 +179,41 @@ def test_scan_excludes_report_directory_when_path_resolution_fails(
     assert payload["errors"] == []
     assert payload["summary"]["file_count"] == 1
     assert payload["summary"]["error_count"] == 0
+
+
+@pytest.mark.parametrize("entry_type", ["file", "directory"])
+def test_scan_records_unresolvable_source_path_and_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, entry_type: str
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "healthy.bin").write_bytes(b"healthy")
+    output = source / "report"
+    output.mkdir()
+    (output / "prior.bin").write_bytes(b"old report")
+
+    blocked = source / "blocked"
+    if entry_type == "directory":
+        blocked.mkdir()
+        (blocked / "secret.bin").write_bytes(b"not safe to scan")
+    else:
+        blocked.write_bytes(b"not safe to scan")
+
+    original_resolve = Path.resolve
+
+    def fail_source_resolution(path: Path, *args, **kwargs) -> Path:
+        if path == blocked:
+            raise PermissionError("cannot resolve source entry")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", fail_source_resolution)
+
+    assert cli.scan(source, output) == 1
+
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert [row["path"] for row in payload["files"]] == ["healthy.bin"]
+    assert payload["errors"] == [
+        {"path": "blocked", "error": "PermissionError"}
+    ]
+    assert payload["summary"]["file_count"] == 1
+    assert payload["summary"]["error_count"] == 1

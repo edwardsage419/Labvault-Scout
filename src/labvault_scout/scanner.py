@@ -15,7 +15,7 @@ def _is_within(path: Path, excluded: Path | None) -> bool:
     try:
         path.resolve().relative_to(excluded)
         return True
-    except (ValueError, OSError):
+    except ValueError:
         return False
 
 
