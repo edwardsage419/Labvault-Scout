@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -187,6 +188,55 @@ def test_verify_bundle_detects_artifact_changed_after_initial_hash(
         "error": "FileChangedDuringScan",
     } in result["problems"]
 
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows restored-mtime regression")
+def test_verify_bundle_detects_windows_same_size_write_with_restored_mtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    original_content = target.read_bytes()
+    assert original_content
+    before = target.lstat()
+    changed_content = (b"0" if original_content[:1] != b"0" else b"1") + original_content[1:]
+    expected_digest = sha256_file(target)
+    assert len(changed_content) == len(original_content)
+    original_hash = bundle_module.sha256_file
+    changed = False
+
+    def rewrite_after_first_hash(path: Path, **kwargs) -> str:
+        nonlocal changed
+        digest = original_hash(path, **kwargs)
+        if path == target and not changed:
+            changed = True
+            target.write_bytes(changed_content)
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+            after = target.lstat()
+            assert after.st_size == before.st_size
+            if (
+                after.st_mtime_ns != before.st_mtime_ns
+                or after.st_ctime_ns != before.st_ctime_ns
+            ):
+                pytest.skip("Filesystem did not preserve original timestamps")
+        return digest
+
+    monkeypatch.setattr(bundle_module, "sha256_file", rewrite_after_first_hash)
+
+    result = bundle_module.verify_bundle(output)
+
+    assert changed
+    assert sha256_file(target) != expected_digest
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "report.html",
+        "issue": "SHA256_MISMATCH",
+        "expected": expected_digest,
+        "actual": sha256_file(target),
+    } in result["problems"]
 
 
 def test_verify_bundle_detects_same_content_file_replacement_between_hashes(
