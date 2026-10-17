@@ -277,6 +277,54 @@ def test_legacy_negative_size_cannot_have_verified_inventory(
     assert comparison["after"]["integrity_status"] == "MISMATCH"
 
 
+
+@pytest.mark.parametrize(
+    "invalid_size", ["7.9", "1e3", "1_0", " +7", " 7 ", "٧"],
+)
+def test_legacy_invalid_size_string_cannot_have_verified_inventory(
+    tmp_path: Path, invalid_size: str,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, inventory_sha256
+
+    row = {
+        "path": "sample.csv",
+        "size": "007",
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert valid["summary"]["total_bytes"] == 7
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["size"] = invalid_size
+    malformed["summary"]["inventory_sha256"] = inventory_sha256(malformed["files"])
+    malformed["summary"]["total_bytes"] = 0
+
+    # The legacy loader and comparison metrics remain lenient; integrity does not.
+    path = tmp_path / "malformed-size-string.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(path)["files"][0]["size"] == invalid_size
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verification = verify_report(malformed)
+    assert verification["status"] == "FAILED"
+    assert verification["exit_code"] == 2
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["after"]["metrics"]["total_bytes"] == 0
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:

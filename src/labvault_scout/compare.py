@@ -342,7 +342,7 @@ def report_integrity_status(payload: dict) -> str:
             isinstance(size, (int, float))
             and not isinstance(size, bool)
             and size < 0
-        ) or (isinstance(size, str) and size.startswith("-")):
+        ) or (isinstance(size, str) and not re.fullmatch(r"[0-9]+", size)):
             return "MISMATCH"
     if "errors" in payload and not isinstance(payload["errors"], list):
         return "MISMATCH"
