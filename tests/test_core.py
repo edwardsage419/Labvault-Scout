@@ -1906,7 +1906,20 @@ def test_comparison_schema_zero_change_count_matches_empty_changes():
     from labvault_scout.schema_registry import load_schema_text
 
     schema = json.loads(load_schema_text("comparison"))
-    zero_clause = schema["allOf"][-1]
+    zero_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("change_count") == {"const": 0}
+    )
+    count_fields = (
+        "added_count",
+        "removed_count",
+        "moved_count",
+        "content_changed_count",
+        "assessment_changed_count",
+        "priority_escalated_count",
+        "priority_deescalated_count",
+    )
     assert zero_clause == {
         "if": {
             "properties": {
@@ -1917,7 +1930,12 @@ def test_comparison_schema_zero_change_count_matches_empty_changes():
             },
             "required": ["summary"],
         },
-        "then": {"properties": {"changes": {"maxItems": 0}}},
+        "then": {
+            "properties": {
+                "changes": {"maxItems": 0},
+                "summary": {"properties": {name: {"const": 0} for name in count_fields}},
+            },
+        },
         "else": {"properties": {"changes": {"minItems": 1}}},
     }
 
@@ -1925,6 +1943,13 @@ def test_comparison_schema_zero_change_count_matches_empty_changes():
     unchanged = compare_payloads(empty, empty)
     assert unchanged["summary"]["change_count"] == 0
     assert unchanged["changes"] == []
+    assert all(unchanged["summary"][name] == 0 for name in count_fields)
+
+    stable = {"files": [{"path": "same.csv", "sha256": "a" * 64}], "errors": []}
+    stable_comparison = compare_payloads(stable, stable)
+    assert stable_comparison["summary"]["change_count"] == 0
+    assert stable_comparison["summary"]["unchanged_count"] == 1
+    assert all(stable_comparison["summary"][name] == 0 for name in count_fields)
 
     added = compare_payloads(
         empty,

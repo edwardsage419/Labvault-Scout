@@ -864,6 +864,31 @@
         "properties": {
           "changes": {
             "maxItems": 0
+          },
+          "summary": {
+            "properties": {
+              "added_count": {
+                "const": 0
+              },
+              "removed_count": {
+                "const": 0
+              },
+              "moved_count": {
+                "const": 0
+              },
+              "content_changed_count": {
+                "const": 0
+              },
+              "assessment_changed_count": {
+                "const": 0
+              },
+              "priority_escalated_count": {
+                "const": 0
+              },
+              "priority_deescalated_count": {
+                "const": 0
+              }
+            }
           }
         }
       },
