@@ -62,6 +62,45 @@ def test_verify_bundle_reports_file_change_if_directory_swapped_after_file_check
     } in result["problems"]
 
 
+def test_verify_bundle_detects_symlink_swap_after_file_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = _scanned_bundle(tmp_path)
+    target = output / "report.html"
+    moved = output / "original-report.tmp"
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"x")
+    assert target.stat().st_size != outside.stat().st_size
+    original_is_file = Path.is_file
+    swapped = False
+
+    def swap_after_file_check(path: Path, *args, **kwargs) -> bool:
+        nonlocal swapped
+        is_file = original_is_file(path, *args, **kwargs)
+        if path == target and not swapped:
+            assert is_file
+            target.replace(moved)
+            try:
+                target.symlink_to(outside)
+            except (OSError, NotImplementedError):
+                pytest.skip("Symlink creation is unavailable")
+            swapped = True
+        return is_file
+
+    monkeypatch.setattr(Path, "is_file", swap_after_file_check)
+
+    result = verify_bundle(output)
+
+    assert swapped
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "report.html",
+        "issue": "IO_ERROR",
+        "error": "FileChangedDuringScan",
+    } in result["problems"]
+
+
 def test_verify_bundle_detects_size_mismatch(tmp_path: Path) -> None:
     output = _scanned_bundle(tmp_path)
     target = output / "report.html"
@@ -235,7 +274,7 @@ def test_verify_bundle_reports_io_error_if_artifact_hash_cannot_be_read(
     } in result["problems"]
 
 
-def test_verify_bundle_reports_io_error_if_artifact_stat_cannot_be_read(
+def test_verify_bundle_reports_io_error_if_artifact_lstat_cannot_be_read(
     tmp_path: Path, monkeypatch
 ) -> None:
     import labvault_scout.bundle as bundle_module
@@ -245,7 +284,7 @@ def test_verify_bundle_reports_io_error_if_artifact_stat_cannot_be_read(
     original_is_symlink = Path.is_symlink
     original_exists = Path.exists
     original_is_file = Path.is_file
-    original_stat = Path.stat
+    original_lstat = Path.lstat
 
     def controlled_is_symlink(path: Path) -> bool:
         if path == target:
@@ -262,15 +301,15 @@ def test_verify_bundle_reports_io_error_if_artifact_stat_cannot_be_read(
             return True
         return original_is_file(path)
 
-    def unreadable_stat(path: Path, *args, **kwargs):
+    def unreadable_lstat(path: Path, *args, **kwargs):
         if path == target:
             raise PermissionError("denied")
-        return original_stat(path, *args, **kwargs)
+        return original_lstat(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "is_symlink", controlled_is_symlink)
     monkeypatch.setattr(Path, "exists", controlled_exists)
     monkeypatch.setattr(Path, "is_file", controlled_is_file)
-    monkeypatch.setattr(Path, "stat", unreadable_stat)
+    monkeypatch.setattr(Path, "lstat", unreadable_lstat)
 
     result = bundle_module.verify_bundle(output)
 

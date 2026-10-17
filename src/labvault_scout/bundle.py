@@ -289,7 +289,7 @@ def verify_bundle(output_dir: Path) -> dict:
             problems.append({"path": member, "issue": "NOT_REGULAR_FILE"})
             continue
         try:
-            checked_stat = path.stat()
+            checked_stat = path.lstat()
         except FileNotFoundError:
             problems.append({"path": member, "issue": "MISSING"})
             continue
