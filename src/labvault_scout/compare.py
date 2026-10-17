@@ -190,10 +190,13 @@ def _reject_nonstandard_scan_json_constant(value: str) -> None:
 
 
 def _parse_finite_scan_json_float(value: str) -> float:
-    """Reject JSON floating-point values that overflow to infinity."""
+    """Reject JSON floating-point overflow and nonzero values underflowing to zero."""
     parsed = float(value)
     if not math.isfinite(parsed):
         raise ValueError("Scan report JSON number exceeds floating-point range")
+    significand = value.split("e", 1)[0].split("E", 1)[0]
+    if parsed == 0.0 and any(digit in "123456789" for digit in significand):
+        raise ValueError("Scan report JSON number underflows floating-point range")
     return parsed
 
 
