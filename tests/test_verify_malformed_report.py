@@ -36,6 +36,51 @@ def test_cli_verify_malformed_json_is_concise_and_json_capable(
     assert "Cannot read scan report" in result["error"]
 
 
+
+def test_escaped_unpaired_surrogate_does_not_crash_integrity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "report"
+    scan(source, output)
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert report_integrity_status(original) == "VERIFIED"
+
+    bad = json.loads(json.dumps(original))
+    bad["files"][0]["reason"] = chr(0xD800)
+    report = tmp_path / "surrogate-report.json"
+    report.write_text(json.dumps(bad, ensure_ascii=True), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["files"][0]["reason"] == chr(0xD800)
+
+    assert report_integrity_status(loaded) == "MISMATCH"
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    comparison = compare_payloads(original, loaded)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(report), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "FAILED"
+
+    legacy = {
+        "files": [{"path": chr(0xD800), "size": 1, "sha256": "a" * 64}],
+        "summary": {"inventory_sha256": "a" * 64},
+    }
+    assert report_integrity_status(legacy) == "MISMATCH"
+
+
 @pytest.mark.parametrize(
     ("key", "marker"),
     [

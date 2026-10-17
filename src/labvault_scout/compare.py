@@ -335,7 +335,11 @@ def report_integrity_status(payload: dict) -> str:
     if report_checksum is not None:
         if not isinstance(report_checksum, str) or not report_checksum:
             return "MISMATCH"
-        if report_payload_sha256(payload) != report_checksum:
+        try:
+            actual_checksum = report_payload_sha256(payload)
+        except UnicodeError:
+            return "MISMATCH"
+        if actual_checksum != report_checksum:
             return "MISMATCH"
 
     try:
@@ -343,7 +347,7 @@ def report_integrity_status(payload: dict) -> str:
         metrics = scan_metrics(payload)
         errors = payload.get("errors")
         error_count = len(errors) if isinstance(errors, list) else 0
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, UnicodeError):
         return "MISMATCH"
 
     if actual != expected:
