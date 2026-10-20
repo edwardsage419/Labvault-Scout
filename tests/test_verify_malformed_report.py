@@ -616,6 +616,44 @@ def test_legacy_fractional_type_summary_counts_cannot_verify(
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
 
+
+
+def test_legacy_explicit_null_report_checksum_is_mismatch(tmp_path: Path) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    legacy = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert "report_sha256" not in legacy
+    assert report_integrity_status(legacy) == "VERIFIED"
+    assert verify_report(legacy)["status"] == "VERIFIED"
+
+    malformed = {**legacy, "report_sha256": None}
+    report = tmp_path / "null-report-checksum-legacy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["report_sha256"] is None
+
+    assert report_integrity_status(malformed) == "MISMATCH"
+    result = verify_report(malformed)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    comparison = compare_payloads(legacy, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
