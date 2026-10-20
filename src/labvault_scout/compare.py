@@ -406,9 +406,10 @@ def report_integrity_status(payload: dict) -> str:
     }
     for key, value in required_summary.items():
         reported = summary.get(key)
-        if isinstance(reported, bool) or (
-            isinstance(reported, dict) and any(isinstance(count, bool) for count in reported.values())
-        ):
+        if isinstance(value, dict):
+            if not isinstance(reported, dict) or any(type(count) is not int for count in reported.values()):
+                return "MISMATCH"
+        elif type(reported) is not int:
             return "MISMATCH"
         if reported != value:
             return "MISMATCH"
