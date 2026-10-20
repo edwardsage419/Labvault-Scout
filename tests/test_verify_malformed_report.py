@@ -654,6 +654,50 @@ def test_legacy_explicit_null_report_checksum_is_mismatch(tmp_path: Path) -> Non
     assert comparison["comparison_status"] == "PARTIAL"
     assert comparison["after"]["integrity_status"] == "MISMATCH"
 
+
+
+@pytest.mark.parametrize("bad_error", [None, "PermissionError", 7, [], True])
+def test_legacy_non_object_error_row_cannot_verify(
+    tmp_path: Path, bad_error: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    good_error = {"path": "blocked.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row],
+        "errors": [good_error],
+        "summary": build_summary([row], [good_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"] = [bad_error]
+    assert report_integrity_status({"files": [row], "errors": [bad_error]}) == "UNKNOWN"
+    assert malformed["summary"]["error_count"] == len(malformed["errors"])
+
+    report = tmp_path / "legacy-invalid-error-row.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["errors"] == [bad_error]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
