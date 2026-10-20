@@ -358,7 +358,7 @@ def report_integrity_status(payload: dict) -> str:
         return "UNKNOWN"
     for row in payload["files"]:
         digest = row.get("sha256")
-        if not isinstance(digest, str) or not digest:
+        if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
             return "MISMATCH"
 
     report_checksum = payload.get("report_sha256")

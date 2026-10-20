@@ -461,6 +461,51 @@ def test_legacy_invalid_hash_type_cannot_verify(
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
 
+
+
+@pytest.mark.parametrize(
+    "invalid_hash", ["a" * 63, "a" * 65, "g" * 64, "A" * 64, "not-a-digest"],
+)
+def test_legacy_non_sha256_digest_cannot_verify(
+    tmp_path: Path, invalid_hash: str,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, inventory_sha256
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status({"files": [{"path": "sample.csv", "sha256": invalid_hash}]}) == "UNKNOWN"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["sha256"] = invalid_hash
+    malformed["summary"]["inventory_sha256"] = inventory_sha256(malformed["files"])
+
+    report = tmp_path / "legacy-bad-digest.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["files"][0]["sha256"] == invalid_hash
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
