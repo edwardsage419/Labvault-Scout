@@ -356,6 +356,10 @@ def report_integrity_status(payload: dict) -> str:
     expected = summary.get("inventory_sha256")
     if not isinstance(expected, str) or not expected:
         return "UNKNOWN"
+    for row in payload["files"]:
+        digest = row.get("sha256")
+        if not isinstance(digest, str) or not digest:
+            return "MISMATCH"
 
     report_checksum = payload.get("report_sha256")
     if payload.get("schema_version") == "1" and report_checksum is None:
