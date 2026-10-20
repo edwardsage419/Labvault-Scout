@@ -338,7 +338,7 @@ def report_integrity_status(payload: dict) -> str:
             return "MISMATCH"
         seen_paths.add(canonical)
         size = row.get("size")
-        if not isinstance(size, (int, float, str)):
+        if "size" in row and not isinstance(size, (int, float, str)):
             return "MISMATCH"
         if isinstance(size, bool) or (isinstance(size, float) and not size.is_integer()):
             return "MISMATCH"
