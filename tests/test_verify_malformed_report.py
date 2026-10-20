@@ -374,6 +374,50 @@ def test_legacy_boolean_or_fractional_size_cannot_have_verified_inventory(
     assert compared["after"]["metrics"]["total_bytes"] == 0
 
 
+
+
+@pytest.mark.parametrize("invalid_size", [None, [], {}, {"bytes": 1}])
+def test_legacy_null_or_container_size_cannot_verify(
+    tmp_path: Path, invalid_size: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, inventory_sha256
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["size"] = invalid_size
+    malformed["summary"]["inventory_sha256"] = inventory_sha256(malformed["files"])
+    malformed["summary"]["total_bytes"] = 0
+
+    report = tmp_path / "invalid-container-size-legacy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["files"][0]["size"] == invalid_size
+
+    assert report_integrity_status(malformed) == "MISMATCH"
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+    assert compared["after"]["metrics"]["total_bytes"] == 0
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
