@@ -405,7 +405,12 @@ def report_integrity_status(payload: dict) -> str:
         "duplicate_group_count": duplicate_group_count,
     }
     for key, value in required_summary.items():
-        if summary.get(key) != value:
+        reported = summary.get(key)
+        if isinstance(reported, bool) or (
+            isinstance(reported, dict) and any(isinstance(count, bool) for count in reported.values())
+        ):
+            return "MISMATCH"
+        if reported != value:
             return "MISMATCH"
     return "VERIFIED"
 

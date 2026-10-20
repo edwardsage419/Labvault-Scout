@@ -506,6 +506,63 @@ def test_legacy_non_sha256_digest_cannot_verify(
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
 
+
+
+@pytest.mark.parametrize(
+    ("field", "count_key", "boolean"),
+    [
+        ("file_count", None, True),
+        ("total_bytes", None, True),
+        ("error_count", None, False),
+        ("open_copy_count", None, False),
+        ("duplicate_group_count", None, False),
+        ("risk_counts", "SAFE", True),
+        ("priority_counts", "LOW", True),
+    ],
+)
+def test_legacy_boolean_summary_counts_cannot_verify(
+    tmp_path: Path, field: str, count_key: str | None, boolean: bool,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    if count_key is None:
+        assert malformed["summary"][field] == boolean
+        malformed["summary"][field] = boolean
+    else:
+        assert malformed["summary"][field][count_key] == boolean
+        malformed["summary"][field][count_key] = boolean
+
+    report = tmp_path / "boolean-legacy-summary.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["summary"] == malformed["summary"]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
 def test_escaped_unpaired_surrogate_does_not_crash_integrity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
