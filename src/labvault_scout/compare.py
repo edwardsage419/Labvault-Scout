@@ -368,12 +368,11 @@ def report_integrity_status(payload: dict) -> str:
     if "errors" in payload and not isinstance(payload["errors"], list):
         return "MISMATCH"
     if legacy and isinstance(payload.get("tool"), dict):
-        for value in payload["tool"].values():
-            if isinstance(value, str):
-                try:
-                    value.encode("utf-8")
-                except UnicodeEncodeError:
-                    return "MISMATCH"
+        # Legacy inventory hashes omit tool metadata, including nested fields.
+        try:
+            json.dumps(payload["tool"], ensure_ascii=False).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError, RecursionError):
+            return "MISMATCH"
 
     if legacy and isinstance(payload.get("provenance"), dict):
         # Legacy inventory hashes omit provenance, including nested metadata.
