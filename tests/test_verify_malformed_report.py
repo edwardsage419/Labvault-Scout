@@ -1350,3 +1350,36 @@ def test_legacy_unencodable_provenance_metadata_cannot_verify(
     comparison = compare_payloads(valid, malformed)
     assert comparison["comparison_status"] == "PARTIAL"
     assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "nested_metadata",
+    [
+        {"notes": [chr(0xD800)]},
+        {"notes": {chr(0xDCFF): "invalid key"}},
+    ],
+)
+def test_legacy_nested_unencodable_provenance_cannot_verify(
+    nested_metadata: dict,
+) -> None:
+    """Nested provenance text must be encodable before legacy verification."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "provenance": {"notes": {"text": "valid"}},
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["provenance"].update(nested_metadata)
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
