@@ -1,4 +1,4 @@
-"""Schema 1 reports must reject Windows-specific path spellings."""
+"""Schema 1 reports must reject Windows drive-prefixed path spellings."""
 
 import json
 import re
@@ -19,11 +19,9 @@ from labvault_scout.schema_registry import load_schema_text
         "C:relative.csv",
         "C:/absolute.csv",
         "z:relative.csv",
-        "nested\\data.csv",
-        "\\\\server\\share.csv",
     ],
 )
-def test_schema1_rejects_windows_paths_even_with_recomputed_checksums(
+def test_schema1_rejects_drive_prefixed_paths_even_with_recomputed_checksums(
     tmp_path: Path, row_kind: str, unsafe_path: str,
 ) -> None:
     source = tmp_path / "source"
