@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import stat as stat_module
 import sys
 from pathlib import Path
@@ -50,17 +51,25 @@ def scan(root: Path, output: Path) -> int:
     else:
         excluded_output = output
 
-    def record_issue(path: Path, error: str) -> None:
+    def safe_report_path(path: Path) -> str:
         try:
-            error_path = path.relative_to(root).as_posix()
+            report_path = path.relative_to(root).as_posix()
         except ValueError:
-            error_path = path.name
-        errors.append({"path": error_path, "error": error})
+            report_path = path.name
+        if re.match(r"^[A-Za-z]:", report_path):
+            raise ValueError(
+                f"Source path cannot be represented safely in scan schema 1: {report_path}"
+            )
+        return report_path
+
+    def record_issue(path: Path, error: str) -> None:
+        errors.append({"path": safe_report_path(path), "error": error})
 
     def record_error(path: Path, exc: OSError) -> None:
         record_issue(path, type(exc).__name__)
 
     for path in iter_files(root, excluded=excluded_output, on_error=record_error):
+        safe_report_path(path)
         try:
             entry_stat = path.lstat()
             if not stat_module.S_ISREG(entry_stat.st_mode):

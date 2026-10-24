@@ -1,6 +1,7 @@
 """Schema 1 reports must reject Windows drive-prefixed path spellings."""
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -59,3 +60,39 @@ def test_schema1_rejects_drive_prefixed_paths_even_with_recomputed_checksums(
         for clause in path_schema["allOf"]
         if "pattern" in clause.get("not", {})
     )
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows disallows colon filenames")
+@pytest.mark.parametrize("filename", ["C:sample.csv", "z:sample.csv"])
+def test_scan_fails_closed_for_posix_drive_prefixed_filenames(
+    tmp_path: Path, filename: str,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    original = source / filename
+    original.write_bytes(b"value\n1\n")
+    output = tmp_path / "output"
+
+    with pytest.raises(ValueError, match="cannot be represented safely"):
+        scan(source, output)
+
+    assert original.read_bytes() == b"value\n1\n"
+    assert not (output / "scan.json").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows disallows colon filenames")
+def test_scan_fails_closed_for_drive_prefixed_walk_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "output"
+
+    def walk_with_error(root: Path, excluded=None, on_error=None):
+        assert on_error is not None
+        on_error(root / "C:unreadable.csv", PermissionError("denied"))
+        return iter(())
+
+    monkeypatch.setattr("labvault_scout.cli.iter_files", walk_with_error)
+    with pytest.raises(ValueError, match="cannot be represented safely"):
+        scan(source, output)
+    assert not (output / "scan.json").exists()
