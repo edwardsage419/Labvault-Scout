@@ -805,6 +805,10 @@ def test_legacy_invalid_error_type_cannot_verify(
         "/absolute/outside.csv",
         "nested" + chr(92) + ".." + chr(92) + "outside.csv",
         "blocked" + chr(0) + ".csv",
+        "C:/sensitive.csv",
+        "C:" + chr(92) + "sensitive.csv",
+        "C:relative.csv",
+        "z:relative.csv",
     ],
 )
 def test_legacy_unsafe_error_path_cannot_verify(
