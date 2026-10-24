@@ -1383,3 +1383,44 @@ def test_legacy_nested_unencodable_provenance_cannot_verify(
     comparison = compare_payloads(valid, malformed)
     assert comparison["comparison_status"] == "PARTIAL"
     assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "nested_metadata",
+    [
+        {"notes": [chr(0xD800)]},
+        {chr(0xDCFF): "invalid key"},
+    ],
+)
+def test_legacy_nested_unencodable_file_metadata_cannot_verify(
+    nested_metadata: dict,
+) -> None:
+    """Nested legacy file metadata must be UTF-8 encodable to verify."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+        "reason": "valid",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["reason"] = nested_metadata
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"

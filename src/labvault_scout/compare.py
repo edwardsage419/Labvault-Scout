@@ -351,12 +351,10 @@ def report_integrity_status(payload: dict) -> str:
                 return "MISMATCH"
             # Legacy inventory hashes omit metadata; reject unencodable text
             # before a malformed file row can be marked VERIFIED.
-            for value in row.values():
-                if isinstance(value, str):
-                    try:
-                        value.encode("utf-8")
-                    except UnicodeEncodeError:
-                        return "MISMATCH"
+            try:
+                json.dumps(row, ensure_ascii=False).encode("utf-8")
+            except (TypeError, ValueError, UnicodeError, RecursionError):
+                return "MISMATCH"
         size = row.get("size")
         if "size" in row and not isinstance(size, (int, float, str)):
             return "MISMATCH"
