@@ -373,7 +373,7 @@ def report_integrity_status(payload: dict) -> str:
         # labels and open-copy paths before truthiness can mask invalid types.
         if legacy and any(
             key in row and not isinstance(row[key], str)
-            for key in ("risk", "priority", "open_copy", "confidence", "recommended_action", "reason")
+            for key in ("risk", "priority", "open_copy", "confidence", "recommended_action", "reason", "priority_reason")
         ):
             return "MISMATCH"
         size = row.get("size")
