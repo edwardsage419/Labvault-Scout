@@ -56,6 +56,12 @@ def scan(root: Path, output: Path) -> int:
             report_path = path.relative_to(root).as_posix()
         except ValueError:
             report_path = path.name
+        try:
+            report_path.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError(
+                "Source path cannot be represented safely in scan schema 1: invalid Unicode"
+            ) from exc
         if re.match(r"^[A-Za-z]:", report_path):
             raise ValueError(
                 f"Source path cannot be represented safely in scan schema 1: {report_path}"
