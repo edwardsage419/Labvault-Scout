@@ -337,6 +337,16 @@ def report_integrity_status(payload: dict) -> str:
         if canonical in seen_paths:
             return "MISMATCH"
         seen_paths.add(canonical)
+        if legacy:
+            parsed_file_path = PurePosixPath(canonical)
+            if (
+                "\x00" in canonical
+                or parsed_file_path.is_absolute()
+                or ".." in parsed_file_path.parts
+                or canonical == "."
+                or re.match(r"^[A-Za-z]:", canonical)
+            ):
+                return "MISMATCH"
         size = row.get("size")
         if "size" in row and not isinstance(size, (int, float, str)):
             return "MISMATCH"
