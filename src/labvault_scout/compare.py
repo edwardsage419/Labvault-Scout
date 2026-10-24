@@ -370,10 +370,10 @@ def report_integrity_status(payload: dict) -> str:
             except (TypeError, ValueError, UnicodeError, RecursionError):
                 return "MISMATCH"
         # Legacy inventory hashes omit assessment metadata. Reject non-string
-        # labels rather than allowing scan_metrics() to stringify them.
+        # labels and open-copy paths before truthiness can mask invalid types.
         if legacy and any(
             key in row and not isinstance(row[key], str)
-            for key in ("risk", "priority")
+            for key in ("risk", "priority", "open_copy")
         ):
             return "MISMATCH"
         size = row.get("size")

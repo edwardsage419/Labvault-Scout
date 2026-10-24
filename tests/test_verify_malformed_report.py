@@ -1623,3 +1623,52 @@ def test_legacy_non_string_assessment_label_cannot_verify(
     compared = compare_payloads(valid, loaded)
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("invalid_value", [None, True, 7, [], {"unexpected": "value"}])
+def test_legacy_non_string_open_copy_cannot_verify(
+    tmp_path: Path, invalid_value: object,
+) -> None:
+    """Unhashed legacy open_copy must remain a string, even with matching counts."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    without_optional = json.loads(json.dumps(valid))
+    without_optional["files"][0].pop("open_copy")
+    assert report_integrity_status(without_optional) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["open_copy"] = invalid_value
+    # Legacy inventory hashes omit open_copy; matching the truthiness-based
+    # summary must never turn a non-string value into verified evidence.
+    malformed["summary"]["open_copy_count"] = int(bool(invalid_value))
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+
+    report = tmp_path / "legacy-non-string-open-copy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["files"][0]["open_copy"] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
