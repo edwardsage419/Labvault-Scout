@@ -349,6 +349,14 @@ def report_integrity_status(payload: dict) -> str:
                 or re.match(r"^[A-Za-z]:", canonical)
             ):
                 return "MISMATCH"
+            # Legacy inventory hashes omit metadata; reject unencodable text
+            # before a malformed file row can be marked VERIFIED.
+            for value in row.values():
+                if isinstance(value, str):
+                    try:
+                        value.encode("utf-8")
+                    except UnicodeEncodeError:
+                        return "MISMATCH"
         size = row.get("size")
         if "size" in row and not isinstance(size, (int, float, str)):
             return "MISMATCH"

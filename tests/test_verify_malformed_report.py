@@ -1212,6 +1212,43 @@ def test_legacy_unencodable_error_text_cannot_verify(invalid_text: str) -> None:
     assert comparison["after"]["integrity_status"] == "MISMATCH"
 
 
+
+@pytest.mark.parametrize("field", ["format", "reason"])
+@pytest.mark.parametrize("invalid_text", [chr(0xD800), chr(0xDCFF)])
+def test_legacy_unencodable_file_metadata_cannot_verify(
+    field: str, invalid_text: str,
+) -> None:
+    """Legacy inventory hashes do not authenticate file metadata text."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+        "format": "CSV",
+        "reason": "recognized",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = invalid_text
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
 @pytest.mark.parametrize(
     "alias_path",
     ["nested//data.csv", "nested/./data.csv"],
