@@ -1672,3 +1672,57 @@ def test_legacy_non_string_open_copy_cannot_verify(
     compared = compare_payloads(valid, loaded)
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize("field", ["confidence", "recommended_action", "reason"])
+@pytest.mark.parametrize("invalid_value", [None, True, 7, [], {"unexpected": "value"}])
+def test_legacy_non_string_descriptive_assessment_cannot_verify(
+    tmp_path: Path, field: str, invalid_value: object,
+) -> None:
+    """Unhashed legacy descriptive assessment fields must remain strings."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+        "confidence": "HIGH",
+        "recommended_action": "Keep a second copy",
+        "reason": "Recognized format",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    # Older reports may omit these optional fields.
+    absent = json.loads(json.dumps(valid))
+    for optional in ("confidence", "recommended_action", "reason"):
+        absent["files"][0].pop(optional)
+    assert report_integrity_status(absent) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = invalid_value
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+
+    path = tmp_path / "legacy-non-string-description.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded["files"][0][field] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
