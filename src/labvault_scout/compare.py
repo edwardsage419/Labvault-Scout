@@ -359,6 +359,8 @@ def report_integrity_status(payload: dict) -> str:
     for error in payload.get("errors", []):
         if not isinstance(error, dict) or not isinstance(error.get("path"), str) or not error["path"]:
             return "MISMATCH"
+        if not isinstance(error.get("error"), str) or not error["error"]:
+            return "MISMATCH"
     for row in payload["files"]:
         digest = row.get("sha256")
         if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
