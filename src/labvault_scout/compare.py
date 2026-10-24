@@ -377,6 +377,14 @@ def report_integrity_status(payload: dict) -> str:
                 except UnicodeEncodeError:
                     return "MISMATCH"
 
+    if legacy and isinstance(payload.get("provenance"), dict):
+        for value in payload["provenance"].values():
+            if isinstance(value, str):
+                try:
+                    value.encode("utf-8")
+                except UnicodeEncodeError:
+                    return "MISMATCH"
+
     summary = payload.get("summary")
     if not isinstance(summary, dict):
         return "UNKNOWN"

@@ -1316,3 +1316,37 @@ def test_legacy_unencodable_tool_metadata_cannot_verify(
     comparison = compare_payloads(valid, malformed)
     assert comparison["comparison_status"] == "PARTIAL"
     assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("field", ["hash_algorithm", "path_style", "rules_sha256", "source_access"])
+@pytest.mark.parametrize("invalid_text", [chr(0xD800), chr(0xDCFF)])
+def test_legacy_unencodable_provenance_metadata_cannot_verify(
+    field: str, invalid_text: str,
+) -> None:
+    """Legacy inventory hashes omit provenance metadata text."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "provenance": {
+            "hash_algorithm": "sha256",
+            "path_style": "relative-posix",
+            "rules_sha256": "a" * 64,
+            "rules_count": 1,
+            "source_access": "read-only",
+        },
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["provenance"][field] = invalid_text
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
