@@ -254,7 +254,7 @@ def _file_index(payload: dict) -> tuple[dict[str, dict], bool]:
     normalized = False
     for source_row in payload["files"]:
         path = source_row["path"]
-        canonical = path.replace("\\", "/") if legacy else path
+        canonical = PurePosixPath(path.replace("\\", "/")).as_posix() if legacy else path
         if canonical in indexed:
             raise ValueError(f"Path collision after legacy normalization: {canonical}")
         row = dict(source_row)
@@ -335,7 +335,7 @@ def report_integrity_status(payload: dict) -> str:
     for row in payload["files"]:
         if not isinstance(row, dict) or not isinstance(row.get("path"), str) or not row["path"]:
             return "MISMATCH"
-        canonical = row["path"].replace("\\", "/") if legacy else row["path"]
+        canonical = PurePosixPath(row["path"].replace("\\", "/")).as_posix() if legacy else row["path"]
         if canonical in seen_paths:
             return "MISMATCH"
         seen_paths.add(canonical)

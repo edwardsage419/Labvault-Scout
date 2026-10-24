@@ -1210,3 +1210,44 @@ def test_legacy_unencodable_error_text_cannot_verify(invalid_text: str) -> None:
     comparison = compare_payloads(valid, malformed)
     assert comparison["comparison_status"] == "PARTIAL"
     assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "alias_path",
+    ["nested//data.csv", "nested/./data.csv"],
+)
+def test_legacy_redundant_path_segments_cannot_hide_collisions(
+    alias_path: str,
+) -> None:
+    """Legacy aliases of the same POSIX path cannot verify as distinct files."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, duplicate_groups
+
+    first = {
+        "path": alias_path,
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    second = {**first, "path": "nested/data.csv", "sha256": "b" * 64}
+    valid = {
+        "files": [first],
+        "errors": [],
+        "summary": build_summary([first], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    rows = [first, second]
+    malformed = {
+        "files": rows,
+        "errors": [],
+        "summary": build_summary(rows, [], duplicate_groups(rows)),
+    }
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    with pytest.raises(ValueError, match="Path collision after legacy normalization"):
+        compare_payloads(valid, malformed)
