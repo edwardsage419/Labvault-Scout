@@ -369,6 +369,13 @@ def report_integrity_status(payload: dict) -> str:
             return "MISMATCH"
     if "errors" in payload and not isinstance(payload["errors"], list):
         return "MISMATCH"
+    if legacy and isinstance(payload.get("tool"), dict):
+        for value in payload["tool"].values():
+            if isinstance(value, str):
+                try:
+                    value.encode("utf-8")
+                except UnicodeEncodeError:
+                    return "MISMATCH"
 
     summary = payload.get("summary")
     if not isinstance(summary, dict):

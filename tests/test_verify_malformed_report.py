@@ -1288,3 +1288,31 @@ def test_legacy_redundant_path_segments_cannot_hide_collisions(
     assert verify_report(malformed)["status"] == "FAILED"
     with pytest.raises(ValueError, match="Path collision after legacy normalization"):
         compare_payloads(valid, malformed)
+
+
+@pytest.mark.parametrize("field", ["name", "version"])
+@pytest.mark.parametrize("invalid_text", [chr(0xD800), chr(0xDCFF)])
+def test_legacy_unencodable_tool_metadata_cannot_verify(
+    field: str, invalid_text: str,
+) -> None:
+    """Reject malformed legacy tool metadata absent from inventory hashes."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "tool": {"name": "LabVault Scout", "version": "0.2.0"},
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["tool"][field] = invalid_text
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
