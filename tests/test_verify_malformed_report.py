@@ -1181,3 +1181,32 @@ def test_legacy_unencodable_error_path_cannot_verify() -> None:
     compared = compare_payloads(valid, malformed)
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("invalid_text", [chr(0xD800), chr(0xDCFF)])
+def test_legacy_unencodable_error_text_cannot_verify(invalid_text: str) -> None:
+    """Legacy reports with unencodable error messages cannot be verified."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    good_error = {"path": "readable.csv", "error": "PermissionError"}
+    valid = {
+        "files": [],
+        "errors": [good_error],
+        "summary": build_summary([], [good_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed_error = {"path": "readable.csv", "error": "invalid-" + invalid_text}
+    malformed = {
+        "files": [],
+        "errors": [malformed_error],
+        "summary": build_summary([], [malformed_error], []),
+    }
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"

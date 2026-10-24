@@ -376,6 +376,7 @@ def report_integrity_status(payload: dict) -> str:
         canonical_error_path = error["path"].replace("\\", "/") if legacy else error["path"]
         try:
             canonical_error_path.encode("utf-8")
+            error["error"].encode("utf-8")
         except UnicodeEncodeError:
             return "MISMATCH"
         parsed_error_path = PurePosixPath(canonical_error_path)
