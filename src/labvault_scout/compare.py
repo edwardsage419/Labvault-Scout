@@ -392,6 +392,12 @@ def report_integrity_status(payload: dict) -> str:
             return "MISMATCH"
         if not isinstance(error.get("error"), str) or not error["error"]:
             return "MISMATCH"
+        if legacy:
+            # Legacy inventory hashes omit additional error metadata.
+            try:
+                json.dumps(error, ensure_ascii=False).encode("utf-8")
+            except (TypeError, ValueError, UnicodeError, RecursionError):
+                return "MISMATCH"
         canonical_error_path = error["path"].replace("\\", "/") if legacy else error["path"]
         try:
             canonical_error_path.encode("utf-8")
