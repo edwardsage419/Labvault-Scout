@@ -332,6 +332,13 @@ def report_integrity_status(payload: dict) -> str:
         return "MISMATCH"
     legacy = "schema_version" not in payload
     if legacy:
+        # Optional legacy metadata must remain objects when present.
+        # Inventory hashes do not cover these fields.
+        if any(
+            key in payload and not isinstance(payload[key], dict)
+            for key in ("tool", "provenance")
+        ):
+            return "MISMATCH"
         # Legacy inventory hashes omit top-level and summary extensions.
         # Check the full JSON tree, including nested keys and values.
         try:

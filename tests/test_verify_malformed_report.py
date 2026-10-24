@@ -1541,3 +1541,39 @@ def test_legacy_unencodable_unhashed_report_metadata_cannot_verify(
     comparison = compare_payloads(valid, loaded)
     assert comparison["comparison_status"] == "PARTIAL"
     assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("field", ["tool", "provenance"])
+@pytest.mark.parametrize("invalid_value", [None, [], "", 17, True])
+def test_legacy_present_non_object_tool_or_provenance_cannot_verify(
+    tmp_path: Path, field: str, invalid_value: object,
+) -> None:
+    """Optional legacy metadata may be absent, but must be objects when present."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "tool": {"name": "LabVault Scout", "version": "0.2.0"},
+        "provenance": {"hash_algorithm": "sha256"},
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    absent = {key: value for key, value in valid.items() if key not in ("tool", "provenance")}
+    assert report_integrity_status(absent) == "VERIFIED"
+
+    malformed = {**valid, field: invalid_value}
+    path = tmp_path / "legacy-invalid-metadata-type.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded[field] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
