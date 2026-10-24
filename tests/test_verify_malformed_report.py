@@ -1500,3 +1500,44 @@ def test_legacy_unencodable_nested_error_metadata_cannot_verify(
     comparison = compare_payloads(valid, loaded)
     assert comparison["comparison_status"] == "PARTIAL"
     assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+@pytest.mark.parametrize("location", ["top_level", "summary"])
+@pytest.mark.parametrize(
+    "bad_metadata",
+    [
+        {"notes": [chr(0xD800)]},
+        {"notes": {chr(0xDCFF): "invalid key"}},
+    ],
+)
+def test_legacy_unencodable_unhashed_report_metadata_cannot_verify(
+    tmp_path: Path, location: str, bad_metadata: dict,
+) -> None:
+    """Legacy report extensions must be UTF-8 encodable before verification."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    if location == "top_level":
+        malformed.update(bad_metadata)
+    else:
+        malformed["summary"].update(bad_metadata)
+    report = tmp_path / "legacy-unencodable-report-metadata.json"
+    report.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+    loaded = load_scan_report(report)
+
+    assert report_integrity_status(loaded) == "MISMATCH"
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    comparison = compare_payloads(valid, loaded)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"

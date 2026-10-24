@@ -331,6 +331,13 @@ def report_integrity_status(payload: dict) -> str:
     if not isinstance(payload.get("files"), list):
         return "MISMATCH"
     legacy = "schema_version" not in payload
+    if legacy:
+        # Legacy inventory hashes omit top-level and summary extensions.
+        # Check the full JSON tree, including nested keys and values.
+        try:
+            json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError, RecursionError):
+            return "MISMATCH"
     seen_paths: set[str] = set()
     for row in payload["files"]:
         if not isinstance(row, dict) or not isinstance(row.get("path"), str) or not row["path"]:
