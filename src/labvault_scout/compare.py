@@ -377,6 +377,7 @@ def report_integrity_status(payload: dict) -> str:
                 "risk", "priority", "open_copy", "confidence", "recommended_action",
                 "reason", "priority_reason", "format", "signature",
                 "signature_status", "container_type",
+                "relationship_strength", "relationship_evidence", "evidence",
             )
         ):
             return "MISMATCH"
