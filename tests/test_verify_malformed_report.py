@@ -1577,3 +1577,49 @@ def test_legacy_present_non_object_tool_or_provenance_cannot_verify(
     compared = compare_payloads(valid, loaded)
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("field", ["risk", "priority"])
+@pytest.mark.parametrize("invalid_value", [None, True, 7, [], {"unexpected": "value"}])
+def test_legacy_non_string_assessment_label_cannot_verify(
+    tmp_path: Path, field: str, invalid_value: object,
+) -> None:
+    """Legacy risk and priority labels must remain strings when present."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, scan_metrics, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = invalid_value
+    metrics = scan_metrics(malformed)
+    malformed["summary"]["risk_counts"] = metrics["risk_counts"]
+    malformed["summary"]["priority_counts"] = metrics["priority_counts"]
+
+    report = tmp_path / "legacy-invalid-assessment-label.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["files"][0][field] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"

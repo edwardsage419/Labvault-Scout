@@ -369,6 +369,13 @@ def report_integrity_status(payload: dict) -> str:
                 json.dumps(row, ensure_ascii=False).encode("utf-8")
             except (TypeError, ValueError, UnicodeError, RecursionError):
                 return "MISMATCH"
+        # Legacy inventory hashes omit assessment metadata. Reject non-string
+        # labels rather than allowing scan_metrics() to stringify them.
+        if legacy and any(
+            key in row and not isinstance(row[key], str)
+            for key in ("risk", "priority")
+        ):
+            return "MISMATCH"
         size = row.get("size")
         if "size" in row and not isinstance(size, (int, float, str)):
             return "MISMATCH"
