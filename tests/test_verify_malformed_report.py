@@ -1153,3 +1153,31 @@ def test_scan_report_exact_float_zero_is_not_underflow(
     parsed = load_scan_report(report)
 
     assert parsed["files"][0]["size"] == 0.0
+
+
+def test_legacy_unencodable_error_path_cannot_verify() -> None:
+    """Malformed Unicode in legacy error paths must not receive VERIFIED."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid_error = {"path": "readable.csv", "error": "PermissionError"}
+    valid = {
+        "files": [],
+        "errors": [valid_error],
+        "summary": build_summary([], [valid_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed_error = {"path": "invalid-" + chr(0xDCFF) + ".csv", "error": "PermissionError"}
+    malformed = {
+        "files": [],
+        "errors": [malformed_error],
+        "summary": build_summary([], [malformed_error], []),
+    }
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
