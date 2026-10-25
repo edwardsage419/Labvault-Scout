@@ -219,6 +219,14 @@ def _reject_nonstandard_scan_json_constant(value: str) -> None:
     raise ValueError(f"Non-standard scan report JSON constant: {value}")
 
 
+def _validate_future_schema_json_text(payload: dict) -> None:
+    """Reject unencodable JSON text without constraining future schema fields."""
+    try:
+        json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+        raise ValueError("Unsupported scan schema contains invalid Unicode or JSON metadata") from exc
+
+
 def _parse_finite_scan_json_float(value: str) -> float:
     """Reject JSON floating-point overflow and nonzero values underflowing to zero."""
     parsed = float(value)
@@ -258,6 +266,8 @@ def load_scan_report(path: Path) -> dict:
         schema_version = "legacy"
     if schema_version == "1":
         _validate_schema1_payload(payload)
+    elif schema_version != "legacy":
+        _validate_future_schema_json_text(payload)
 
     seen: set[str] = set()
     for row in payload["files"]:
@@ -352,6 +362,11 @@ def report_integrity_status(payload: dict) -> str:
         try:
             _validate_schema1_payload(payload)
         except (ValueError, TypeError, KeyError):
+            return "MISMATCH"
+    elif "schema_version" in payload:
+        try:
+            _validate_future_schema_json_text(payload)
+        except ValueError:
             return "MISMATCH"
 
     if not isinstance(payload.get("files"), list):
