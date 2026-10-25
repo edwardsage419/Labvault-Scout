@@ -459,7 +459,7 @@ def report_integrity_status(payload: dict) -> str:
         except UnicodeEncodeError:
             return "MISMATCH"
         parsed_error_path = PurePosixPath(canonical_error_path)
-        if "\x00" in canonical_error_path or parsed_error_path.is_absolute() or ".." in parsed_error_path.parts:
+        if (\n            "\x00" in canonical_error_path\n            or parsed_error_path.is_absolute()\n            or ".." in parsed_error_path.parts\n            or canonical_error_path != parsed_error_path.as_posix()\n        ):
             return "MISMATCH"
         if legacy and re.match(r"^[A-Za-z]:", canonical_error_path):
             return "MISMATCH"

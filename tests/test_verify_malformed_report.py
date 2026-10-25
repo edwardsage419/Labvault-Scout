@@ -2012,3 +2012,52 @@ def test_legacy_nonfinite_unhashed_metadata_cannot_verify(
     compared = compare_payloads(valid, malformed)
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    [
+        "./blocked.csv",
+        "nested//blocked.csv",
+        "nested/./blocked.csv",
+        "nested/blocked.csv/",
+        "nested" + chr(92) * 2 + "blocked.csv",
+    ],
+)
+def test_legacy_noncanonical_error_path_cannot_verify(
+    tmp_path: Path, invalid_path: str,
+) -> None:
+    """Unhashed legacy error paths must not contain redundant path components."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv", "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+    }
+    good_error = {"path": "nested" + chr(92) + "blocked.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row], "errors": [good_error],
+        "summary": build_summary([row], [good_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    root_error = {**valid, "errors": [{"path": ".", "error": "PermissionError"}]}
+    assert report_integrity_status(root_error) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"][0]["path"] = invalid_path
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+    path = tmp_path / "legacy-noncanonical-error-path.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded["errors"][0]["path"] == invalid_path
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
