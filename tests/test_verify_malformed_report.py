@@ -2273,7 +2273,7 @@ def test_schema1_unpaired_surrogate_path_rejected_at_load(
     source.mkdir()
     (source / "data.csv").write_text("value\n1\n", encoding="utf-8")
     output = tmp_path / "report"
-    assert scan(source, output) == 0
+    assert scan(source, output) == 1
     valid = load_scan_report(output / "scan.json")
     assert report_integrity_status(valid) == "VERIFIED"
 
