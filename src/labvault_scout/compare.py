@@ -189,6 +189,10 @@ def _validate_schema1_payload(payload: dict) -> None:
         _validate_report_path(error["path"], allow_root=True)
         if not isinstance(error["error"], str) or not error["error"]:
             raise ValueError("Schema 1 report contains an invalid error type")
+        try:
+            error["error"].encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("Schema 1 report contains invalid Unicode in error text") from exc
 
 def _reject_duplicate_scan_report_keys(pairs: list[tuple[str, object]]) -> dict:
     """Reject ambiguous JSON object keys at every nesting level."""

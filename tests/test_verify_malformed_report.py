@@ -2291,3 +2291,30 @@ def test_schema1_unpaired_surrogate_path_rejected_at_load(
         load_scan_report(report_path)
     assert report_integrity_status(malformed) == "MISMATCH"
     assert verify_report(malformed)["status"] == "FAILED"
+
+@pytest.mark.parametrize("codepoint", [0xD800, 0xDCFF])
+def test_schema1_unpaired_surrogate_error_text_rejected_at_load(
+    tmp_path: Path, codepoint: int,
+) -> None:
+    """Unencodable error messages must fail before a report is accepted."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"] = [{"path": ".", "error": "Read" + chr(codepoint) + "Error"}]
+    malformed["summary"]["error_count"] = 1
+    report_path = tmp_path / "invalid-schema1-unicode-error-text.json"
+    report_path.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Schema 1 report contains invalid Unicode in error text"):
+        load_scan_report(report_path)
+    assert report_integrity_status(malformed) == "MISMATCH"
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
