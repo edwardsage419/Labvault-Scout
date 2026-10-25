@@ -227,6 +227,13 @@ def _validate_future_schema_json_text(payload: dict) -> None:
         raise ValueError("Unsupported scan schema contains invalid Unicode or JSON metadata") from exc
 
 
+def _parse_bounded_scan_json_int(value: str) -> int:
+    """Apply a consistent integer token limit on Python 3.10 and newer."""
+    if len(value.lstrip("-")) > 4300:
+        raise ValueError("Scan report JSON integer exceeds 4300 digits")
+    return int(value)
+
+
 def _parse_finite_scan_json_float(value: str) -> float:
     """Reject JSON floating-point overflow and nonzero values underflowing to zero."""
     parsed = float(value)
@@ -246,6 +253,7 @@ def load_scan_report(path: Path) -> dict:
             object_pairs_hook=_reject_duplicate_scan_report_keys,
             parse_constant=_reject_nonstandard_scan_json_constant,
             parse_float=_parse_finite_scan_json_float,
+            parse_int=_parse_bounded_scan_json_int,
         )
     except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"Cannot read scan report: {path}") from exc
