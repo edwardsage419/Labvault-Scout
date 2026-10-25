@@ -381,6 +381,23 @@ def report_integrity_status(payload: dict) -> str:
             )
         ):
             return "MISMATCH"
+        # Legacy priority scores are not covered by the inventory checksum.
+        # Accept historical whole-number encodings, while rejecting malformed
+        # types, fractions, and scores outside the Schema 1 range.
+        if legacy and "priority_score" in row:
+            score = row["priority_score"]
+            if isinstance(score, bool) or not (
+                isinstance(score, int)
+                or (isinstance(score, float) and score.is_integer())
+                or (isinstance(score, str) and re.fullmatch(r"[0-9]+", score))
+            ):
+                return "MISMATCH"
+            try:
+                numeric_score = int(score)
+            except (TypeError, ValueError, OverflowError):
+                return "MISMATCH"
+            if not 0 <= numeric_score <= 100:
+                return "MISMATCH"
         size = row.get("size")
         if "size" in row and not isinstance(size, (int, float, str)):
             return "MISMATCH"

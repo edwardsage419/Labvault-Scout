@@ -1867,3 +1867,58 @@ def test_legacy_non_string_relationship_metadata_cannot_verify(
     compared = compare_payloads(valid, loaded)
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "invalid_score",
+    [None, True, False, -1, 101, 7.5, "7.5", " 7", "1_0", "٧", [], {}],
+)
+def test_legacy_invalid_priority_score_cannot_verify(
+    tmp_path: Path, invalid_score: object,
+) -> None:
+    """Malformed legacy priority scores must not inherit inventory verification."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv", "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+        "priority_score": 7,
+    }
+    valid = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["priority_score"] = invalid_score
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+    path = tmp_path / "legacy-invalid-priority-score.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded["files"][0]["priority_score"] == invalid_score
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("valid_score", [0, 100, "7", "007", 7.0])
+def test_legacy_compatible_priority_score_encodings_verify(valid_score: object) -> None:
+    """Historical whole-number scores and absent optional scores remain accepted."""
+    from labvault_scout.compare import report_integrity_status
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv", "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+        "priority_score": valid_score,
+    }
+    payload = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(payload) == "VERIFIED"
+    del row["priority_score"]
+    assert report_integrity_status(payload) == "VERIFIED"
