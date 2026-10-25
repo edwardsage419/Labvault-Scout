@@ -249,6 +249,10 @@ def load_scan_report(path: Path) -> dict:
         raw_schema_version = payload["schema_version"]
         if not isinstance(raw_schema_version, str) or not raw_schema_version:
             raise ValueError(f"Invalid scan schema_version in report: {path}")
+        try:
+            raw_schema_version.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError(f"Scan report contains invalid Unicode in schema_version: {path}") from exc
         schema_version = raw_schema_version
     else:
         schema_version = "legacy"
@@ -336,10 +340,14 @@ def metrics_delta(before: dict, after: dict) -> dict:
 
 def report_integrity_status(payload: dict) -> str:
     """Validate embedded inventory and summary consistency when available."""
-    if "schema_version" in payload and (
-        not isinstance(payload["schema_version"], str) or not payload["schema_version"]
-    ):
-        return "MISMATCH"
+    if "schema_version" in payload:
+        schema_value = payload["schema_version"]
+        if not isinstance(schema_value, str) or not schema_value:
+            return "MISMATCH"
+        try:
+            schema_value.encode("utf-8")
+        except UnicodeEncodeError:
+            return "MISMATCH"
     if payload.get("schema_version") == "1":
         try:
             _validate_schema1_payload(payload)
