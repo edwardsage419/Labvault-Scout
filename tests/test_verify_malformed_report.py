@@ -2398,3 +2398,42 @@ def test_schema1_valid_unicode_tool_version_remains_compatible(tmp_path: Path) -
     report_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     assert load_scan_report(report_path)["tool"]["version"] == "0.3.2+révision"
     assert report_integrity_status(payload) == "VERIFIED"
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value", "message"),
+    [
+        ("hash_algorithm", "sha1", "unsupported hash/path semantics"),
+        ("path_style", "absolute", "unsupported hash/path semantics"),
+        ("source_access", "read-write", "invalid source-access semantics"),
+        ("rules_sha256", "A" * 64, "invalid rules_sha256"),
+        ("rules_count", True, "invalid rules_count"),
+        ("rules_count", -1, "invalid rules_count"),
+        ("rules_count", 1.5, "invalid rules_count"),
+    ],
+)
+def test_schema1_invalid_provenance_rejected_with_recomputed_checksum(
+    tmp_path: Path, field: str, invalid_value: object, message: str,
+) -> None:
+    """Recomputing the checksum must not bypass Schema 1 provenance constraints."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["provenance"][field] = invalid_value
+    malformed["report_sha256"] = report_payload_sha256(malformed)
+    path = tmp_path / "invalid-schema1-provenance.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        load_scan_report(path)
+    assert report_integrity_status(malformed) == "MISMATCH"
+    result = verify_report(malformed)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
