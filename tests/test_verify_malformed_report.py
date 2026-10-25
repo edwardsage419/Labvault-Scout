@@ -2318,3 +2318,37 @@ def test_schema1_unpaired_surrogate_error_text_rejected_at_load(
     checked = verify_report(malformed)
     assert checked["status"] == "FAILED"
     assert checked["exit_code"] == 2
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "format", "signature", "signature_status", "container_type",
+        "priority_reason", "recommended_action", "open_copy",
+        "relationship_strength", "relationship_evidence", "evidence", "reason",
+    ],
+)
+@pytest.mark.parametrize("codepoint", [0xD800, 0xDCFF])
+def test_schema1_unpaired_surrogate_file_metadata_rejected_at_load(
+    tmp_path: Path, field: str, codepoint: int,
+) -> None:
+    """File assessment text must be UTF-8 encodable at the load boundary."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.csv").write_text("value\\n1\\n", encoding="utf-8")
+    output = tmp_path / "report"
+    assert scan(source, output) == 1
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = "invalid" + chr(codepoint) + "text"
+    report_path = tmp_path / "invalid-schema1-unicode-file-metadata.json"
+    report_path.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=f"invalid Unicode in {field}"):
+        load_scan_report(report_path)
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"

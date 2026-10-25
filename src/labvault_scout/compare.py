@@ -176,6 +176,12 @@ def _validate_schema1_payload(payload: dict) -> None:
         for field in string_fields:
             if not isinstance(row[field], str):
                 raise ValueError(f"Schema 1 file row has non-string {field}: {row['path']}")
+            try:
+                row[field].encode("utf-8")
+            except UnicodeEncodeError as exc:
+                raise ValueError(
+                    f"Schema 1 file row contains invalid Unicode in {field}: {row['path']}"
+                ) from exc
         if row["risk"] not in SCHEMA1_RISKS:
             raise ValueError(f"Schema 1 file row has invalid risk: {row['path']}")
         if row["confidence"] not in SCHEMA1_CONFIDENCE:
