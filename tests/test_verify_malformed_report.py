@@ -2352,3 +2352,49 @@ def test_schema1_unpaired_surrogate_file_metadata_rejected_at_load(
         load_scan_report(report_path)
     assert report_integrity_status(malformed) == "MISMATCH"
     assert verify_report(malformed)["status"] == "FAILED"
+
+
+@pytest.mark.parametrize("codepoint", [0xD800, 0xDCFF])
+def test_schema1_unpaired_surrogate_tool_version_rejected_at_load(
+    tmp_path: Path, codepoint: int,
+) -> None:
+    """Schema 1 tool version text must be valid UTF-8 at the load boundary."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["tool"]["version"] = "0.3.2+" + chr(codepoint)
+    report_path = tmp_path / "invalid-schema1-tool-version.json"
+    report_path.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid Unicode in tool"):
+        load_scan_report(report_path)
+    assert report_integrity_status(malformed) == "MISMATCH"
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+
+
+def test_schema1_valid_unicode_tool_version_remains_compatible(tmp_path: Path) -> None:
+    """Valid non-ASCII version text is permitted by the Schema 1 contract."""
+    from labvault_scout.compare import report_integrity_status
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    payload = load_scan_report(output / "scan.json")
+    payload["tool"]["version"] = "0.3.2+révision"
+    payload["report_sha256"] = report_payload_sha256(payload)
+
+    report_path = tmp_path / "valid-unicode-schema1-tool-version.json"
+    report_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    assert load_scan_report(report_path)["tool"]["version"] == "0.3.2+révision"
+    assert report_integrity_status(payload) == "VERIFIED"

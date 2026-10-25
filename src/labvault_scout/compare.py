@@ -95,6 +95,10 @@ def _validate_schema1_payload(payload: dict) -> None:
         or not tool["version"]
     ):
         raise ValueError("Schema 1 report has invalid tool metadata")
+    try:
+        tool["version"].encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("Schema 1 report contains invalid Unicode in tool.version") from exc
 
     provenance = payload["provenance"]
     required_provenance = {"hash_algorithm", "path_style", "rules_sha256", "rules_count", "source_access"}
