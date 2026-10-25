@@ -57,6 +57,11 @@ CSV_FIELDS = (
 )
 
 
+def _safe_scan_json_field_name(value: str) -> str:
+    """Escape invalid Unicode in JSON key names before formatting diagnostics."""
+    return value.encode("utf-8", errors="backslashreplace").decode("utf-8")
+
+
 def _validate_report_path(value: object, *, allow_root: bool = False) -> str:
     if not isinstance(value, str) or not value or "\x00" in value:
         raise ValueError("Report path must be a non-empty string")
@@ -84,7 +89,7 @@ def _validate_schema1_payload(payload: dict) -> None:
     if missing_top:
         raise ValueError(f"Schema 1 report is missing top-level fields: {', '.join(missing_top)}")
     if extra_top:
-        raise ValueError(f"Schema 1 report has unexpected top-level fields: {', '.join(extra_top)}")
+        raise ValueError(f"Schema 1 report has unexpected top-level fields: {', '.join(_safe_scan_json_field_name(field) for field in extra_top)}")
 
     tool = payload["tool"]
     if (
@@ -166,7 +171,7 @@ def _validate_schema1_payload(payload: dict) -> None:
         if missing:
             raise ValueError(f"Schema 1 file row is missing fields: {', '.join(missing)}")
         if extra:
-            raise ValueError(f"Schema 1 file row has unexpected fields: {', '.join(extra)}")
+            raise ValueError(f"Schema 1 file row has unexpected fields: {', '.join(_safe_scan_json_field_name(field) for field in extra)}")
         path = _validate_report_path(row["path"])
         if path in seen_file_paths:
             raise ValueError(f"Duplicate path in scan report: {path}")
@@ -209,7 +214,7 @@ def _reject_duplicate_scan_report_keys(pairs: list[tuple[str, object]]) -> dict:
     result = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"Duplicate scan report JSON key: {key}")
+            raise ValueError(f"Duplicate scan report JSON key: {_safe_scan_json_field_name(key)}")
         result[key] = value
     return result
 
