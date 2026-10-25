@@ -360,6 +360,7 @@ def report_integrity_status(payload: dict) -> str:
                 or parsed_file_path.is_absolute()
                 or ".." in parsed_file_path.parts
                 or canonical == "."
+                or row["path"].replace("\\", "/") != canonical
                 or re.match(r"^[A-Za-z]:", canonical)
             ):
                 return "MISMATCH"

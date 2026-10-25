@@ -1271,10 +1271,11 @@ def test_legacy_redundant_path_segments_cannot_hide_collisions(
         "open_copy": "",
     }
     second = {**first, "path": "nested/data.csv", "sha256": "b" * 64}
+    canonical_first = {**first, "path": "nested/data.csv"}
     valid = {
-        "files": [first],
+        "files": [canonical_first],
         "errors": [],
-        "summary": build_summary([first], [], []),
+        "summary": build_summary([canonical_first], [], []),
     }
     assert report_integrity_status(valid) == "VERIFIED"
 
@@ -2053,6 +2054,53 @@ def test_legacy_noncanonical_error_path_cannot_verify(
     path.write_text(json.dumps(malformed), encoding="utf-8")
     loaded = load_scan_report(path)
     assert loaded["errors"][0]["path"] == invalid_path
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    [
+        "./nested/data.csv",
+        "nested//data.csv",
+        "nested/./data.csv",
+        "nested/data.csv/",
+        "nested" + chr(92) * 2 + "data.csv",
+    ],
+)
+def test_legacy_single_noncanonical_file_path_cannot_verify(
+    tmp_path: Path, invalid_path: str,
+) -> None:
+    """Legacy file paths with redundant components must not be verified."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "nested" + chr(92) + "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["path"] = invalid_path
+    malformed["summary"] = build_summary(malformed["files"], [], [])
+    report = tmp_path / "legacy-noncanonical-file-path.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["files"][0]["path"] == invalid_path
     assert report_integrity_status(loaded) == "MISMATCH"
 
     checked = verify_report(loaded)
