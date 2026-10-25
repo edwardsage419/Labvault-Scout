@@ -2115,8 +2115,8 @@ def test_legacy_single_noncanonical_file_path_cannot_verify(
     ("file_path", "error_path"),
     [
         ("nested/data.csv", "nested/data.csv"),
-        ("nested\\\\data.csv", "nested/data.csv"),
-        ("nested/data.csv", "nested\\\\data.csv"),
+        ("nested" + chr(92) + "data.csv", "nested/data.csv"),
+        ("nested/data.csv", "nested" + chr(92) + "data.csv"),
     ],
 )
 def test_legacy_file_error_path_overlap_cannot_verify(
