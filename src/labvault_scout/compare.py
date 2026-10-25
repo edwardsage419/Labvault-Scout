@@ -57,8 +57,8 @@ CSV_FIELDS = (
 )
 
 
-def _safe_scan_json_field_name(value: str) -> str:
-    """Escape invalid Unicode in JSON key names before formatting diagnostics."""
+def _safe_scan_json_diagnostic_text(value: str) -> str:
+    """Escape invalid Unicode in untrusted JSON diagnostics."""
     return value.encode("utf-8", errors="backslashreplace").decode("utf-8")
 
 
@@ -89,7 +89,7 @@ def _validate_schema1_payload(payload: dict) -> None:
     if missing_top:
         raise ValueError(f"Schema 1 report is missing top-level fields: {', '.join(missing_top)}")
     if extra_top:
-        raise ValueError(f"Schema 1 report has unexpected top-level fields: {', '.join(_safe_scan_json_field_name(field) for field in extra_top)}")
+        raise ValueError(f"Schema 1 report has unexpected top-level fields: {', '.join(_safe_scan_json_diagnostic_text(field) for field in extra_top)}")
 
     tool = payload["tool"]
     if (
@@ -171,7 +171,7 @@ def _validate_schema1_payload(payload: dict) -> None:
         if missing:
             raise ValueError(f"Schema 1 file row is missing fields: {', '.join(missing)}")
         if extra:
-            raise ValueError(f"Schema 1 file row has unexpected fields: {', '.join(_safe_scan_json_field_name(field) for field in extra)}")
+            raise ValueError(f"Schema 1 file row has unexpected fields: {', '.join(_safe_scan_json_diagnostic_text(field) for field in extra)}")
         path = _validate_report_path(row["path"])
         if path in seen_file_paths:
             raise ValueError(f"Duplicate path in scan report: {path}")
@@ -214,7 +214,7 @@ def _reject_duplicate_scan_report_keys(pairs: list[tuple[str, object]]) -> dict:
     result = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"Duplicate scan report JSON key: {_safe_scan_json_field_name(key)}")
+            raise ValueError(f"Duplicate scan report JSON key: {_safe_scan_json_diagnostic_text(key)}")
         result[key] = value
     return result
 
@@ -289,7 +289,7 @@ def load_scan_report(path: Path) -> dict:
         if not isinstance(row, dict) or not isinstance(row.get("path"), str) or not row["path"]:
             raise ValueError(f"Invalid file row in scan report: {path}")
         if row["path"] in seen:
-            raise ValueError(f"Duplicate path in scan report: {row['path']}")
+            raise ValueError(f"Duplicate path in scan report: {_safe_scan_json_diagnostic_text(row['path'])}")
         seen.add(row["path"])
     return payload
 
@@ -303,7 +303,7 @@ def _file_index(payload: dict) -> tuple[dict[str, dict], bool]:
         path = source_row["path"]
         canonical = PurePosixPath(path.replace("\\", "/")).as_posix() if legacy else path
         if canonical in indexed:
-            raise ValueError(f"Path collision after legacy normalization: {canonical}")
+            raise ValueError(f"Path collision after legacy normalization: {_safe_scan_json_diagnostic_text(canonical)}")
         row = dict(source_row)
         if canonical != path:
             row["path"] = canonical
