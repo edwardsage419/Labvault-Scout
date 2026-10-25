@@ -381,6 +381,17 @@ def report_integrity_status(payload: dict) -> str:
             )
         ):
             return "MISMATCH"
+        # Legacy assessment labels are omitted from the inventory checksum.
+        # Apply Schema 1 enums while preserving absent optional legacy fields.
+        if legacy and any(
+            key in row and row[key] not in allowed
+            for key, allowed in (
+                ("risk", SCHEMA1_RISKS),
+                ("priority", SCHEMA1_PRIORITY),
+                ("confidence", SCHEMA1_CONFIDENCE),
+            )
+        ):
+            return "MISMATCH"
         # Legacy priority scores are not covered by the inventory checksum.
         # Accept historical whole-number encodings, while rejecting malformed
         # types, fractions, and scores outside the Schema 1 range.
