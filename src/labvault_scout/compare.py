@@ -235,7 +235,9 @@ def _parse_bounded_scan_json_int(value: str) -> int:
 
 
 def _parse_finite_scan_json_float(value: str) -> float:
-    """Reject JSON floating-point overflow and nonzero values underflowing to zero."""
+    """Bound JSON float tokens and reject overflow or nonzero underflow."""
+    if len(value.lstrip("-")) > 4300:
+        raise ValueError("Scan report JSON float exceeds 4300 characters")
     parsed = float(value)
     if not math.isfinite(parsed):
         raise ValueError("Scan report JSON number exceeds floating-point range")
