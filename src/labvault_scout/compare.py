@@ -60,6 +60,10 @@ CSV_FIELDS = (
 def _validate_report_path(value: object, *, allow_root: bool = False) -> str:
     if not isinstance(value, str) or not value or "\x00" in value:
         raise ValueError("Report path must be a non-empty string")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("Report path contains invalid Unicode") from exc
     if re.match(r"^[A-Za-z]:", value):
         raise ValueError(f"Report path is not canonical POSIX form: {value}")
     path = PurePosixPath(value)

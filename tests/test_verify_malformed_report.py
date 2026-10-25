@@ -2260,3 +2260,34 @@ def test_schema1_noncanonical_error_path_rejected_with_recomputed_checksum(
     report_path.write_text(json.dumps(malformed), encoding="utf-8")
     with pytest.raises(ValueError, match="Report path"):
         load_scan_report(report_path)
+
+@pytest.mark.parametrize("location", ["file", "error"])
+@pytest.mark.parametrize("codepoint", [0xD800, 0xDCFF])
+def test_schema1_unpaired_surrogate_path_rejected_at_load(
+    tmp_path: Path, location: str, codepoint: int,
+) -> None:
+    """Malformed Unicode in Schema 1 paths must fail at the load boundary."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.csv").write_text("value\n1\n", encoding="utf-8")
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    bad_path = "invalid-" + chr(codepoint) + ".csv"
+    if location == "file":
+        malformed["files"][0]["path"] = bad_path
+    else:
+        malformed["errors"] = [{"path": bad_path, "error": "PermissionError"}]
+        malformed["summary"]["error_count"] = 1
+
+    report_path = tmp_path / "invalid-schema1-unicode-path.json"
+    report_path.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+    with pytest.raises(ValueError, match="Report path contains invalid Unicode"):
+        load_scan_report(report_path)
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
