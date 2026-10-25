@@ -319,7 +319,9 @@ def scan_metrics(payload: dict) -> dict:
     total_bytes = 0
     for row in payload["files"]:
         raw_size = row.get("size", 0)
-        if isinstance(raw_size, str) and not re.fullmatch(r"[0-9]+", raw_size):
+        if isinstance(raw_size, str) and (
+            len(raw_size) > 4300 or not re.fullmatch(r"[0-9]+", raw_size)
+        ):
             # Do not let int() accept whitespace, signs, underscores, or Unicode digits.
             raw_size = None
         if not isinstance(raw_size, bool) and not (
@@ -460,6 +462,8 @@ def report_integrity_status(payload: dict) -> str:
                 or (isinstance(score, str) and re.fullmatch(r"[0-9]+", score))
             ):
                 return "MISMATCH"
+            if isinstance(score, str) and len(score) > 4300:
+                return "MISMATCH"
             try:
                 numeric_score = int(score)
             except (TypeError, ValueError, OverflowError):
@@ -474,7 +478,7 @@ def report_integrity_status(payload: dict) -> str:
         if (
             isinstance(size, (int, float))
             and size < 0
-        ) or (isinstance(size, str) and not re.fullmatch(r"[0-9]+", size)):
+        ) or (isinstance(size, str) and (len(size) > 4300 or not re.fullmatch(r"[0-9]+", size))):
             return "MISMATCH"
     if "errors" in payload and not isinstance(payload["errors"], list):
         return "MISMATCH"
@@ -655,6 +659,7 @@ def _priority_change(before: dict | None, after: dict | None) -> tuple[str, int 
     if any(
         isinstance(score, bool)
         or (isinstance(score, float) and not score.is_integer())
+        or (isinstance(score, str) and len(score) > 4300)
         for score in (before_score, after_score)
     ):
         # Legacy boolean and fractional scores cannot support an integer priority delta.
