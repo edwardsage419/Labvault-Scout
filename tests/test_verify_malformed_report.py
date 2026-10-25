@@ -2154,3 +2154,66 @@ def test_legacy_file_error_path_overlap_cannot_verify(
     compared = compare_payloads(valid, loaded)
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "errors",
+    [
+        [{"path": "blocked", "error": "PermissionError"}, {"path": "blocked", "error": "OSError"}],
+        [{"path": "blocked", "error": "PermissionError"}, {"path": "blocked", "error": "PermissionError"}],
+        [{"path": ".", "error": "PermissionError"}, {"path": ".", "error": "OSError"}],
+    ],
+)
+def test_legacy_repeated_error_paths_remain_compatible(
+    tmp_path: Path, errors: list[dict],
+) -> None:
+    """Repeated error paths are legal; scan errors still make comparisons partial."""
+    from labvault_scout.compare import (
+        compare_payloads, load_scan_report, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    payload = {"files": [], "errors": errors, "summary": build_summary([], errors, [])}
+    report = tmp_path / "legacy-repeated-errors.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["errors"] == errors
+    assert loaded["summary"]["error_count"] == 2
+    assert report_integrity_status(loaded) == "VERIFIED"
+    assert verify_report(loaded)["status"] == "VERIFIED"
+    comparison = compare_payloads(loaded, loaded)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["before"]["error_count"] == 2
+
+
+def test_schema1_repeated_traversal_error_paths_remain_compatible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeated traversal callbacks may report one directory more than once."""
+    from labvault_scout import cli
+    from labvault_scout.compare import (
+        compare_payloads, load_scan_report, report_integrity_status, verify_report,
+    )
+
+    root = tmp_path / "source"
+    root.mkdir()
+    output = tmp_path / "report"
+
+    def repeated_walk_errors(root: Path, excluded=None, on_error=None):
+        assert on_error is not None
+        on_error(root / "blocked", PermissionError("first failure"))
+        on_error(root / "blocked", OSError("second failure"))
+        return iter(())
+
+    monkeypatch.setattr(cli, "iter_files", repeated_walk_errors)
+    assert cli.scan(root, output) == 0
+    loaded = load_scan_report(output / "scan.json")
+    assert loaded["schema_version"] == "1"
+    assert loaded["errors"] == [
+        {"path": "blocked", "error": "PermissionError"},
+        {"path": "blocked", "error": "OSError"},
+    ]
+    assert loaded["summary"]["error_count"] == 2
+    assert report_integrity_status(loaded) == "VERIFIED"
+    assert verify_report(loaded)["status"] == "VERIFIED"
+    assert compare_payloads(loaded, loaded)["comparison_status"] == "PARTIAL"
