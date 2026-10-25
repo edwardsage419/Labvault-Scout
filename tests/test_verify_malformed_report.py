@@ -2217,3 +2217,46 @@ def test_schema1_repeated_traversal_error_paths_remain_compatible(
     assert report_integrity_status(loaded) == "VERIFIED"
     assert verify_report(loaded)["status"] == "VERIFIED"
     assert compare_payloads(loaded, loaded)["comparison_status"] == "PARTIAL"
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    [
+        "/absolute.csv",
+        "../parent.csv",
+        "nested/../escape.csv",
+        "./blocked.csv",
+        "nested//blocked.csv",
+        "nested/./blocked.csv",
+        "nested/blocked.csv/",
+        "blocked.csv\x00suffix",
+    ],
+)
+def test_schema1_noncanonical_error_path_rejected_with_recomputed_checksum(
+    tmp_path: Path, invalid_path: str,
+) -> None:
+    """Invalid error paths fail even when a Schema 1 checksum is recomputed."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"] = [{"path": invalid_path, "error": "PermissionError"}]
+    malformed["summary"]["error_count"] = 1
+    malformed["report_sha256"] = report_payload_sha256(malformed)
+
+    assert report_integrity_status(malformed) == "MISMATCH"
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+
+    report_path = tmp_path / "schema1-invalid-error-path.json"
+    report_path.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(ValueError, match="Report path"):
+        load_scan_report(report_path)
