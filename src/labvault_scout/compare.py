@@ -342,7 +342,7 @@ def report_integrity_status(payload: dict) -> str:
         # Legacy inventory hashes omit top-level and summary extensions.
         # Check the full JSON tree, including nested keys and values.
         try:
-            json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
         except (TypeError, ValueError, UnicodeError, RecursionError):
             return "MISMATCH"
     seen_paths: set[str] = set()

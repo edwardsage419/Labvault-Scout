@@ -1964,3 +1964,51 @@ def test_legacy_out_of_enum_assessment_labels_cannot_verify(
     compared = compare_payloads(valid, loaded)
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
+
+@pytest.mark.parametrize("location", ["tool", "provenance", "summary", "file", "error", "top"])
+@pytest.mark.parametrize(
+    "nonfinite", [float("nan"), float("inf"), -float("inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_legacy_nonfinite_unhashed_metadata_cannot_verify(
+    location: str, nonfinite: float,
+) -> None:
+    """Direct verification must reject non-JSON numbers in legacy extensions."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv", "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+    }
+    error = {"path": "blocked.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row], "errors": [error],
+        "summary": build_summary([row], [error], []),
+        "tool": {"name": "LabVault Scout"},
+        "provenance": {"source_access": "read-only"},
+        "legacy_extension": {"value": 0},
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    targets = {
+        "tool": malformed["tool"],
+        "provenance": malformed["provenance"],
+        "summary": malformed["summary"],
+        "file": malformed["files"][0],
+        "error": malformed["errors"][0],
+        "top": malformed,
+    }
+    targets[location]["legacy_extension"] = {"value": nonfinite}
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
