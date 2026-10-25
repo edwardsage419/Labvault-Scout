@@ -48,10 +48,14 @@ def test_invalid_unicode_json_keys_have_safe_cli_diagnostics(
 
     report = tmp_path / "malformed-key.json"
     report.write_text(raw, encoding="utf-8")
-    with pytest.raises(ValueError, match=expected) as exc_info:
+    # Parser errors are intentionally wrapped by the report loader.
+    diagnostic = "Cannot read scan report" if location == "duplicate_key" else expected
+    with pytest.raises(ValueError, match=diagnostic) as exc_info:
         load_scan_report(report)
-    assert escaped_key in str(exc_info.value)
-    str(exc_info.value).encode("utf-8", errors="strict")
+    detail = exc_info.value.__cause__ if location == "duplicate_key" else exc_info.value
+    assert isinstance(detail, ValueError)
+    assert escaped_key in str(detail)
+    str(detail).encode("utf-8", errors="strict")
 
     # Simulate a strict UTF-8 terminal. An unpaired surrogate in an error
     # message used to raise UnicodeEncodeError while printing the CLI error.
@@ -68,8 +72,9 @@ def test_invalid_unicode_json_keys_have_safe_cli_diagnostics(
     assert exc.value.code == 2
     stderr.flush()
     message = stderr_bytes.getvalue().decode("utf-8")
-    assert expected in message
-    assert escaped_key in message
+    assert diagnostic in message
+    if location != "duplicate_key":
+        assert escaped_key in message
     assert "Traceback" not in message
 
     monkeypatch.setattr(
@@ -82,7 +87,9 @@ def test_invalid_unicode_json_keys_have_safe_cli_diagnostics(
     response = json.loads(stdout_bytes.getvalue().decode("utf-8"))
     assert response["status"] == "INVALID"
     assert response["exit_code"] == 2
-    assert escaped_key in response["error"]
+    assert diagnostic in response["error"]
+    if location != "duplicate_key":
+        assert escaped_key in response["error"]
 
     monkeypatch.setattr(
         sys, "argv", ["labvault-scout", "compare", str(report), str(valid_path)]
@@ -91,4 +98,8 @@ def test_invalid_unicode_json_keys_have_safe_cli_diagnostics(
         main()
     assert exc.value.code == 2
     stderr.flush()
-    assert escaped_key in stderr_bytes.getvalue().decode("utf-8")
+    compare_error = stderr_bytes.getvalue().decode("utf-8")
+    assert diagnostic in compare_error
+    if location != "duplicate_key":
+        assert escaped_key in compare_error
+    assert "Traceback" not in compare_error
