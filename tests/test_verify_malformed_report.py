@@ -2109,3 +2109,48 @@ def test_legacy_single_noncanonical_file_path_cannot_verify(
     compared = compare_payloads(valid, loaded)
     assert compared["comparison_status"] == "PARTIAL"
     assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    ("file_path", "error_path"),
+    [
+        ("nested/data.csv", "nested/data.csv"),
+        ("nested\\\\data.csv", "nested/data.csv"),
+        ("nested/data.csv", "nested\\\\data.csv"),
+    ],
+)
+def test_legacy_file_error_path_overlap_cannot_verify(
+    tmp_path: Path, file_path: str, error_path: str,
+) -> None:
+    """A successful file cannot also be a scan error, including path aliases."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": file_path, "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+    }
+    error = {"path": "other.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row], "errors": [error],
+        "summary": build_summary([row], [error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"][0]["path"] = error_path
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+    assert malformed["summary"]["error_count"] == valid["summary"]["error_count"]
+    report = tmp_path / "legacy-overlapping-file-error.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["errors"][0]["path"] == error_path
+    assert report_integrity_status(loaded) == "MISMATCH"
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"

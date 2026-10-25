@@ -469,6 +469,10 @@ def report_integrity_status(payload: dict) -> str:
             return "MISMATCH"
         if legacy and re.match(r"^[A-Za-z]:", canonical_error_path):
             return "MISMATCH"
+        # A path cannot be both successfully scanned and recorded as an error.
+        # Compare normalized legacy paths to prevent separator aliases.
+        if canonical_error_path in seen_paths:
+            return "MISMATCH"
     for row in payload["files"]:
         digest = row.get("sha256")
         if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
