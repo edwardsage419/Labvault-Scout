@@ -216,3 +216,37 @@ def test_hash_detects_same_size_rewrite_with_restored_mtime(
         sha256_with_head(target, expected_stat=before)
 
     assert changed
+
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_hash_stream_setup_error_survives_descriptor_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, close_fails: bool,
+) -> None:
+    target = tmp_path / "input.bin"
+    target.write_bytes(b"original research bytes")
+    opened_fds: list[int] = []
+    original_close = os.close
+
+    def fail_fdopen(fd: int, *args, **kwargs):
+        opened_fds.append(fd)
+        raise ValueError("synthetic hash stream setup failure")
+
+    def close_descriptor(fd: int) -> None:
+        original_close(fd)
+        if opened_fds and fd == opened_fds[0] and close_fails:
+            raise OSError(5, "synthetic hash descriptor close failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(hashing.os, "fdopen", fail_fdopen)
+        patch.setattr(hashing.os, "close", close_descriptor)
+        with pytest.raises(ValueError, match="synthetic hash stream setup failure") as caught:
+            sha256_with_head(target)
+
+    assert len(opened_fds) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened_fds[0])
+    if close_fails:
+        assert isinstance(caught.value.__cause__, OSError)
+        assert "synthetic hash descriptor close failure" in str(caught.value.__cause__)
+    else:
+        assert caught.value.__cause__ is None
+    assert target.read_bytes() == b"original research bytes"

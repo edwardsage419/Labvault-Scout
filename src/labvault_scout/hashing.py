@@ -62,9 +62,13 @@ def sha256_with_head(
             final_path_stat = path.lstat()
             if _file_identity_changed(opened_stat, final_path_stat):
                 raise FileChangedDuringScan("File identity changed during read")
-    finally:
+    except BaseException as original_error:
         if fd != -1:
-            os.close(fd)
+            try:
+                os.close(fd)
+            except OSError as close_error:
+                raise original_error from close_error
+        raise
     return digest.hexdigest(), bytes(head)
 
 
