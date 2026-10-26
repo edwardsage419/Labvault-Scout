@@ -18,7 +18,10 @@ from labvault_scout.report import build_summary
 
 
 def _legacy_report(size: int | float) -> dict:
-    row = {"path": "data.csv", "size": size, "sha256": "a" * 64}
+    row = {
+        "path": "data.csv", "size": size, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+    }
     payload = {"files": [row], "errors": []}
     payload["summary"] = build_summary([row], [], [])
     return payload
@@ -39,7 +42,8 @@ def test_unsafe_legacy_float_size_cannot_verify(
     path = tmp_path / "legacy-imprecise-size.json"
     path.write_text(
         '{"files":[{"path":"data.csv","size":' + number
-        + ',"sha256":"' + "a" * 64 + '"}],"errors":[]}',
+        + ',"sha256":"' + "a" * 64
+        + '","risk":"SAFE","priority":"LOW","open_copy":""}],"errors":[]}',
         encoding="utf-8",
     )
     loaded = load_scan_report(path)
