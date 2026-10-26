@@ -14,6 +14,7 @@ from .safeio import atomic_write_text
 
 BUNDLE_SCHEMA_VERSION = "1"
 BUNDLE_MANIFEST_NAME = "bundle_manifest.json"
+MAX_BUNDLE_MANIFEST_BYTES = 1024 * 1024
 BUNDLE_FILES = (
     "scan.json",
     "files.csv",
@@ -101,6 +102,8 @@ def _read_manifest_text(path: Path) -> str:
     before = path.lstat()
     if not stat_module.S_ISREG(before.st_mode):
         raise ValueError("Bundle manifest must be a regular file")
+    if before.st_size > MAX_BUNDLE_MANIFEST_BYTES:
+        raise ValueError("Bundle manifest exceeds maximum size")
 
     flags = (
         os.O_RDONLY
@@ -120,11 +123,15 @@ def _read_manifest_text(path: Path) -> str:
             for field in fields
         ):
             raise ValueError("Bundle manifest changed during read")
+        if opened.st_size > MAX_BUNDLE_MANIFEST_BYTES:
+            raise ValueError("Bundle manifest exceeds maximum size")
 
         handle = os.fdopen(fd, "r", encoding="utf-8")
         fd = -1
         with handle:
-            content = handle.read()
+            content = handle.read(MAX_BUNDLE_MANIFEST_BYTES + 1)
+            if len(content) > MAX_BUNDLE_MANIFEST_BYTES:
+                raise ValueError("Bundle manifest exceeds maximum size")
             final = os.fstat(handle.fileno())
             final_path = path.lstat()
         if any(

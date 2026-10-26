@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from labvault_scout.bundle import BUNDLE_FILES, load_bundle_manifest, manifest_payload_sha256
+from labvault_scout.bundle import (
+    BUNDLE_FILES,
+    MAX_BUNDLE_MANIFEST_BYTES,
+    load_bundle_manifest,
+    manifest_payload_sha256,
+)
 
 
 def _write_manifest(output_dir: Path, payload: dict) -> None:
@@ -99,3 +104,26 @@ def test_bundle_manifest_rejects_unencodable_json_text(
     with pytest.raises(ValueError, match="Bundle manifest contains invalid Unicode") as caught:
         load_bundle_manifest(tmp_path)
     assert isinstance(caught.value.__cause__, UnicodeEncodeError)
+
+
+@pytest.mark.parametrize("excess", [1, 4096])
+def test_bundle_manifest_rejects_oversized_json(tmp_path: Path, excess: int) -> None:
+    payload = _base_manifest()
+    encoded = json.dumps(payload).encode("utf-8")
+    assert len(encoded) < MAX_BUNDLE_MANIFEST_BYTES
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_bytes(
+        encoded + b" " * (MAX_BUNDLE_MANIFEST_BYTES + excess - len(encoded))
+    )
+    with pytest.raises(ValueError, match="Bundle manifest exceeds maximum size"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_accepts_exact_size_limit(tmp_path: Path) -> None:
+    payload = _base_manifest()
+    encoded = json.dumps(payload).encode("utf-8")
+    assert len(encoded) < MAX_BUNDLE_MANIFEST_BYTES
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_bytes(encoded + b" " * (MAX_BUNDLE_MANIFEST_BYTES - len(encoded)))
+    loaded = load_bundle_manifest(tmp_path)
+    assert loaded["manifest_sha256"] == payload["manifest_sha256"]
