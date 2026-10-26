@@ -32,11 +32,13 @@ def atomic_text_writer(
         with handle:
             yield handle
         os.replace(temp_path, path)
-    except BaseException:
+    except BaseException as original_error:
         try:
             temp_path.unlink()
         except FileNotFoundError:
             pass
+        except OSError as cleanup_error:
+            raise original_error from cleanup_error
         raise
 
 
