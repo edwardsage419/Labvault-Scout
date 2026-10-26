@@ -74,3 +74,69 @@ def test_exact_legacy_sizes_remain_verifiable(size: int | float) -> None:
     payload = _legacy_report(size)
     assert report_integrity_status(payload) == "VERIFIED"
     assert scan_metrics(payload)["total_bytes"] == int(size)
+
+
+@pytest.mark.parametrize(
+    "number",
+    [
+        "9007199254740990.5",
+        "9007199254740991.0000000000000001",
+        "1.0000000000000000000001",
+    ],
+    ids=["near-safe-integer", "safe-boundary-fraction", "tiny-fraction"],
+)
+def test_rounded_fractional_legacy_size_is_rejected_before_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    number: str,
+) -> None:
+    # The decoder previously rounded these nonintegers to whole floats,
+    # allowing a matching legacy checksum to certify a false byte count.
+    path = tmp_path / "rounded-fraction.json"
+    path.write_text(
+        '{"files":[{"path":"data.csv","size":' + number
+        + ',"sha256":"' + "a" * 64
+        + '","risk":"SAFE","priority":"LOW","open_copy":""}],"errors":[]}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Cannot read scan report") as exc_info:
+        load_scan_report(path)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "fractional number loses precision" in str(exc_info.value.__cause__)
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(path), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert json.loads(captured.out)["status"] == "INVALID"
+
+
+@pytest.mark.parametrize(
+    "number,expected",
+    [("1.0", 1.0), ("1.20e1", 12.0), ("1.25", 1.25), ("0e300", 0.0)],
+)
+def test_exact_or_fractional_floats_remain_compatible(
+    tmp_path: Path, number: str, expected: float,
+) -> None:
+    path = tmp_path / "future-numeric-metadata.json"
+    path.write_text(
+        '{"schema_version":"2","files":[],"extension":{"value":' + number + "}}",
+        encoding="utf-8",
+    )
+    payload = load_scan_report(path)
+    assert payload["extension"]["value"] == expected
+    assert report_integrity_status(payload) == "UNKNOWN"
+
+
+def test_future_metadata_cannot_silently_round_fraction_to_integer(tmp_path: Path) -> None:
+    path = tmp_path / "future-lossy-float.json"
+    path.write_text(
+        '{"schema_version":"2","files":[],"extension":{"value":'
+        '1.0000000000000000000001}}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Cannot read scan report"):
+        load_scan_report(path)

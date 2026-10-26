@@ -5,6 +5,7 @@ import html
 import json
 import math
 import re
+from decimal import Decimal
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
 
@@ -250,6 +251,12 @@ def _parse_finite_scan_json_float(value: str) -> float:
     significand = value.split("e", 1)[0].split("E", 1)[0]
     if parsed == 0.0 and any(digit in "123456789" for digit in significand):
         raise ValueError("Scan report JSON number underflows floating-point range")
+    # A fractional JSON token can round to a whole float even below 2**53.
+    # Reject the loss before legacy size and priority checks can trust it.
+    if parsed != 0.0 and parsed.is_integer():
+        exact = Decimal(value)
+        if exact != exact.to_integral_value():
+            raise ValueError("Scan report JSON fractional number loses precision")
     return parsed
 
 
