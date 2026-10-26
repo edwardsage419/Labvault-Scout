@@ -18,6 +18,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SCHEMA1_RISKS = {"SAFE", "WATCH", "RESCUE", "UNKNOWN"}
 SCHEMA1_CONFIDENCE = {"LOW", "MEDIUM", "HIGH"}
 SCHEMA1_PRIORITY = {"LOW", "MEDIUM", "HIGH"}
+MAX_EXACT_LEGACY_FLOAT_INT = (1 << 53) - 1
 ASSESSMENT_FIELDS = (
     "format",
     "signature",
@@ -325,7 +326,8 @@ def scan_metrics(payload: dict) -> dict:
             # Do not let int() accept whitespace, signs, underscores, or Unicode digits.
             raw_size = None
         if not isinstance(raw_size, bool) and not (
-            isinstance(raw_size, float) and not raw_size.is_integer()
+            isinstance(raw_size, float)
+            and (not raw_size.is_integer() or raw_size > MAX_EXACT_LEGACY_FLOAT_INT)
         ):
             try:
                 size = int(raw_size)
@@ -473,7 +475,10 @@ def report_integrity_status(payload: dict) -> str:
         size = row.get("size")
         if "size" in row and not isinstance(size, (int, float, str)):
             return "MISMATCH"
-        if isinstance(size, bool) or (isinstance(size, float) and not size.is_integer()):
+        if isinstance(size, bool) or (
+            isinstance(size, float)
+            and (not size.is_integer() or size > MAX_EXACT_LEGACY_FLOAT_INT)
+        ):
             return "MISMATCH"
         if (
             isinstance(size, (int, float))
