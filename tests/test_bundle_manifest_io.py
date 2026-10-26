@@ -149,6 +149,32 @@ def test_load_bundle_manifest_wraps_json_parser_recursion_error(
         load_bundle_manifest(tmp_path)
 
 
+@pytest.mark.parametrize("kind", ["array", "object"])
+def test_load_bundle_manifest_rejects_real_excessive_json_nesting(
+    tmp_path: Path, kind: str,
+) -> None:
+    # Exercise the actual JSON parser instead of injecting RecursionError.
+    depth = 12000
+    if kind == "array":
+        nested = "[" * depth + "0" + "]" * depth
+    else:
+        nested = '{"nested":' * depth + "0" + "}" * depth
+    manifest_text = (
+        '{"schema_version":"1","tool":{"name":"LabVault Scout",'
+        '"version":"0.3.2"},"algorithm":"sha256","files":'
+        + nested
+        + ',"manifest_sha256":"'
+        + "0" * 64
+        + '"}'
+    )
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_text(manifest_text, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest") as exc_info:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(exc_info.value.__cause__, RecursionError)
+
+
 def test_load_bundle_manifest_wraps_excessive_integer_digits(tmp_path: Path) -> None:
     number = "9" * 5000
     try:
