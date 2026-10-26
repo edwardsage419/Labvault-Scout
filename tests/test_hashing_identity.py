@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import labvault_scout.hashing as hashing
-from labvault_scout.hashing import sha256_with_head
+from labvault_scout.hashing import sha256_file, sha256_with_head
 
 
 def test_hash_rejects_path_identity_change_before_read(tmp_path: Path) -> None:
@@ -250,3 +250,35 @@ def test_hash_stream_setup_error_survives_descriptor_cleanup(
     else:
         assert caught.value.__cause__ is None
     assert target.read_bytes() == b"original research bytes"
+
+
+@pytest.mark.parametrize("chunk_size", [0, -1, False, 1.5])
+@pytest.mark.parametrize("with_head", [True, False])
+def test_hash_rejects_invalid_chunk_size(
+    tmp_path: Path, chunk_size: object, with_head: bool,
+) -> None:
+    target = tmp_path / "research.bin"
+    content = b"original research bytes"
+    target.write_bytes(content)
+
+    with pytest.raises(ValueError, match="chunk_size must be a positive integer"):
+        if with_head:
+            sha256_with_head(target, chunk_size=chunk_size)
+        else:
+            sha256_file(target, chunk_size=chunk_size)
+
+    assert target.read_bytes() == content
+
+
+@pytest.mark.parametrize("chunk_size", [1, 3])
+def test_hash_accepts_small_positive_chunk_size(
+    tmp_path: Path, chunk_size: int,
+) -> None:
+    target = tmp_path / "research.bin"
+    content = b"original research bytes"
+    target.write_bytes(content)
+
+    digest, head = sha256_with_head(target, head_size=8, chunk_size=chunk_size)
+    assert digest == hashlib.sha256(content).hexdigest()
+    assert head == content[:8]
+    assert sha256_file(target, chunk_size=chunk_size) == digest
