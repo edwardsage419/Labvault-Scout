@@ -24,7 +24,12 @@ def atomic_text_writer(
     )
     temp_path = Path(temp_name)
     try:
-        with os.fdopen(fd, "w", encoding=encoding, newline=newline) as handle:
+        try:
+            handle = os.fdopen(fd, "w", encoding=encoding, newline=newline)
+        except BaseException:
+            os.close(fd)
+            raise
+        with handle:
             yield handle
         os.replace(temp_path, path)
     except BaseException:
