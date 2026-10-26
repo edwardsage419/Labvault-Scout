@@ -18,7 +18,7 @@ FIELDS = ["path", "size", "sha256", "format", "signature", "signature_status", "
 
 def _safe_csv_cell(value: object) -> object:
     """Keep untrusted text cells from being evaluated as spreadsheet formulas."""
-    if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+    if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
         return "'" + value
     return value
 
