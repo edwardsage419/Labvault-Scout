@@ -6,6 +6,7 @@ import pytest
 from labvault_scout.bundle import (
     BUNDLE_FILES,
     MAX_BUNDLE_MANIFEST_BYTES,
+    MAX_BUNDLE_JSON_INTEGER_DIGITS,
     load_bundle_manifest,
     manifest_payload_sha256,
 )
@@ -127,3 +128,29 @@ def test_bundle_manifest_accepts_exact_size_limit(tmp_path: Path) -> None:
     manifest.write_bytes(encoded + b" " * (MAX_BUNDLE_MANIFEST_BYTES - len(encoded)))
     loaded = load_bundle_manifest(tmp_path)
     assert loaded["manifest_sha256"] == payload["manifest_sha256"]
+
+
+@pytest.mark.parametrize("sign", ["", "-"])
+def test_bundle_manifest_rejects_overlong_json_integer(
+    tmp_path: Path, sign: str,
+) -> None:
+    payload = json.dumps(_base_manifest())
+    assert '"size": 0' in payload
+    overlong = sign + "9" * (MAX_BUNDLE_JSON_INTEGER_DIGITS + 1)
+    malformed = payload.replace('"size": 0', f'"size": {overlong}', 1)
+    (tmp_path / "bundle_manifest.json").write_text(malformed, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest") as caught:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert "integer exceeds digit limit" in str(caught.value.__cause__)
+
+
+def test_bundle_manifest_accepts_json_integer_at_digit_limit(tmp_path: Path) -> None:
+    payload = _base_manifest()
+    size = int("9" * MAX_BUNDLE_JSON_INTEGER_DIGITS)
+    payload["files"][0]["size"] = size
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    _write_manifest(tmp_path, payload)
+
+    assert load_bundle_manifest(tmp_path)["files"][0]["size"] == size

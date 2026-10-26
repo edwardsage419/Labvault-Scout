@@ -15,6 +15,7 @@ from .safeio import atomic_write_text
 BUNDLE_SCHEMA_VERSION = "1"
 BUNDLE_MANIFEST_NAME = "bundle_manifest.json"
 MAX_BUNDLE_MANIFEST_BYTES = 1024 * 1024
+MAX_BUNDLE_JSON_INTEGER_DIGITS = 100
 BUNDLE_FILES = (
     "scan.json",
     "files.csv",
@@ -161,6 +162,13 @@ def _reject_nonstandard_manifest_constant(value: str) -> None:
     raise ValueError(f"Non-standard bundle manifest JSON constant: {value}")
 
 
+def _parse_bounded_manifest_int(value: str) -> int:
+    """Bound JSON integer parsing across supported Python versions."""
+    if len(value) - value.startswith("-") > MAX_BUNDLE_JSON_INTEGER_DIGITS:
+        raise ValueError("Bundle manifest JSON integer exceeds digit limit")
+    return int(value)
+
+
 def _parse_finite_manifest_float(value: str) -> float:
     """Reject JSON numbers that overflow or underflow to zero."""
     parsed = float(value)
@@ -190,6 +198,7 @@ def load_bundle_manifest(output_dir: Path) -> dict:
             object_pairs_hook=_reject_duplicate_manifest_keys,
             parse_constant=_reject_nonstandard_manifest_constant,
             parse_float=_parse_finite_manifest_float,
+            parse_int=_parse_bounded_manifest_int,
         )
     except (ValueError, RecursionError) as exc:
         raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
