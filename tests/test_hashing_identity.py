@@ -282,3 +282,30 @@ def test_hash_accepts_small_positive_chunk_size(
     assert digest == hashlib.sha256(content).hexdigest()
     assert head == content[:8]
     assert sha256_file(target, chunk_size=chunk_size) == digest
+
+
+@pytest.mark.parametrize("head_size", [-1, True, False, 1.5, "8", None])
+def test_hash_rejects_invalid_head_size(
+    tmp_path: Path, head_size: object,
+) -> None:
+    target = tmp_path / "research.bin"
+    content = b"original research bytes"
+    target.write_bytes(content)
+
+    with pytest.raises(ValueError, match="head_size must be a non-negative integer"):
+        sha256_with_head(target, head_size=head_size)
+
+    assert target.read_bytes() == content
+
+
+@pytest.mark.parametrize("head_size", [0, 1, 8])
+def test_hash_accepts_nonnegative_head_size(
+    tmp_path: Path, head_size: int,
+) -> None:
+    target = tmp_path / "research.bin"
+    content = b"original research bytes"
+    target.write_bytes(content)
+
+    digest, head = sha256_with_head(target, head_size=head_size, chunk_size=3)
+    assert digest == hashlib.sha256(content).hexdigest()
+    assert head == content[:head_size]

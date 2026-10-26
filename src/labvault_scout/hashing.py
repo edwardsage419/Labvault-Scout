@@ -28,6 +28,8 @@ def sha256_with_head(
     expected_stat: stat_result | None = None,
 ) -> tuple[str, bytes]:
     """Hash a stable regular file and capture its bounded header in one read."""
+    if isinstance(head_size, bool) or not isinstance(head_size, int) or head_size < 0:
+        raise ValueError("head_size must be a non-negative integer")
     if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
         raise ValueError("chunk_size must be a positive integer")
     checked_stat = path.lstat()
