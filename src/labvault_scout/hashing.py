@@ -52,9 +52,9 @@ def sha256_with_head(
             raise FileChangedDuringScan("File identity changed before read")
         handle = os.fdopen(fd, "rb")
         fd = -1
-        digest = hashlib.sha256()
-        head = bytearray()
         with handle:
+            digest = hashlib.sha256()
+            head = bytearray()
             while chunk := handle.read(chunk_size):
                 if len(head) < head_size:
                     need = head_size - len(head)
