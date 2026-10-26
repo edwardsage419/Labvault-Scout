@@ -16,6 +16,18 @@ REPORT_SCHEMA_VERSION = "1"
 FIELDS = ["path", "size", "sha256", "format", "signature", "signature_status", "container_type", "risk", "confidence", "priority_score", "priority", "priority_reason", "recommended_action", "open_copy", "relationship_strength", "relationship_evidence", "evidence", "reason"]
 
 
+def _safe_csv_cell(value: object) -> object:
+    """Keep untrusted text cells from being evaluated as spreadsheet formulas."""
+    if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
+def _safe_csv_row(row: dict) -> dict:
+    """Apply CSV-only escaping without changing source rows or JSON reports."""
+    return {key: _safe_csv_cell(value) for key, value in row.items()}
+
+
 def duplicate_groups(rows: list[dict]) -> list[dict]:
     groups: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
@@ -88,7 +100,7 @@ def write_reports(
     with atomic_text_writer(output_dir / "files.csv", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(_safe_csv_row(row) for row in rows)
 
     payload = {
         "schema_version": REPORT_SCHEMA_VERSION,
@@ -109,12 +121,12 @@ def write_reports(
     with atomic_text_writer(output_dir / "migration_plan.csv", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=migration_fields, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(migration_rows)
+        writer.writerows(_safe_csv_row(row) for row in migration_rows)
 
     with atomic_text_writer(output_dir / "duplicates.csv", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=["group", "sha256", "path", "size"])
         writer.writeheader()
-        writer.writerows(duplicates)
+        writer.writerows(_safe_csv_row(row) for row in duplicates)
 
     counts = summary_data["risk_counts"]
     open_copy_count = summary_data["open_copy_count"]
