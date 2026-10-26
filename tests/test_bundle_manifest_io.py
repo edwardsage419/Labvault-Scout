@@ -303,3 +303,40 @@ def test_load_bundle_manifest_does_not_classify_exact_float_zero_as_underflow(
 
     with pytest.raises(ValueError, match="Invalid bundle manifest size"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_load_bundle_manifest_preserves_stream_setup_error_during_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, close_fails: bool,
+) -> None:
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    opened_fds: list[int] = []
+    original_close = os.close
+
+    def fail_fdopen(fd: int, *args, **kwargs):
+        opened_fds.append(fd)
+        raise ValueError("synthetic manifest stream setup failure")
+
+    def close_descriptor(fd: int) -> None:
+        original_close(fd)
+        if close_fails and opened_fds and fd == opened_fds[0]:
+            raise OSError(5, "synthetic manifest descriptor close failure")
+
+    import labvault_scout.bundle as bundle
+
+    with monkeypatch.context() as patch:
+        patch.setattr(bundle.os, "fdopen", fail_fdopen)
+        patch.setattr(bundle.os, "close", close_descriptor)
+        with pytest.raises(ValueError, match="synthetic manifest stream setup failure") as caught:
+            load_bundle_manifest(tmp_path)
+
+    assert len(opened_fds) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened_fds[0])
+    if close_fails:
+        assert isinstance(caught.value.__cause__, OSError)
+        assert "synthetic manifest descriptor close failure" in str(caught.value.__cause__)
+    else:
+        assert caught.value.__cause__ is None
+    assert manifest.read_text(encoding="utf-8") == "{}"

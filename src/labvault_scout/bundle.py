@@ -142,9 +142,13 @@ def _read_manifest_text(path: Path) -> str:
         ):
             raise ValueError("Bundle manifest changed during read")
         return content
-    finally:
+    except BaseException as original_error:
         if fd != -1:
-            os.close(fd)
+            try:
+                os.close(fd)
+            except OSError as close_error:
+                raise original_error from close_error
+        raise
 
 
 def _reject_duplicate_manifest_keys(pairs: list[tuple[str, object]]) -> dict:
