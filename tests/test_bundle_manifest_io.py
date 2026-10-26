@@ -134,12 +134,14 @@ def test_load_bundle_manifest_wraps_json_parser_recursion_error(
 
     def raise_recursion_error(
         text: str, *, object_pairs_hook: object = None,
-        parse_constant: object = None, parse_float: object = None
+        parse_constant: object = None, parse_float: object = None,
+        parse_int: object = None
     ) -> object:
         assert text.startswith("[" * 4000)
         assert callable(object_pairs_hook)
         assert callable(parse_constant)
         assert callable(parse_float)
+        assert callable(parse_int)
         raise RecursionError("JSON nesting exceeds parser recursion limit")
 
     monkeypatch.setattr(json, "loads", raise_recursion_error)
