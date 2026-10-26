@@ -26,8 +26,11 @@ def atomic_text_writer(
     try:
         try:
             handle = os.fdopen(fd, "w", encoding=encoding, newline=newline)
-        except BaseException:
-            os.close(fd)
+        except BaseException as original_error:
+            try:
+                os.close(fd)
+            except OSError as close_error:
+                raise original_error from close_error
             raise
         with handle:
             yield handle
