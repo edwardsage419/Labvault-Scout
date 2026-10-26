@@ -215,7 +215,11 @@ def load_bundle_manifest(output_dir: Path) -> dict:
     checksum = payload["manifest_sha256"]
     if not isinstance(checksum, str) or not SHA256_RE.fullmatch(checksum):
         raise ValueError("Invalid bundle manifest checksum")
-    if manifest_payload_sha256(payload) != checksum:
+    try:
+        actual_checksum = manifest_payload_sha256(payload)
+    except UnicodeError as exc:
+        raise ValueError("Bundle manifest contains invalid Unicode") from exc
+    if actual_checksum != checksum:
         raise ValueError("Bundle manifest checksum mismatch")
 
     seen = set()

@@ -80,3 +80,22 @@ def test_bundle_manifest_rejects_checksum_mismatch(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Bundle manifest checksum mismatch"):
         load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("codepoint", [0xD800, 0xDCFF])
+@pytest.mark.parametrize("location", ["tool_version", "member_path"])
+def test_bundle_manifest_rejects_unencodable_json_text(
+    tmp_path: Path, codepoint: int, location: str,
+) -> None:
+    payload = _base_manifest()
+    malformed = "invalid" + chr(codepoint)
+    if location == "tool_version":
+        payload["tool"]["version"] = malformed
+    else:
+        payload["files"][0]["path"] = malformed
+    # JSON escapes permit lone surrogates; manifest hashing must reject them
+    # with a consistent validation error rather than UnicodeEncodeError.
+    _write_manifest(tmp_path, payload)
+    with pytest.raises(ValueError, match="Bundle manifest contains invalid Unicode") as caught:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(caught.value.__cause__, UnicodeEncodeError)
