@@ -671,7 +671,10 @@ def _priority_change(before: dict | None, after: dict | None) -> tuple[str, int 
     if any(
         isinstance(score, bool)
         or (isinstance(score, float) and not score.is_integer())
-        or (isinstance(score, str) and len(score) > 4300)
+        or (
+            isinstance(score, str)
+            and (len(score) > 4300 or re.fullmatch(r"[0-9]+", score) is None)
+        )
         for score in (before_score, after_score)
     ):
         # Legacy boolean and fractional scores cannot support an integer priority delta.
