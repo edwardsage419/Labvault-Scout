@@ -55,7 +55,9 @@ def sha256_with_head(
         with handle:
             digest = hashlib.sha256()
             head = bytearray()
+            bytes_read = 0
             while chunk := handle.read(chunk_size):
+                bytes_read += len(chunk)
                 if len(head) < head_size:
                     need = head_size - len(head)
                     head.extend(chunk[:need])
@@ -66,6 +68,8 @@ def sha256_with_head(
             final_path_stat = path.lstat()
             if _file_identity_changed(opened_stat, final_path_stat):
                 raise FileChangedDuringScan("File identity changed during read")
+            if bytes_read != opened_stat.st_size:
+                raise FileChangedDuringScan("Incomplete file read: byte count mismatch")
     except BaseException as original_error:
         if fd != -1:
             try:
