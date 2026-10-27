@@ -340,3 +340,34 @@ def test_zip_local_compression_method_mismatch_rejected_before_zipfile(
         "Ambiguous ZIP local compression method"
     )
     assert path.read_bytes() == original
+
+@pytest.mark.parametrize("forged_flags", [0x0008, 0x0800])
+def test_zip_local_general_purpose_flags_mismatch_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forged_flags: int,
+) -> None:
+    path = tmp_path / "forged-local-flags.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    assert data[:4] == bytes.fromhex("504b0304")
+    central = data.find(bytes.fromhex("504b0102"))
+    assert central > 0
+    assert struct.unpack_from("<H", data, central + 8)[0] == 0
+    struct.pack_into("<H", data, 6, forged_flags)
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    # ZipFile reads member names despite contradictory local flags.
+    with zipfile.ZipFile(path) as archive:
+        assert "[Content_Types].xml" in archive.namelist()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse conflicting local flags")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP local general-purpose flags"
+    )
+    assert path.read_bytes() == original
