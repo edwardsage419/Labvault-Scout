@@ -160,11 +160,32 @@ def test_hash_rejects_file_change_during_read(tmp_path: Path, monkeypatch: pytes
         st_mtime_ns=expected_stat.st_mtime_ns + 1,
         st_ctime_ns=expected_stat.st_ctime_ns + 1,
     )
-    stats = iter((opened_stat, changed_stat))
-    monkeypatch.setattr(hashing.os, "fstat", lambda _fd: next(stats))
+    original_open = hashing.os.open
+    original_fstat = hashing.os.fstat
+    target_fd: int | None = None
+    target_fstat_calls = 0
 
+    def track_target_open(path, flags, *args, **kwargs):
+        nonlocal target_fd
+        fd = original_open(path, flags, *args, **kwargs)
+        if path == target:
+            target_fd = fd
+        return fd
+
+    def fstat_with_target_change(fd):
+        nonlocal target_fstat_calls
+        if fd == target_fd:
+            target_fstat_calls += 1
+            return opened_stat if target_fstat_calls == 1 else changed_stat
+        return original_fstat(fd)
+
+    # Limit the shared os module patch to the hash call; pytest may also use fstat.
     with pytest.raises(OSError, match="File changed during read"):
-        sha256_with_head(target, expected_stat=expected_stat)
+        with monkeypatch.context() as patch:
+            patch.setattr(hashing.os, "open", track_target_open)
+            patch.setattr(hashing.os, "fstat", fstat_with_target_change)
+            sha256_with_head(target, expected_stat=expected_stat)
+    assert target_fstat_calls >= 2
 
 
 def test_hash_rejects_path_identity_change_during_read(
