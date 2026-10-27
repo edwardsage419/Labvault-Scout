@@ -57,3 +57,56 @@ def test_hash_rejects_premature_eof_without_metadata_change(
     assert streams[0].reads == 2
     assert streams[0].stream.closed
     assert target.read_bytes() == content
+
+
+@pytest.mark.parametrize("with_head", [True, False])
+def test_hash_rejects_overlong_read_without_waiting_for_eof(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_head: bool,
+) -> None:
+    target = tmp_path / "research.bin"
+    content = b"abcd"
+    target.write_bytes(content)
+    original_fdopen = hashing.os.fdopen
+    streams = []
+
+    class GrowingStream:
+        def __init__(self, stream):
+            self.stream = stream
+            self.reads = 0
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def fileno(self):
+            return self.stream.fileno()
+
+        def read(self, size=-1):
+            self.reads += 1
+            if self.reads > 3:
+                raise AssertionError("hashing continued past the initial file size")
+            return b"abcd"
+
+    def growing_fdopen(fd, mode):
+        wrapper = GrowingStream(original_fdopen(fd, mode))
+        streams.append(wrapper)
+        return wrapper
+
+    with monkeypatch.context() as patch:
+        patch.setattr(hashing.os, "fdopen", growing_fdopen)
+        with pytest.raises(
+            hashing.FileChangedDuringScan,
+            match="File grew during read: byte count exceeds initial size",
+        ):
+            if with_head:
+                hashing.sha256_with_head(target, head_size=8, chunk_size=4)
+            else:
+                hashing.sha256_file(target, chunk_size=4)
+
+    assert len(streams) == 1
+    assert streams[0].reads == 2
+    assert streams[0].stream.closed
+    assert target.read_bytes() == content

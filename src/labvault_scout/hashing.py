@@ -58,6 +58,8 @@ def sha256_with_head(
             bytes_read = 0
             while chunk := handle.read(chunk_size):
                 bytes_read += len(chunk)
+                if bytes_read > opened_stat.st_size:
+                    raise FileChangedDuringScan("File grew during read: byte count exceeds initial size")
                 if len(head) < head_size:
                     need = head_size - len(head)
                     head.extend(chunk[:need])
