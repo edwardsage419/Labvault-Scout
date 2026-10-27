@@ -152,3 +152,39 @@ def test_build_bundle_manifest_classifies_disappearance_after_hash(
     assert hash_calls == disappear_after_hash
     assert isinstance(caught.value.__cause__, FileNotFoundError)
     assert not target.exists()
+
+
+@pytest.mark.parametrize("failure_on_hash", [1, 2])
+@pytest.mark.parametrize("failure_type", [FileNotFoundError, bundle.FileChangedDuringScan])
+def test_build_bundle_manifest_classifies_identity_failure_during_hash(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_on_hash: int,
+    failure_type: type[OSError],
+) -> None:
+    for name in bundle.BUNDLE_FILES:
+        (tmp_path / name).write_bytes(b"abc")
+
+    target = tmp_path / "scan.json"
+    original_sha256_file = bundle.sha256_file
+    target_hash_calls = 0
+
+    def fail_during_hash(path: Path) -> str:
+        nonlocal target_hash_calls
+        if path == target:
+            target_hash_calls += 1
+            if target_hash_calls == failure_on_hash:
+                raise failure_type("synthetic file identity change")
+        return original_sha256_file(path)
+
+    monkeypatch.setattr(bundle, "sha256_file", fail_during_hash)
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Report artifact changed while building bundle manifest: scan\.json$",
+    ) as caught:
+        bundle.build_bundle_manifest(tmp_path)
+
+    assert target_hash_calls == failure_on_hash
+    assert type(caught.value.__cause__) is failure_type
+    assert target.read_bytes() == b"abc"

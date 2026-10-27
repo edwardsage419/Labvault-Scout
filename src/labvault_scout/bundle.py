@@ -9,7 +9,7 @@ import stat as stat_module
 from pathlib import Path, PurePosixPath
 
 from . import __version__
-from .hashing import sha256_file
+from .hashing import FileChangedDuringScan, sha256_file
 from .safeio import atomic_write_text
 
 BUNDLE_SCHEMA_VERSION = "1"
@@ -49,7 +49,12 @@ def build_bundle_manifest(output_dir: Path) -> dict:
         stat = path.lstat()
         if not stat_module.S_ISREG(stat.st_mode):
             raise ValueError(f"Report artifact is not a regular file: {name}")
-        digest = sha256_file(path)
+        try:
+            digest = sha256_file(path)
+        except (FileNotFoundError, FileChangedDuringScan) as exc:
+            raise ValueError(
+                f"Report artifact changed while building bundle manifest: {name}"
+            ) from exc
         try:
             post_stat = path.lstat()
         except FileNotFoundError as exc:
@@ -59,7 +64,12 @@ def build_bundle_manifest(output_dir: Path) -> dict:
         fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
         if any(getattr(stat, field, None) != getattr(post_stat, field, None) for field in fields):
             raise ValueError(f"Report artifact changed while building bundle manifest: {name}")
-        confirmed_digest = sha256_file(path)
+        try:
+            confirmed_digest = sha256_file(path)
+        except (FileNotFoundError, FileChangedDuringScan) as exc:
+            raise ValueError(
+                f"Report artifact changed while building bundle manifest: {name}"
+            ) from exc
         try:
             final_stat = path.lstat()
         except FileNotFoundError as exc:
