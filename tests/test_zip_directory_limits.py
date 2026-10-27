@@ -233,3 +233,22 @@ def test_zip_eocd_signature_inside_comment_rejected_before_zipfile(
         "Ambiguous ZIP end record signatures"
     )
     assert path.read_bytes() == original
+
+
+def test_zip_invalid_utf8_member_name_returns_invalid_container(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-utf8.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    record = data.find(b"PK\x01\x02")
+    assert record >= 0
+    flags = struct.unpack_from("<H", data, record + 8)[0]
+    struct.pack_into("<H", data, record + 8, flags | 0x800)
+    data[record + 46] = 0xFF
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    assert identifier.inspect_zip_container(path) == "Invalid ZIP container"
+    assert path.read_bytes() == original
