@@ -417,8 +417,23 @@ def _zip_directory_preflight(path: Path) -> str:
         tail = handle.read(ZIP_EOCD_SEARCH_BYTES)
 
         end = tail.rfind(b"PK\x05\x06")
-        if end < 0 or len(tail) - end < 22:
-            return ""  # Let ZipFile classify a missing or malformed directory.
+        if end < 0:
+            return ""  # Let ZipFile classify a missing directory.
+
+        # A marker inside the EOCD comment can conceal the real directory.
+        previous_end = tail.rfind(b"PK\x05\x06", 0, end)
+        while previous_end >= 0:
+            if (
+                len(tail) - previous_end >= 22
+                and previous_end + 22
+                + int.from_bytes(
+                    tail[previous_end + 20:previous_end + 22], "little"
+                ) == len(tail)
+            ):
+                return "Ambiguous ZIP end record signatures"
+            previous_end = tail.rfind(b"PK\x05\x06", 0, previous_end)
+        if len(tail) - end < 22:
+            return ""  # Let ZipFile classify a malformed directory.
 
         comment_length = int.from_bytes(tail[end + 20:end + 22], "little")
         if end + 22 + comment_length != len(tail):

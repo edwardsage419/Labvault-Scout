@@ -201,3 +201,35 @@ def test_zip_eocd_valid_comment_still_identifies_format(tmp_path: Path) -> None:
         archive.writestr("xl/workbook.xml", "<workbook/>")
         archive.comment = b"research archive notes"
     assert identifier.inspect_zip_container(path) == "OOXML Excel"
+
+
+@pytest.mark.parametrize("variant", ["forged_empty_directory", "short_marker"])
+def test_zip_eocd_signature_inside_comment_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variant: str,
+) -> None:
+    path = tmp_path / "ambiguous-end-record.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    if variant == "forged_empty_directory":
+        # The forged end record would make ZipFile see an empty archive.
+        fake_offset = path.read_bytes().rfind(b"PK\x05\x06") + 22
+        comment = struct.pack(
+            "<4s4H2LH", b"PK\x05\x06",
+            0, 0, 0, 0, 0, fake_offset, 0,
+        )
+    else:
+        comment = b"notes PK\x05\x06 suffix"
+    with zipfile.ZipFile(path, "a") as archive:
+        archive.comment = comment
+    original = path.read_bytes()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse ambiguous end records")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP end record signatures"
+    )
+    assert path.read_bytes() == original
