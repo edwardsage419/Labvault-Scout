@@ -1,3 +1,4 @@
+import io
 import struct
 import zipfile
 from pathlib import Path
@@ -371,3 +372,57 @@ def test_zip_local_general_purpose_flags_mismatch_rejected_before_zipfile(
         "Ambiguous ZIP local general-purpose flags"
     )
     assert path.read_bytes() == original
+
+
+def test_zip_local_crc_mismatch_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "forged-local-crc.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    central = data.find(bytes.fromhex("504b0102"))
+    assert central > 0
+    original_crc = struct.unpack_from("<I", data, central + 16)[0]
+    # The local header disagrees with the central directory CRC.
+    struct.pack_into("<I", data, 14, original_crc ^ 0xFFFFFFFF)
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    # ZipFile uses the central CRC and still reads the forged member.
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse inconsistent local CRC")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == "Ambiguous ZIP local CRC"
+    assert path.read_bytes() == original
+
+
+def test_zip_data_descriptor_allows_zero_local_crc(tmp_path: Path) -> None:
+    class NonSeekableWriter:
+        def __init__(self) -> None:
+            self.buffer = io.BytesIO()
+
+        def write(self, data: bytes) -> int:
+            return self.buffer.write(data)
+
+        def flush(self) -> None:
+            pass
+
+    writer = NonSeekableWriter()
+    with zipfile.ZipFile(writer, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = writer.buffer.getvalue()
+    assert struct.unpack_from("<H", data, 6)[0] & 0x0008
+    assert struct.unpack_from("<I", data, 14)[0] == 0
+    path = tmp_path / "descriptor.xlsx"
+    path.write_bytes(data)
+    assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    assert path.read_bytes() == data
