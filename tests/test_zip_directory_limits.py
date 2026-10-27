@@ -309,3 +309,34 @@ def test_zip_local_member_name_mismatch_rejected_before_zipfile(
     monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
     assert identifier.inspect_zip_container(path) == "Ambiguous ZIP local member name"
     assert path.read_bytes() == original
+
+def test_zip_local_compression_method_mismatch_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "forged-local-method.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    assert data[:4] == b"PK\\x03\\x04"
+    central = data.find(b"PK\\x01\\x02")
+    assert central > 0
+    assert struct.unpack_from("<H", data, central + 10)[0] == 0
+    # The local method disagrees with the central directory's stored method.
+    struct.pack_into("<H", data, 8, 8)
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    # ZipFile trusts the central directory and still lists the member names.
+    with zipfile.ZipFile(path) as archive:
+        assert "[Content_Types].xml" in archive.namelist()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse conflicting compression methods")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP local compression method"
+    )
+    assert path.read_bytes() == original

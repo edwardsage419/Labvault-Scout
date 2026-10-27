@@ -471,7 +471,7 @@ def _zip_directory_preflight(path: Path) -> str:
         return ""  # Let ZipFile reject a truncated directory.
 
     offset = count = 0
-    local_members: list[tuple[int, bytes]] = []
+    local_members: list[tuple[int, bytes, int]] = []
     while offset < len(directory):
         if (
             len(directory) - offset < 46
@@ -492,7 +492,7 @@ def _zip_directory_preflight(path: Path) -> str:
                 name.decode("utf-8")
             except UnicodeDecodeError:
                 return "Invalid ZIP container"
-        local_members.append((local_offset, name))
+        local_members.append((local_offset, name, int.from_bytes(directory[offset + 10:offset + 12], "little")))
         offset += record_bytes
         count += 1
         if count > ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES:
@@ -503,13 +503,15 @@ def _zip_directory_preflight(path: Path) -> str:
 
     # A central-directory name is insufficient evidence if its local header is absent.
     with path.open("rb") as handle:
-        for local_offset, name in local_members:
+        for local_offset, name, method in local_members:
             if local_offset + 30 > directory_start:
                 return "Invalid ZIP local header offset"
             handle.seek(local_offset)
             local_header = handle.read(30)
             if len(local_header) != 30 or local_header[:4] != b"PK\x03\x04":
                 return "Invalid ZIP local file header"
+            if int.from_bytes(local_header[8:10], "little") != method:
+                return "Ambiguous ZIP local compression method"
             local_name_size = int.from_bytes(local_header[26:28], "little")
             local_extra_size = int.from_bytes(local_header[28:30], "little")
             if local_offset + 30 + local_name_size + local_extra_size > directory_start:
