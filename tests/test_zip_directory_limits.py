@@ -79,3 +79,29 @@ def test_zip_directory_actual_count_checked_before_zipfile(
     monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
     assert identifier.inspect_zip_container(path) == expected_status
     assert path.read_bytes() == original
+
+@pytest.mark.parametrize("length_field_offset", [28, 30, 32])
+def test_zip_directory_overlong_variable_field_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, length_field_offset: int,
+) -> None:
+    path = tmp_path / "overlong-member.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    last_record = data.rfind(b"PK\\x01\\x02")
+    assert last_record >= 0
+    # Forge a filename, extra-field, or comment length beyond the directory.
+    struct.pack_into("<H", data, last_record + length_field_offset, 500)
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse an overlong directory record")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Invalid ZIP directory record length"
+    )
+    assert path.read_bytes() == original

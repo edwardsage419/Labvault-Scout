@@ -456,7 +456,7 @@ def _zip_directory_preflight(path: Path) -> str:
         comment_bytes = int.from_bytes(directory[offset + 32:offset + 34], "little")
         record_bytes = 46 + name_bytes + extra_bytes + comment_bytes
         if record_bytes > len(directory) - offset:
-            return ""
+            return "Invalid ZIP directory record length"
         offset += record_bytes
         count += 1
         if count > ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES:
