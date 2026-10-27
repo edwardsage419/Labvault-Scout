@@ -105,3 +105,33 @@ def test_zip_directory_overlong_variable_field_rejected_before_zipfile(
         "Invalid ZIP directory record length"
     )
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "disk_number,directory_disk_number",
+    [(1, 1), (0, 1), (1, 0)],
+)
+def test_zip_eocd_multidisk_metadata_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    disk_number: int, directory_disk_number: int,
+) -> None:
+    path = tmp_path / "forged-disk.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    end = data.rfind(bytes.fromhex("504b0506"))
+    assert end >= 0
+    struct.pack_into("<HH", data, end + 4, disk_number, directory_disk_number)
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse multi-disk metadata")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Unsupported ZIP multi-disk metadata"
+    )
+    assert path.read_bytes() == original

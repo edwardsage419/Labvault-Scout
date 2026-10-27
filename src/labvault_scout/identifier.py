@@ -432,6 +432,10 @@ def _zip_directory_preflight(path: Path) -> str:
             or directory_bytes > ZIP_MAX_CENTRAL_DIRECTORY_BYTES
         ):
             return "ZIP directory exceeds bounded inspection limits"
+        disk_number = int.from_bytes(tail[end + 4:end + 6], "little")
+        directory_disk_number = int.from_bytes(tail[end + 6:end + 8], "little")
+        if disk_number or directory_disk_number:
+            return "Unsupported ZIP multi-disk metadata"
         if disk_entries != entries:
             return "Ambiguous ZIP directory entry count"
 
