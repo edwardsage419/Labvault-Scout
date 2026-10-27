@@ -46,3 +46,36 @@ def test_small_zip_directory_still_identifies_format(tmp_path: Path) -> None:
         archive.writestr("[Content_Types].xml", "<Types/>")
         archive.writestr("xl/workbook.xml", "<workbook/>")
     assert identifier.inspect_zip_container(path) == "OOXML Excel"
+
+
+@pytest.mark.parametrize(
+    "actual_entries,expected_status",
+    [
+        (3, "Ambiguous ZIP directory entry count"),
+        (10_001, "ZIP directory exceeds bounded inspection limits"),
+    ],
+)
+def test_zip_directory_actual_count_checked_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    actual_entries: int, expected_status: str,
+) -> None:
+    path = tmp_path / "forged-count.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+        for index in range(actual_entries - 2):
+            archive.writestr(f"extra/{index:05d}", "")
+
+    data = bytearray(path.read_bytes())
+    end = data.rfind(b"PK\x05\x06")
+    assert end >= 0
+    struct.pack_into("<HH", data, end + 8, 1, 1)
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse an inconsistent directory")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == expected_status
+    assert path.read_bytes() == original

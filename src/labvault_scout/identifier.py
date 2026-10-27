@@ -407,36 +407,71 @@ ZIP_MAX_CENTRAL_DIRECTORY_BYTES = 2 * 1024 * 1024
 ZIP_EOCD_SEARCH_BYTES = 22 + 65_535
 
 
-def _zip_directory_exceeds_limits(path: Path) -> bool:
-    """Bound ZIP central-directory parsing using the end-of-directory record."""
+def _zip_directory_preflight(path: Path) -> str:
+    """Bound ZIP directory parsing and check its actual record count."""
     with path.open("rb") as handle:
         handle.seek(0, 2)
         size = handle.tell()
-        handle.seek(max(0, size - ZIP_EOCD_SEARCH_BYTES))
+        tail_start = max(0, size - ZIP_EOCD_SEARCH_BYTES)
+        handle.seek(tail_start)
         tail = handle.read(ZIP_EOCD_SEARCH_BYTES)
 
-    end = tail.rfind(b"PK\x05\x06")
-    if end < 0 or len(tail) - end < 22:
-        return False  # Let ZipFile classify a missing or malformed directory.
+        end = tail.rfind(b"PK\x05\x06")
+        if end < 0 or len(tail) - end < 22:
+            return ""  # Let ZipFile classify a missing or malformed directory.
 
-    entries = int.from_bytes(tail[end + 10:end + 12], "little")
-    directory_bytes = int.from_bytes(tail[end + 12:end + 16], "little")
-    zip64_locator = end >= 20 and tail[end - 20:end - 16] == b"PK\x06\x07"
-    return (
-        zip64_locator
-        or entries == 0xFFFF
-        or directory_bytes == 0xFFFFFFFF
-        or entries > ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES
-        or directory_bytes > ZIP_MAX_CENTRAL_DIRECTORY_BYTES
-    )
+        disk_entries = int.from_bytes(tail[end + 8:end + 10], "little")
+        entries = int.from_bytes(tail[end + 10:end + 12], "little")
+        directory_bytes = int.from_bytes(tail[end + 12:end + 16], "little")
+        zip64_locator = end >= 20 and tail[end - 20:end - 16] == b"PK\x06\x07"
+        if (
+            zip64_locator
+            or entries == 0xFFFF
+            or directory_bytes == 0xFFFFFFFF
+            or entries > ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES
+            or directory_bytes > ZIP_MAX_CENTRAL_DIRECTORY_BYTES
+        ):
+            return "ZIP directory exceeds bounded inspection limits"
+        if disk_entries != entries:
+            return "Ambiguous ZIP directory entry count"
+
+        directory_start = tail_start + end - directory_bytes
+        if directory_start < 0:
+            return ""  # Let ZipFile reject malformed offsets.
+        handle.seek(directory_start)
+        directory = handle.read(directory_bytes)
+
+    if len(directory) != directory_bytes:
+        return ""  # Let ZipFile reject a truncated directory.
+
+    offset = count = 0
+    while offset < len(directory):
+        if (
+            len(directory) - offset < 46
+            or directory[offset:offset + 4] != b"PK\x01\x02"
+        ):
+            return ""  # Let ZipFile reject malformed member records.
+        name_bytes = int.from_bytes(directory[offset + 28:offset + 30], "little")
+        extra_bytes = int.from_bytes(directory[offset + 30:offset + 32], "little")
+        comment_bytes = int.from_bytes(directory[offset + 32:offset + 34], "little")
+        record_bytes = 46 + name_bytes + extra_bytes + comment_bytes
+        if record_bytes > len(directory) - offset:
+            return ""
+        offset += record_bytes
+        count += 1
+        if count > ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES:
+            return "ZIP directory exceeds bounded inspection limits"
+
+    return "Ambiguous ZIP directory entry count" if count != entries else ""
 
 
 def inspect_zip_container(path: Path) -> str:
     """Identify selected ZIP based formats from member names without extraction."""
     if inspect_signature(path) != "ZIP":
         return ""
-    if _zip_directory_exceeds_limits(path):
-        return "ZIP directory exceeds bounded inspection limits"
+    directory_status = _zip_directory_preflight(path)
+    if directory_status:
+        return directory_status
     try:
         with zipfile.ZipFile(path) as archive:
             member_names = archive.namelist()
