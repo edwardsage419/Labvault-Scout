@@ -90,7 +90,7 @@ def test_zip_directory_overlong_variable_field_rejected_before_zipfile(
         archive.writestr("xl/workbook.xml", "<workbook/>")
 
     data = bytearray(path.read_bytes())
-    last_record = data.rfind(b"PK\\x01\\x02")
+    last_record = data.rfind(b"PK\x01\x02")
     assert last_record >= 0
     # Forge a filename, extra-field, or comment length beyond the directory.
     struct.pack_into("<H", data, last_record + length_field_offset, 500)
