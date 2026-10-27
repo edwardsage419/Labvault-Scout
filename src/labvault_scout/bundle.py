@@ -134,7 +134,10 @@ def _read_manifest_text(path: Path) -> str:
             if len(raw) > MAX_BUNDLE_MANIFEST_BYTES:
                 raise ValueError("Bundle manifest exceeds maximum size")
             final = os.fstat(handle.fileno())
-            final_path = path.lstat()
+            try:
+                final_path = path.lstat()
+            except FileNotFoundError as exc:
+                raise ValueError("Bundle manifest changed during read") from exc
         if any(
             getattr(before, field) != getattr(actual, field)
             for actual in (final, final_path)
