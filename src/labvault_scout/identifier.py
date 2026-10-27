@@ -471,6 +471,7 @@ def _zip_directory_preflight(path: Path) -> str:
         return ""  # Let ZipFile reject a truncated directory.
 
     offset = count = 0
+    local_members: list[tuple[int, bytes]] = []
     while offset < len(directory):
         if (
             len(directory) - offset < 46
@@ -483,12 +484,32 @@ def _zip_directory_preflight(path: Path) -> str:
         record_bytes = 46 + name_bytes + extra_bytes + comment_bytes
         if record_bytes > len(directory) - offset:
             return "Invalid ZIP directory record length"
+        local_offset = int.from_bytes(directory[offset + 42:offset + 46], "little")
+        local_members.append((local_offset, directory[offset + 46:offset + 46 + name_bytes]))
         offset += record_bytes
         count += 1
         if count > ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES:
             return "ZIP directory exceeds bounded inspection limits"
 
-    return "Ambiguous ZIP directory entry count" if count != entries else ""
+    if count != entries:
+        return "Ambiguous ZIP directory entry count"
+
+    # A central-directory name is insufficient evidence if its local header is absent.
+    with path.open("rb") as handle:
+        for local_offset, name in local_members:
+            if local_offset + 30 > directory_start:
+                return "Invalid ZIP local header offset"
+            handle.seek(local_offset)
+            local_header = handle.read(30)
+            if len(local_header) != 30 or local_header[:4] != b"PK\x03\x04":
+                return "Invalid ZIP local file header"
+            local_name_size = int.from_bytes(local_header[26:28], "little")
+            local_extra_size = int.from_bytes(local_header[28:30], "little")
+            if local_offset + 30 + local_name_size + local_extra_size > directory_start:
+                return "Invalid ZIP local header length"
+            if local_name_size != len(name) or handle.read(local_name_size) != name:
+                return "Ambiguous ZIP local member name"
+    return ""
 
 
 def inspect_zip_container(path: Path) -> str:

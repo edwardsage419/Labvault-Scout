@@ -252,3 +252,60 @@ def test_zip_invalid_utf8_member_name_returns_invalid_container(tmp_path: Path) 
 
     assert identifier.inspect_zip_container(path) == "Invalid ZIP container"
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "forged_offset,expected_status",
+    [
+        (0xFFFFFF00, "Invalid ZIP local header offset"),
+        (1, "Invalid ZIP local file header"),
+    ],
+)
+def test_zip_local_header_offset_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    forged_offset: int, expected_status: str,
+) -> None:
+    path = tmp_path / "forged-local-offset.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    record = data.find(b"PK\x01\x02")
+    assert record >= 0
+    struct.pack_into("<I", data, record + 42, forged_offset)
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    # zipfile can list the forged member names without reading their local headers.
+    with zipfile.ZipFile(path) as archive:
+        assert "[Content_Types].xml" in archive.namelist()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse an invalid local header offset")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == expected_status
+    assert path.read_bytes() == original
+
+
+def test_zip_local_member_name_mismatch_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "forged-local-name.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    assert data[:4] == b"PK\x03\x04"
+    data[30] = ord("X")  # Alter the local name while keeping the directory name.
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse inconsistent local member names")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == "Ambiguous ZIP local member name"
+    assert path.read_bytes() == original
