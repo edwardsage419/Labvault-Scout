@@ -50,12 +50,22 @@ def build_bundle_manifest(output_dir: Path) -> dict:
         if not stat_module.S_ISREG(stat.st_mode):
             raise ValueError(f"Report artifact is not a regular file: {name}")
         digest = sha256_file(path)
-        post_stat = path.lstat()
+        try:
+            post_stat = path.lstat()
+        except FileNotFoundError as exc:
+            raise ValueError(
+                f"Report artifact changed while building bundle manifest: {name}"
+            ) from exc
         fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
         if any(getattr(stat, field, None) != getattr(post_stat, field, None) for field in fields):
             raise ValueError(f"Report artifact changed while building bundle manifest: {name}")
         confirmed_digest = sha256_file(path)
-        final_stat = path.lstat()
+        try:
+            final_stat = path.lstat()
+        except FileNotFoundError as exc:
+            raise ValueError(
+                f"Report artifact changed while building bundle manifest: {name}"
+            ) from exc
         if digest != confirmed_digest or any(
             getattr(post_stat, field, None) != getattr(final_stat, field, None)
             for field in fields

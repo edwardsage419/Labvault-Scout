@@ -119,3 +119,36 @@ def test_build_bundle_manifest_rejects_transient_replacement_during_hash(
         bundle.build_bundle_manifest(tmp_path)
 
     assert replaced
+
+
+@pytest.mark.parametrize("disappear_after_hash", [1, 2])
+def test_build_bundle_manifest_classifies_disappearance_after_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, disappear_after_hash: int,
+) -> None:
+    for name in bundle.BUNDLE_FILES:
+        (tmp_path / name).write_bytes(b"abc")
+
+    target = tmp_path / "scan.json"
+    original_sha256_file = bundle.sha256_file
+    hash_calls = 0
+
+    def disappearing_after_hash(path: Path) -> str:
+        nonlocal hash_calls
+        digest = original_sha256_file(path)
+        if path == target:
+            hash_calls += 1
+            if hash_calls == disappear_after_hash:
+                target.unlink()
+        return digest
+
+    monkeypatch.setattr(bundle, "sha256_file", disappearing_after_hash)
+
+    with pytest.raises(
+        ValueError,
+        match="^Report artifact changed while building bundle manifest: scan\\.json$",
+    ) as caught:
+        bundle.build_bundle_manifest(tmp_path)
+
+    assert hash_calls == disappear_after_hash
+    assert isinstance(caught.value.__cause__, FileNotFoundError)
+    assert not target.exists()
