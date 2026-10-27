@@ -213,7 +213,7 @@ def test_build_bundle_manifest_classifies_disappearance_before_initial_stat(
 
     with pytest.raises(
         ValueError,
-        match=r"^Report artifact changed while building bundle manifest: scan\\.json$",
+        match=r"^Report artifact changed while building bundle manifest: scan\.json$",
     ) as caught:
         bundle.build_bundle_manifest(tmp_path)
 
