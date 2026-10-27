@@ -402,10 +402,41 @@ def inspect_gzip_nifti(path: Path) -> str:
         return "Invalid GZIP container"
 
 
+ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES = 10_000
+ZIP_MAX_CENTRAL_DIRECTORY_BYTES = 2 * 1024 * 1024
+ZIP_EOCD_SEARCH_BYTES = 22 + 65_535
+
+
+def _zip_directory_exceeds_limits(path: Path) -> bool:
+    """Bound ZIP central-directory parsing using the end-of-directory record."""
+    with path.open("rb") as handle:
+        handle.seek(0, 2)
+        size = handle.tell()
+        handle.seek(max(0, size - ZIP_EOCD_SEARCH_BYTES))
+        tail = handle.read(ZIP_EOCD_SEARCH_BYTES)
+
+    end = tail.rfind(b"PK\x05\x06")
+    if end < 0 or len(tail) - end < 22:
+        return False  # Let ZipFile classify a missing or malformed directory.
+
+    entries = int.from_bytes(tail[end + 10:end + 12], "little")
+    directory_bytes = int.from_bytes(tail[end + 12:end + 16], "little")
+    zip64_locator = end >= 20 and tail[end - 20:end - 16] == b"PK\x06\x07"
+    return (
+        zip64_locator
+        or entries == 0xFFFF
+        or directory_bytes == 0xFFFFFFFF
+        or entries > ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES
+        or directory_bytes > ZIP_MAX_CENTRAL_DIRECTORY_BYTES
+    )
+
+
 def inspect_zip_container(path: Path) -> str:
     """Identify selected ZIP based formats from member names without extraction."""
     if inspect_signature(path) != "ZIP":
         return ""
+    if _zip_directory_exceeds_limits(path):
+        return "ZIP directory exceeds bounded inspection limits"
     try:
         with zipfile.ZipFile(path) as archive:
             member_names = archive.namelist()
