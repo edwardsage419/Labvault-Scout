@@ -422,7 +422,42 @@ def test_zip_data_descriptor_allows_zero_local_crc(tmp_path: Path) -> None:
     data = writer.buffer.getvalue()
     assert struct.unpack_from("<H", data, 6)[0] & 0x0008
     assert struct.unpack_from("<I", data, 14)[0] == 0
+    assert struct.unpack_from("<I", data, 18)[0] == 0
+    central = data.find(bytes.fromhex("504b0102"))
+    assert central > 0
+    assert struct.unpack_from("<I", data, central + 20)[0] > 0
     path = tmp_path / "descriptor.xlsx"
     path.write_bytes(data)
     assert identifier.inspect_zip_container(path) == "OOXML Excel"
     assert path.read_bytes() == data
+
+@pytest.mark.parametrize("forged_size", [0, 0xFFFFFF00])
+def test_zip_local_compressed_size_mismatch_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forged_size: int,
+) -> None:
+    path = tmp_path / "forged-local-compressed-size.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    central = data.find(bytes.fromhex("504b0102"))
+    assert central > 0
+    actual_size = struct.unpack_from("<I", data, central + 20)[0]
+    assert actual_size > 0 and actual_size != forged_size
+    struct.pack_into("<I", data, 18, forged_size)
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    # ZipFile uses the central size and can still read the contradictory member.
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse conflicting local sizes")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP local compressed size"
+    )
+    assert path.read_bytes() == original
