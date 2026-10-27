@@ -188,3 +188,35 @@ def test_build_bundle_manifest_classifies_identity_failure_during_hash(
     assert target_hash_calls == failure_on_hash
     assert type(caught.value.__cause__) is failure_type
     assert target.read_bytes() == b"abc"
+
+
+def test_build_bundle_manifest_classifies_disappearance_before_initial_stat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in bundle.BUNDLE_FILES:
+        (tmp_path / name).write_bytes(b"abc")
+
+    target = tmp_path / "scan.json"
+    original_is_file = Path.is_file
+    disappeared = False
+
+    def disappear_after_file_check(path: Path) -> bool:
+        nonlocal disappeared
+        result = original_is_file(path)
+        if path == target and not disappeared:
+            assert result
+            target.unlink()
+            disappeared = True
+        return result
+
+    monkeypatch.setattr(Path, "is_file", disappear_after_file_check)
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Report artifact changed while building bundle manifest: scan\\.json$",
+    ) as caught:
+        bundle.build_bundle_manifest(tmp_path)
+
+    assert disappeared
+    assert isinstance(caught.value.__cause__, FileNotFoundError)
+    assert not target.exists()

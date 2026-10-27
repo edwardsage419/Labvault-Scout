@@ -46,7 +46,12 @@ def build_bundle_manifest(output_dir: Path) -> dict:
         path = output_dir / name
         if path.is_symlink() or not path.is_file():
             raise ValueError(f"Report artifact is not a regular file: {name}")
-        stat = path.lstat()
+        try:
+            stat = path.lstat()
+        except FileNotFoundError as exc:
+            raise ValueError(
+                f"Report artifact changed while building bundle manifest: {name}"
+            ) from exc
         if not stat_module.S_ISREG(stat.st_mode):
             raise ValueError(f"Report artifact is not a regular file: {name}")
         try:
