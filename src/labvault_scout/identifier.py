@@ -485,7 +485,14 @@ def _zip_directory_preflight(path: Path) -> str:
         if record_bytes > len(directory) - offset:
             return "Invalid ZIP directory record length"
         local_offset = int.from_bytes(directory[offset + 42:offset + 46], "little")
-        local_members.append((local_offset, directory[offset + 46:offset + 46 + name_bytes]))
+        name = directory[offset + 46:offset + 46 + name_bytes]
+        flags = int.from_bytes(directory[offset + 8:offset + 10], "little")
+        if flags & 0x800:
+            try:
+                name.decode("utf-8")
+            except UnicodeDecodeError:
+                return "Invalid ZIP container"
+        local_members.append((local_offset, name))
         offset += record_bytes
         count += 1
         if count > ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES:
