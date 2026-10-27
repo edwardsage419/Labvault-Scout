@@ -340,3 +340,81 @@ def test_load_bundle_manifest_preserves_stream_setup_error_during_cleanup(
     else:
         assert caught.value.__cause__ is None
     assert manifest.read_text(encoding="utf-8") == "{}"
+
+
+@pytest.mark.parametrize("version", ["0.3.2", "é"])
+def test_load_bundle_manifest_rejects_short_read_with_stable_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str,
+) -> None:
+    import labvault_scout.bundle as bundle
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": version},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in bundle.BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = bundle.manifest_payload_sha256(payload)
+    text = json.dumps(payload, ensure_ascii=False)
+    encoded = text.encode("utf-8")
+    manifest = tmp_path / bundle.BUNDLE_MANIFEST_NAME
+    original = encoded + b" " * 24
+    manifest.write_bytes(original)
+
+    original_fdopen = os.fdopen
+    streams = []
+
+    class ShortReadStream:
+        def __init__(self, stream, limit: int):
+            self.stream = stream
+            self.limit = limit
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def fileno(self):
+            return self.stream.fileno()
+
+        def read(self, size=-1):
+            return self.stream.read(min(size, self.limit))
+
+    def short_fdopen(fd, mode, *args, **kwargs):
+        limit = len(encoded) if "b" in mode else len(text)
+        wrapped = ShortReadStream(original_fdopen(fd, mode, *args, **kwargs), limit)
+        streams.append(wrapped)
+        return wrapped
+
+    with monkeypatch.context() as patch:
+        patch.setattr(bundle.os, "fdopen", short_fdopen)
+        with pytest.raises(ValueError, match="Bundle manifest incomplete read"):
+            load_bundle_manifest(tmp_path)
+
+    assert len(streams) == 1
+    assert streams[0].stream.closed
+    assert manifest.read_bytes() == original
+
+
+def test_load_bundle_manifest_accepts_complete_utf8_crlf_stream(tmp_path: Path) -> None:
+    import labvault_scout.bundle as bundle
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "é"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in bundle.BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = bundle.manifest_payload_sha256(payload)
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8") + b"\r\n\t "
+    (tmp_path / bundle.BUNDLE_MANIFEST_NAME).write_bytes(data)
+
+    assert load_bundle_manifest(tmp_path) == payload

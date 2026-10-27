@@ -127,11 +127,11 @@ def _read_manifest_text(path: Path) -> str:
         if opened.st_size > MAX_BUNDLE_MANIFEST_BYTES:
             raise ValueError("Bundle manifest exceeds maximum size")
 
-        handle = os.fdopen(fd, "r", encoding="utf-8")
+        handle = os.fdopen(fd, "rb")
         fd = -1
         with handle:
-            content = handle.read(MAX_BUNDLE_MANIFEST_BYTES + 1)
-            if len(content) > MAX_BUNDLE_MANIFEST_BYTES:
+            raw = handle.read(MAX_BUNDLE_MANIFEST_BYTES + 1)
+            if len(raw) > MAX_BUNDLE_MANIFEST_BYTES:
                 raise ValueError("Bundle manifest exceeds maximum size")
             final = os.fstat(handle.fileno())
             final_path = path.lstat()
@@ -141,7 +141,9 @@ def _read_manifest_text(path: Path) -> str:
             for field in fields
         ):
             raise ValueError("Bundle manifest changed during read")
-        return content
+        if len(raw) != opened.st_size:
+            raise ValueError("Bundle manifest incomplete read")
+        return raw.decode("utf-8")
     except BaseException as original_error:
         if fd != -1:
             try:
