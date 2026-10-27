@@ -309,3 +309,37 @@ def test_hash_accepts_nonnegative_head_size(
     digest, head = sha256_with_head(target, head_size=head_size, chunk_size=3)
     assert digest == hashlib.sha256(content).hexdigest()
     assert head == content[:head_size]
+
+
+@pytest.mark.parametrize("with_head", [True, False])
+def test_hash_classifies_path_disappearance_after_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_head: bool,
+) -> None:
+    target = tmp_path / "research.bin"
+    content = b"original research bytes"
+    target.write_bytes(content)
+    original_lstat = Path.lstat
+    calls = 0
+
+    def disappearing_lstat(self: Path, *args, **kwargs):
+        nonlocal calls
+        if self == target:
+            calls += 1
+            if calls == 2:
+                raise FileNotFoundError(2, "synthetic concurrent unlink", str(target))
+        return original_lstat(self, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "lstat", disappearing_lstat)
+        with pytest.raises(
+            hashing.FileChangedDuringScan,
+            match="File identity changed during read",
+        ) as caught:
+            if with_head:
+                hashing.sha256_with_head(target, chunk_size=3)
+            else:
+                hashing.sha256_file(target, chunk_size=3)
+
+    assert calls == 2
+    assert isinstance(caught.value.__cause__, FileNotFoundError)
+    assert target.read_bytes() == content

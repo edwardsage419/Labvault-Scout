@@ -67,7 +67,10 @@ def sha256_with_head(
             final_stat = os.fstat(handle.fileno())
             if _file_identity_changed(opened_stat, final_stat):
                 raise FileChangedDuringScan("File changed during read")
-            final_path_stat = path.lstat()
+            try:
+                final_path_stat = path.lstat()
+            except FileNotFoundError as exc:
+                raise FileChangedDuringScan("File identity changed during read") from exc
             if _file_identity_changed(opened_stat, final_path_stat):
                 raise FileChangedDuringScan("File identity changed during read")
             if bytes_read != opened_stat.st_size:
