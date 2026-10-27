@@ -408,7 +408,10 @@ def inspect_zip_container(path: Path) -> str:
         return ""
     try:
         with zipfile.ZipFile(path) as archive:
-            names = set(archive.namelist())
+            member_names = archive.namelist()
+            names = set(member_names)
+            if len(names) != len(member_names):
+                return "Ambiguous ZIP member names"
             if "[Content_Types].xml" in names:
                 if any(name.startswith("xl/") for name in names):
                     return "OOXML Excel"
