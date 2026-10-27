@@ -418,3 +418,34 @@ def test_load_bundle_manifest_accepts_complete_utf8_crlf_stream(tmp_path: Path) 
     (tmp_path / bundle.BUNDLE_MANIFEST_NAME).write_bytes(data)
 
     assert load_bundle_manifest(tmp_path) == payload
+
+
+def test_load_bundle_manifest_classifies_path_disappearance_after_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_bytes(b"{}")
+    original_lstat = Path.lstat
+    manifest_checks = 0
+
+    def disappearing_lstat(path: Path, *args, **kwargs):
+        nonlocal manifest_checks
+        if path == manifest:
+            manifest_checks += 1
+            # Symlink check, pre-read identity, then post-read identity.
+            if manifest_checks == 3:
+                raise FileNotFoundError(
+                    2, "synthetic manifest path disappearance", str(path)
+                )
+        return original_lstat(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "lstat", disappearing_lstat)
+        with pytest.raises(
+            ValueError, match="^Bundle manifest changed during read$"
+        ) as caught:
+            load_bundle_manifest(tmp_path)
+
+    assert manifest_checks == 3
+    assert isinstance(caught.value.__cause__, FileNotFoundError)
+    assert manifest.read_bytes() == b"{}"
