@@ -319,8 +319,8 @@ def test_zip_local_compression_method_mismatch_rejected_before_zipfile(
         archive.writestr("xl/workbook.xml", "<workbook/>")
 
     data = bytearray(path.read_bytes())
-    assert data[:4] == b"PK\\x03\\x04"
-    central = data.find(b"PK\\x01\\x02")
+    assert data[:4] == b"PK\x03\x04"
+    central = data.find(b"PK\x01\x02")
     assert central > 0
     assert struct.unpack_from("<H", data, central + 10)[0] == 0
     # The local method disagrees with the central directory's stored method.
