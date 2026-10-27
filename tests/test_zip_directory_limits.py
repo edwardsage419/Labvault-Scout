@@ -135,3 +135,31 @@ def test_zip_eocd_multidisk_metadata_rejected(
         "Unsupported ZIP multi-disk metadata"
     )
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("declared_offset", [0, 1])
+def test_zip_eocd_directory_offset_mismatch_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared_offset: int,
+) -> None:
+    path = tmp_path / "forged-offset.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    end = data.rfind(bytes.fromhex("504b0506"))
+    assert end >= 0
+    actual_offset = struct.unpack_from("<I", data, end + 16)[0]
+    assert actual_offset > declared_offset
+    struct.pack_into("<I", data, end + 16, declared_offset)
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse an inconsistent directory offset")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP directory offset"
+    )
+    assert path.read_bytes() == original

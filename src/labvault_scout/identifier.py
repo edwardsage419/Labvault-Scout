@@ -442,6 +442,9 @@ def _zip_directory_preflight(path: Path) -> str:
         directory_start = tail_start + end - directory_bytes
         if directory_start < 0:
             return ""  # Let ZipFile reject malformed offsets.
+        declared_offset = int.from_bytes(tail[end + 16:end + 20], "little")
+        if declared_offset != directory_start:
+            return "Ambiguous ZIP directory offset"
         handle.seek(directory_start)
         directory = handle.read(directory_bytes)
 
