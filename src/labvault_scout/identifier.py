@@ -420,6 +420,10 @@ def _zip_directory_preflight(path: Path) -> str:
         if end < 0 or len(tail) - end < 22:
             return ""  # Let ZipFile classify a missing or malformed directory.
 
+        comment_length = int.from_bytes(tail[end + 20:end + 22], "little")
+        if end + 22 + comment_length != len(tail):
+            return "Ambiguous ZIP end record comment length"
+
         disk_entries = int.from_bytes(tail[end + 8:end + 10], "little")
         entries = int.from_bytes(tail[end + 10:end + 12], "little")
         directory_bytes = int.from_bytes(tail[end + 12:end + 16], "little")

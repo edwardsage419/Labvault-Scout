@@ -163,3 +163,41 @@ def test_zip_eocd_directory_offset_mismatch_rejected(
         "Ambiguous ZIP directory offset"
     )
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("mutation", ["overstated_comment", "trailing_byte"])
+def test_zip_eocd_comment_length_mismatch_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str,
+) -> None:
+    path = tmp_path / "forged-comment.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    end = data.rfind(bytes.fromhex("504b0506"))
+    assert end >= 0
+    if mutation == "overstated_comment":
+        struct.pack_into("<H", data, end + 20, 1)
+    else:
+        data.extend(b"X")
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse an inconsistent end record")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP end record comment length"
+    )
+    assert path.read_bytes() == original
+
+
+def test_zip_eocd_valid_comment_still_identifies_format(tmp_path: Path) -> None:
+    path = tmp_path / "commented.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+        archive.comment = b"research archive notes"
+    assert identifier.inspect_zip_container(path) == "OOXML Excel"
