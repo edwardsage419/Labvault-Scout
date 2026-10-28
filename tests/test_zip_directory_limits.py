@@ -1383,7 +1383,7 @@ def test_zip_unencrypted_stored_size_conflict_rejected_before_zipfile(
         archive.writestr("[Content_Types].xml", b"<Types/>")
         archive.writestr("xl/workbook.xml", b"<workbook/>")
     data = bytearray(path.read_bytes())
-    central = data.find(b"PK\x5cx01\x5cx02")
+    central = data.find(bytes.fromhex("504b0102"))
     assert central > 0
     assert struct.unpack_from("<H", data, central + 10)[0] == zipfile.ZIP_STORED
     assert not (struct.unpack_from("<H", data, central + 8)[0] & 0x0001)

@@ -541,10 +541,6 @@ def _zip_directory_preflight(path: Path) -> str:
             return "Invalid ZIP directory ZIP64 extra"
         if disk_start:
             return "Unsupported ZIP multi-disk metadata"
-        # For unencrypted STORED members, the payload is not compressed.
-        # Validate this invariant after resolving any ZIP64 size fields.
-        if method == 0 and not (flags & 0x0001) and compressed_size != uncompressed_size:
-            return "Ambiguous ZIP stored member sizes"
         local_members.append((
             local_offset, name, method, flags, crc, compressed_size, uncompressed_size
         ))
@@ -725,6 +721,10 @@ def _zip_directory_preflight(path: Path) -> str:
                         break
                 if not descriptor_matches:
                     return "Ambiguous ZIP data descriptor metadata"
+            # Preserve more specific boundary and descriptor diagnostics first.
+            # An unencrypted STORED member must have identical sizes.
+            if method == 0 and not (flags & 0x0001) and compressed_size != uncompressed_size:
+                return "Ambiguous ZIP stored member sizes"
     return ""
 
 
