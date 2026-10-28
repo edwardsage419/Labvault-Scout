@@ -539,6 +539,7 @@ def _zip_directory_preflight(path: Path) -> str:
                     # Scan only the bounded local extra field for ZIP64 size values.
                     extra = handle.read(local_extra_size)
                     pos = 0
+                    found_zip64 = False
                     while pos + 4 <= len(extra):
                         tag = int.from_bytes(extra[pos:pos + 2], "little")
                         length = int.from_bytes(extra[pos + 2:pos + 4], "little")
@@ -546,6 +547,9 @@ def _zip_directory_preflight(path: Path) -> str:
                         if length > len(extra) - pos:
                             return "Invalid ZIP local ZIP64 extra"
                         if tag == 0x0001:
+                            if found_zip64:
+                                return "Invalid ZIP local ZIP64 extra"
+                            found_zip64 = True
                             payload = extra[pos:pos + length]
                             required = 8 * (local_uncompressed == 0xFFFFFFFF)
                             required += 8 * (local_compressed == 0xFFFFFFFF)
@@ -561,9 +565,8 @@ def _zip_directory_preflight(path: Path) -> str:
                                 local_compressed = int.from_bytes(
                                     payload[field_offset:field_offset + 8], "little"
                                 )
-                            break
                         pos += length
-                    else:
+                    if pos != len(extra) or not found_zip64:
                         return "Invalid ZIP local ZIP64 extra"
                 if local_compressed != compressed_size:
                     return "Ambiguous ZIP local compressed size"

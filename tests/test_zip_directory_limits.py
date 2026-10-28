@@ -711,3 +711,39 @@ def test_zip_local_zip64_extra_conflicts_rejected_before_zipfile(
     monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
     assert identifier.inspect_zip_container(path) == expected_status
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "appended_extra", [bytes.fromhex("01000000"), bytes.fromhex("00")],
+    ids=["duplicate_zip64", "trailing_byte"],
+)
+def test_zip_local_zip64_extra_rejects_duplicate_or_trailing_bytes_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, appended_extra: bytes,
+) -> None:
+    data = bytearray(_zip_with_forced_zip64_local_member(False))
+    name_length, extra_length = struct.unpack_from("<HH", data, 26)
+    insert_at = 30 + name_length + extra_length
+    data[insert_at:insert_at] = appended_extra
+    struct.pack_into("<H", data, 28, extra_length + len(appended_extra))
+    first_central = data.find(bytes.fromhex("504b0102"))
+    second_central = data.find(bytes.fromhex("504b0102"), first_central + 4)
+    assert first_central > 0 and second_central > first_central
+    second_local = struct.unpack_from("<I", data, second_central + 42)[0]
+    struct.pack_into("<I", data, second_central + 42, second_local + len(appended_extra))
+    end = data.rfind(bytes.fromhex("504b0506"))
+    assert end > second_central
+    struct.pack_into("<I", data, end + 16, first_central)
+    path = tmp_path / "malformed-local-zip64.xlsx"
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    # The standard ZIP reader accepts the conflicting local extra structure.
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse malformed local ZIP64 extras")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == "Invalid ZIP local ZIP64 extra"
+    assert path.read_bytes() == original
