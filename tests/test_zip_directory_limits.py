@@ -1330,3 +1330,44 @@ def test_streaming_zip64_local_sentinels_check_nonzero_sizes(
         monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
     assert identifier.inspect_zip_container(path) == expected
     assert path.read_bytes() == bytes(data)
+
+@pytest.mark.parametrize(
+    "local_crc_matches",
+    [False, True],
+    ids=["zero-local-crc", "nonzero-local-crc"],
+)
+def test_streaming_descriptor_central_crc_conflict_precedes_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local_crc_matches: bool,
+) -> None:
+    # The descriptor retains the original CRC while the central record is
+    # forged. A nonzero local CRC rejects early; a zero streaming placeholder
+    # requires the descriptor comparison to reject the contradictory record.
+    data = bytearray(_zip_with_data_descriptors())
+    central = data.find(bytes.fromhex("504b0102"))
+    descriptor = data.find(bytes.fromhex("504b0708"))
+    assert 0 < descriptor < central
+    assert struct.unpack_from("<H", data, 6)[0] & 0x0008
+    original_crc = struct.unpack_from("<I", data, central + 16)[0]
+    assert struct.unpack_from("<I", data, descriptor + 4)[0] == original_crc
+    if local_crc_matches:
+        struct.pack_into("<I", data, 14, original_crc)
+    else:
+        assert struct.unpack_from("<I", data, 14)[0] == 0
+    struct.pack_into("<I", data, central + 16, original_crc ^ 1)
+
+    path = tmp_path / "streaming-central-crc-conflict.xlsx"
+    path.write_bytes(data)
+    original = bytes(data)
+    with zipfile.ZipFile(path) as archive:
+        assert "[Content_Types].xml" in archive.namelist()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not classify conflicting CRC metadata")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    expected_status = (
+        "Ambiguous ZIP local CRC" if local_crc_matches
+        else "Ambiguous ZIP data descriptor metadata"
+    )
+    assert identifier.inspect_zip_container(path) == expected_status
+    assert path.read_bytes() == original
