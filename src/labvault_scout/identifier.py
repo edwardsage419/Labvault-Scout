@@ -649,22 +649,26 @@ def _zip_directory_preflight(path: Path) -> str:
                 handle.seek(descriptor_start)
                 descriptor = handle.read(min(available, 24))
                 expected_crc = crc.to_bytes(4, "little")
-                expected_32 = (
-                    expected_crc
-                    + compressed_size.to_bytes(4, "little")
-                    + uncompressed_size.to_bytes(4, "little")
-                )
                 expected_64 = (
                     expected_crc
                     + compressed_size.to_bytes(8, "little")
                     + uncompressed_size.to_bytes(8, "little")
                 )
+                # ZIP64 sizes cannot be encoded in a 32-bit descriptor.
+                expected_sizes = [expected_64]
+                if max(compressed_size, uncompressed_size) <= 0xFFFFFFFF:
+                    expected_32 = (
+                        expected_crc
+                        + compressed_size.to_bytes(4, "little")
+                        + uncompressed_size.to_bytes(4, "little")
+                    )
+                    expected_sizes.insert(0, expected_32)
                 # Each descriptor must account for the bytes up to its
                 # boundary. The final member may be followed by a complete
                 # ZIP archive extra data record before the central directory.
                 descriptor_matches = False
                 for prefix in (b"", b"PK\x07\x08"):
-                    for expected in (expected_32, expected_64):
+                    for expected in expected_sizes:
                         candidate = prefix + expected
                         if not descriptor.startswith(candidate):
                             continue

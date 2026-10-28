@@ -928,3 +928,42 @@ def test_zip_central_extra_malformed_rejected_before_zipfile(
     monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
     assert identifier.inspect_zip_container(path) == expected_status
     assert path.read_bytes() == data
+
+
+@pytest.mark.parametrize("forged_size", [0x100000000, 0x100000001])
+def test_zip64_descriptor_large_uncompressed_size_rejected_without_overflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forged_size: int,
+) -> None:
+    data = bytearray(_zip_with_data_descriptors())
+    first_central = data.find(b"PK\\x01\\x02")
+    end = data.rfind(b"PK\\x05\\x06")
+    assert 0 < first_central < end
+    assert struct.unpack_from("<H", data, first_central + 8)[0] & 0x0008
+    name_size, extra_size = struct.unpack_from("<HH", data, first_central + 28)
+    assert extra_size == 0
+
+    # A tiny archive can declare a ZIP64 uncompressed size in its central
+    # record. The existing 32-bit descriptor must be rejected without overflow.
+    struct.pack_into("<I", data, first_central + 24, 0xFFFFFFFF)
+    extra = struct.pack("<HHQ", 1, 8, forged_size)
+    insert_at = first_central + 46 + name_size
+    data[insert_at:insert_at] = extra
+    struct.pack_into("<H", data, first_central + 30, len(extra))
+    end += len(extra)
+    directory_size = struct.unpack_from("<I", data, end + 12)[0]
+    struct.pack_into("<I", data, end + 12, directory_size + len(extra))
+
+    path = tmp_path / "zip64-oversized-descriptor.xlsx"
+    path.write_bytes(data)
+    original = path.read_bytes()
+    with zipfile.ZipFile(path) as archive:
+        assert "[Content_Types].xml" in archive.namelist()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not classify inconsistent ZIP64 metadata")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP data descriptor metadata"
+    )
+    assert path.read_bytes() == original
