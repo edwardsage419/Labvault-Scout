@@ -496,6 +496,51 @@ def _zip_directory_preflight(path: Path) -> str:
         crc = int.from_bytes(directory[offset + 16:offset + 20], "little")
         compressed_size = int.from_bytes(directory[offset + 20:offset + 24], "little")
         uncompressed_size = int.from_bytes(directory[offset + 24:offset + 28], "little")
+        disk_start = int.from_bytes(directory[offset + 34:offset + 36], "little")
+        needs_zip64 = (
+            uncompressed_size == 0xFFFFFFFF
+            or compressed_size == 0xFFFFFFFF
+            or local_offset == 0xFFFFFFFF
+            or disk_start == 0xFFFF
+        )
+        extra_pos = offset + 46 + name_bytes
+        extra_end = extra_pos + extra_bytes
+        found_zip64 = False
+        while extra_pos < extra_end:
+            if extra_end - extra_pos < 4:
+                return "Invalid ZIP directory extra"
+            tag = int.from_bytes(directory[extra_pos:extra_pos + 2], "little")
+            length = int.from_bytes(directory[extra_pos + 2:extra_pos + 4], "little")
+            extra_pos += 4
+            if length > extra_end - extra_pos:
+                return "Invalid ZIP directory extra"
+            if tag == 0x0001:
+                if found_zip64:
+                    return "Invalid ZIP directory ZIP64 extra"
+                found_zip64 = True
+                required = 8 * (uncompressed_size == 0xFFFFFFFF)
+                required += 8 * (compressed_size == 0xFFFFFFFF)
+                required += 8 * (local_offset == 0xFFFFFFFF)
+                required += 4 * (disk_start == 0xFFFF)
+                if length < required:
+                    return "Invalid ZIP directory ZIP64 extra"
+                cursor = extra_pos
+                if uncompressed_size == 0xFFFFFFFF:
+                    uncompressed_size = int.from_bytes(directory[cursor:cursor + 8], "little")
+                    cursor += 8
+                if compressed_size == 0xFFFFFFFF:
+                    compressed_size = int.from_bytes(directory[cursor:cursor + 8], "little")
+                    cursor += 8
+                if local_offset == 0xFFFFFFFF:
+                    local_offset = int.from_bytes(directory[cursor:cursor + 8], "little")
+                    cursor += 8
+                if disk_start == 0xFFFF:
+                    disk_start = int.from_bytes(directory[cursor:cursor + 4], "little")
+            extra_pos += length
+        if needs_zip64 and not found_zip64:
+            return "Invalid ZIP directory ZIP64 extra"
+        if disk_start:
+            return "Unsupported ZIP multi-disk metadata"
         local_members.append((
             local_offset, name, method, flags, crc, compressed_size, uncompressed_size
         ))

@@ -838,3 +838,93 @@ def test_zip_last_data_descriptor_archive_extra_record_remains_accepted(
         assert archive.read("xl/workbook.xml") == b"<workbook/>"
     assert identifier.inspect_zip_container(path) == "OOXML Excel"
     assert path.read_bytes() == data
+
+
+def _zip_with_central_extra_variant(kind: str) -> bytes:
+    """Forge a small central-only ZIP64 extra without touching local members."""
+    writer = io.BytesIO()
+    with zipfile.ZipFile(writer, "w") as archive:
+        archive.writestr("[Content_Types].xml", b"<Types/>")
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+    data = bytearray(writer.getvalue())
+    central = data.find(b"PK\x01\x02")
+    end = data.rfind(b"PK\x05\x06")
+    assert 0 < central < end
+    name_size, extra_size = struct.unpack_from("<HH", data, central + 28)
+    assert extra_size == 0
+    original_directory_size = struct.unpack_from("<I", data, end + 12)[0]
+    compressed = struct.unpack_from("<I", data, central + 20)[0]
+    uncompressed = struct.unpack_from("<I", data, central + 24)[0]
+    local_offset = struct.unpack_from("<I", data, central + 42)[0]
+
+    if kind in {"sizes_offset", "missing"}:
+        struct.pack_into("<II", data, central + 20, 0xFFFFFFFF, 0xFFFFFFFF)
+    if kind in {"sizes_offset", "offset"}:
+        struct.pack_into("<I", data, central + 42, 0xFFFFFFFF)
+    if kind == "sizes_offset":
+        payload = struct.pack("<QQQ", uncompressed, compressed, local_offset)
+        extra = struct.pack("<HH", 1, len(payload)) + payload
+    elif kind == "offset":
+        payload = struct.pack("<Q", local_offset)
+        extra = struct.pack("<HH", 1, len(payload)) + payload
+    elif kind == "trailing":
+        extra = b"\x00"
+    elif kind == "duplicate":
+        extra = b"\x01\x00\x00\x00" * 2
+    elif kind == "overflow":
+        extra = struct.pack("<HH", 0xCAFE, 5) + b"ABCD"
+    elif kind == "missing":
+        extra = b""
+    else:
+        raise AssertionError(kind)
+
+    insert_at = central + 46 + name_size
+    data[insert_at:insert_at] = extra
+    struct.pack_into("<H", data, central + 30, len(extra))
+    struct.pack_into(
+        "<I", data, end + len(extra) + 12,
+        original_directory_size + len(extra),
+    )
+    return bytes(data)
+
+
+@pytest.mark.parametrize("kind", ["sizes_offset", "offset"])
+def test_zip_central_zip64_member_fields_remain_accepted(
+    tmp_path: Path, kind: str,
+) -> None:
+    data = _zip_with_central_extra_variant(kind)
+    path = tmp_path / "central-zip64.xlsx"
+    path.write_bytes(data)
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+    assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    assert path.read_bytes() == data
+
+
+@pytest.mark.parametrize(
+    "kind,expected_status",
+    [
+        ("trailing", "Invalid ZIP directory extra"),
+        ("overflow", "Invalid ZIP directory extra"),
+        ("duplicate", "Invalid ZIP directory ZIP64 extra"),
+        ("missing", "Invalid ZIP directory ZIP64 extra"),
+    ],
+)
+def test_zip_central_extra_malformed_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    kind: str, expected_status: str,
+) -> None:
+    data = _zip_with_central_extra_variant(kind)
+    path = tmp_path / "forged-central-extra.xlsx"
+    path.write_bytes(data)
+    if kind in {"trailing", "duplicate"}:
+        # The standard reader accepts these contradictory central extras.
+        with zipfile.ZipFile(path) as archive:
+            assert archive.read("[Content_Types].xml") == b"<Types/>"
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse malformed central extras")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == expected_status
+    assert path.read_bytes() == data
