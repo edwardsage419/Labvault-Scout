@@ -967,3 +967,55 @@ def test_zip64_descriptor_large_uncompressed_size_rejected_without_overflow(
         "Ambiguous ZIP data descriptor metadata"
     )
     assert path.read_bytes() == original
+
+@pytest.mark.parametrize("signed", [False, True], ids=["unsigned", "signed"])
+@pytest.mark.parametrize("corrupt_high_size", [False, True], ids=["valid", "conflicting"])
+def test_zip64_descriptor_small_sizes_accepts_64bit_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    signed: bool, corrupt_high_size: bool,
+) -> None:
+    # A streaming ZIP64 descriptor may use 64-bit sizes even when its
+    # central-directory sizes fit in 32 bits. Preserve both legal layouts.
+    data = bytearray(_zip_with_data_descriptors())
+    descriptor = data.find(b"PK\\x07\\x08")
+    assert descriptor > 0
+    crc = bytes(data[descriptor + 4:descriptor + 8])
+    compressed, uncompressed = struct.unpack_from("<II", data, descriptor + 8)
+    replacement = (
+        (b"PK\\x07\\x08" if signed else b"")
+        + crc + struct.pack("<QQ", compressed, uncompressed)
+    )
+    offset_delta = len(replacement) - 16
+    data[descriptor:descriptor + 16] = replacement
+    if corrupt_high_size:
+        # Only the high half of the 64-bit compressed size is changed.
+        # A 32-bit fallback must not hide the contradictory descriptor.
+        data[descriptor + (12 if signed else 8)] ^= 1
+
+    first_central = data.find(b"PK\\x01\\x02")
+    second_central = data.find(b"PK\\x01\\x02", first_central + 4)
+    end = data.rfind(b"PK\\x05\\x06")
+    assert 0 < first_central < second_central < end
+    second_local = struct.unpack_from("<I", data, second_central + 42)[0]
+    directory_offset = struct.unpack_from("<I", data, end + 16)[0]
+    struct.pack_into("<I", data, second_central + 42, second_local + offset_delta)
+    struct.pack_into("<I", data, end + 16, directory_offset + offset_delta)
+
+    path = tmp_path / "zip64-small-sizes-descriptor.xlsx"
+    path.write_bytes(data)
+    original = path.read_bytes()
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+        assert archive.read("xl/workbook.xml") == b"<workbook/>"
+
+    if corrupt_high_size:
+        def fail_if_parsed(*args: object, **kwargs: object) -> None:
+            raise AssertionError("ZipFile must not classify a conflicting descriptor")
+
+        monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+        assert identifier.inspect_zip_container(path) == (
+            "Ambiguous ZIP data descriptor metadata"
+        )
+    else:
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    assert path.read_bytes() == original
