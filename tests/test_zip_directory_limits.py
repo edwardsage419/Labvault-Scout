@@ -935,8 +935,8 @@ def test_zip64_descriptor_large_uncompressed_size_rejected_without_overflow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forged_size: int,
 ) -> None:
     data = bytearray(_zip_with_data_descriptors())
-    first_central = data.find(b"PK\\x01\\x02")
-    end = data.rfind(b"PK\\x05\\x06")
+    first_central = data.find(b"PK\x01\x02")
+    end = data.rfind(b"PK\x05\x06")
     assert 0 < first_central < end
     assert struct.unpack_from("<H", data, first_central + 8)[0] & 0x0008
     name_size, extra_size = struct.unpack_from("<HH", data, first_central + 28)
