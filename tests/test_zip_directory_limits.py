@@ -747,3 +747,39 @@ def test_zip_local_zip64_extra_rejects_duplicate_or_trailing_bytes_before_zipfil
     monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
     assert identifier.inspect_zip_container(path) == "Invalid ZIP local ZIP64 extra"
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "padding", [b"\x00", b"junk"], ids=["single_byte", "four_bytes"]
+)
+def test_zip_data_descriptor_inter_member_padding_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, padding: bytes,
+) -> None:
+    data = bytearray(_zip_with_data_descriptors())
+    descriptor = data.find(b"PK\x07\x08")
+    second_local = data.find(b"PK\x03\x04", 4)
+    assert descriptor > 0 and second_local == descriptor + 16
+    # A valid descriptor prefix with extra bytes must not cross a member boundary.
+    data[second_local:second_local] = padding
+    first_central = data.find(b"PK\x01\x02")
+    second_central = data.find(b"PK\x01\x02", first_central + 4)
+    end = data.rfind(b"PK\x05\x06")
+    assert 0 < first_central < second_central < end
+    struct.pack_into("<I", data, second_central + 42, second_local + len(padding))
+    struct.pack_into("<I", data, end + 16, first_central)
+    path = tmp_path / "descriptor-gap.xlsx"
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    # The standard reader ignores the extra bytes between local members.
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse ambiguous descriptor gaps")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP data descriptor metadata"
+    )
+    assert path.read_bytes() == original

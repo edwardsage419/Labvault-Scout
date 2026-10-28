@@ -614,8 +614,15 @@ def _zip_directory_preflight(path: Path) -> str:
                     + compressed_size.to_bytes(8, "little")
                     + uncompressed_size.to_bytes(8, "little")
                 )
+                # Between members, a descriptor must end exactly where
+                # the next local header begins. A matching prefix alone
+                # would accept unaccounted bytes in that interval.
                 if not any(
                     descriptor.startswith(prefix + expected)
+                    and (
+                        index + 1 == len(ordered_members)
+                        or available == len(prefix) + len(expected)
+                    )
                     for prefix in (b"", b"PK\x07\x08")
                     for expected in (expected_32, expected_64)
                 ):
