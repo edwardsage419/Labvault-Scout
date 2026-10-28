@@ -1119,3 +1119,61 @@ def test_zip_local_zip64_mixed_sentinel_checks_both_sizes(
         expected = "OOXML Excel"
     assert identifier.inspect_zip_container(path) == expected
     assert path.read_bytes() == original
+
+
+
+@pytest.mark.parametrize(
+    "variant,expected",
+    [
+        ("matching", "OOXML Excel"),
+        ("empty", "OOXML Excel"),
+        ("conflicting", "Ambiguous ZIP local uncompressed size"),
+        ("truncated", "Invalid ZIP local ZIP64 extra"),
+    ],
+)
+def test_zip_local_zip64_extra_without_sentinel_is_bounded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    variant: str, expected: str,
+) -> None:
+    writer = io.BytesIO()
+    with zipfile.ZipFile(writer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", b"<Types/>")
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+    data = bytearray(writer.getvalue())
+    compressed, uncompressed = struct.unpack_from("<II", data, 18)
+    assert compressed < 0xFFFFFFFF and uncompressed < 0xFFFFFFFF
+    assert struct.unpack_from("<H", data, 28)[0] == 0
+
+    if variant == "empty":
+        payload = b""
+    elif variant == "truncated":
+        payload = b"X"
+    else:
+        payload = struct.pack(
+            "<QQ", uncompressed + (variant == "conflicting"), compressed,
+        )
+    extra = struct.pack("<HH", 1, len(payload)) + payload
+    local_name_size = struct.unpack_from("<H", data, 26)[0]
+    data[30 + local_name_size:30 + local_name_size] = extra
+    struct.pack_into("<H", data, 28, len(extra))
+
+    first_central = data.find(b"PK\x01\x02")
+    second_central = data.find(b"PK\x01\x02", first_central + 4)
+    end = data.rfind(b"PK\x05\x06")
+    assert 0 < first_central < second_central < end
+    second_offset = struct.unpack_from("<I", data, second_central + 42)[0]
+    directory_offset = struct.unpack_from("<I", data, end + 16)[0]
+    struct.pack_into("<I", data, second_central + 42, second_offset + len(extra))
+    struct.pack_into("<I", data, end + 16, directory_offset + len(extra))
+
+    path = tmp_path / "local-zip64-no-sentinel.xlsx"
+    path.write_bytes(data)
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+        assert archive.read("xl/workbook.xml") == b"<workbook/>"
+    if expected != "OOXML Excel":
+        def fail_if_parsed(*args: object, **kwargs: object) -> None:
+            raise AssertionError("ZipFile must not classify inconsistent ZIP64 extras")
+        monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == expected
+    assert path.read_bytes() == bytes(data)

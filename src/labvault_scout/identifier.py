@@ -623,8 +623,19 @@ def _zip_directory_preflight(path: Path) -> str:
                             local_compressed = zip64_compressed
                         elif local_compressed != zip64_compressed:
                             return "Ambiguous ZIP local compressed size"
-                    else:
-                        handle.seek(length, 1)
+                    elif length == 16:
+                        # Some writers retain the full ZIP64 sizes even when
+                        # the local 32-bit fields no longer use sentinels.
+                        payload = handle.read(16)
+                        if len(payload) != 16:
+                            return "Invalid ZIP local ZIP64 extra"
+                        if not (flags & 0x0008):
+                            if int.from_bytes(payload[:8], "little") != local_uncompressed:
+                                return "Ambiguous ZIP local uncompressed size"
+                            if int.from_bytes(payload[8:], "little") != local_compressed:
+                                return "Ambiguous ZIP local compressed size"
+                    elif length != 0:
+                        return "Invalid ZIP local ZIP64 extra"
                 else:
                     handle.seek(length, 1)
                 pos += length
