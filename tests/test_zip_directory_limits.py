@@ -977,12 +977,12 @@ def test_zip64_descriptor_small_sizes_accepts_64bit_layout(
     # A streaming ZIP64 descriptor may use 64-bit sizes even when its
     # central-directory sizes fit in 32 bits. Preserve both legal layouts.
     data = bytearray(_zip_with_data_descriptors())
-    descriptor = data.find(b"PK\\x07\\x08")
+    descriptor = data.find(b"PK\x07\x08")
     assert descriptor > 0
     crc = bytes(data[descriptor + 4:descriptor + 8])
     compressed, uncompressed = struct.unpack_from("<II", data, descriptor + 8)
     replacement = (
-        (b"PK\\x07\\x08" if signed else b"")
+        (b"PK\x07\x08" if signed else b"")
         + crc + struct.pack("<QQ", compressed, uncompressed)
     )
     offset_delta = len(replacement) - 16
@@ -992,9 +992,9 @@ def test_zip64_descriptor_small_sizes_accepts_64bit_layout(
         # A 32-bit fallback must not hide the contradictory descriptor.
         data[descriptor + (12 if signed else 8)] ^= 1
 
-    first_central = data.find(b"PK\\x01\\x02")
-    second_central = data.find(b"PK\\x01\\x02", first_central + 4)
-    end = data.rfind(b"PK\\x05\\x06")
+    first_central = data.find(b"PK\x01\x02")
+    second_central = data.find(b"PK\x01\x02", first_central + 4)
+    end = data.rfind(b"PK\x05\x06")
     assert 0 < first_central < second_central < end
     second_local = struct.unpack_from("<I", data, second_central + 42)[0]
     directory_offset = struct.unpack_from("<I", data, end + 16)[0]
