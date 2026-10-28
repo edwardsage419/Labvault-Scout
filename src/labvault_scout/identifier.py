@@ -549,6 +549,30 @@ def _zip_directory_preflight(path: Path) -> str:
             )
             if data_start + compressed_size > next_boundary:
                 return "Invalid ZIP compressed data boundary"
+            if flags & 0x0008:
+                descriptor_start = data_start + compressed_size
+                available = next_boundary - descriptor_start
+                if available < 12:
+                    return "Invalid ZIP data descriptor boundary"
+                handle.seek(descriptor_start)
+                descriptor = handle.read(min(available, 24))
+                expected_crc = crc.to_bytes(4, "little")
+                expected_32 = (
+                    expected_crc
+                    + compressed_size.to_bytes(4, "little")
+                    + uncompressed_size.to_bytes(4, "little")
+                )
+                expected_64 = (
+                    expected_crc
+                    + compressed_size.to_bytes(8, "little")
+                    + uncompressed_size.to_bytes(8, "little")
+                )
+                if not any(
+                    descriptor.startswith(prefix + expected)
+                    for prefix in (b"", b"PK\x07\x08")
+                    for expected in (expected_32, expected_64)
+                ):
+                    return "Ambiguous ZIP data descriptor metadata"
     return ""
 
 

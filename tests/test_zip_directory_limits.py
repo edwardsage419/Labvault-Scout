@@ -545,3 +545,94 @@ def test_zip_empty_member_keeps_bounded_classification(tmp_path: Path) -> None:
         archive.writestr("xl/workbook.xml", "<workbook/>")
         archive.writestr("empty", b"")
     assert identifier.inspect_zip_container(path) == "OOXML Excel"
+
+
+def _zip_with_data_descriptors() -> bytes:
+    """Create a small ZIP using real non-seekable streaming descriptors."""
+    class NonSeekableWriter:
+        def __init__(self) -> None:
+            self.buffer = io.BytesIO()
+
+        def write(self, data: bytes) -> int:
+            return self.buffer.write(data)
+
+        def flush(self) -> None:
+            pass
+
+    writer = NonSeekableWriter()
+    with zipfile.ZipFile(writer, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+    return writer.buffer.getvalue()
+
+
+@pytest.mark.parametrize("descriptor_field_offset", [4, 8, 12])
+def test_zip_data_descriptor_mismatch_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, descriptor_field_offset: int,
+) -> None:
+    data = bytearray(_zip_with_data_descriptors())
+    descriptor = data.find(b"PK\x07\x08")
+    assert descriptor > 0
+    # Mutate the CRC, compressed size, or uncompressed size of the descriptor.
+    data[descriptor + descriptor_field_offset] ^= 1
+    path = tmp_path / "forged-descriptor.xlsx"
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse inconsistent data descriptors")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP data descriptor metadata"
+    )
+    assert path.read_bytes() == original
+
+
+def test_zip_data_descriptor_truncated_by_next_header_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = bytearray(_zip_with_data_descriptors())
+    next_local = data.find(b"PK\x03\x04", 4)
+    first_central = data.find(b"PK\x01\x02")
+    assert next_local > 0 and first_central > next_local
+    name_size, extra_size = struct.unpack_from("<HH", data, 26)
+    data_start = 30 + name_size + extra_size
+    # The forged central size leaves fewer than 12 bytes for the descriptor.
+    forged_size = next_local - data_start - 8
+    assert forged_size > 0
+    struct.pack_into("<I", data, first_central + 20, forged_size)
+    path = tmp_path / "short-descriptor.xlsx"
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse a truncated data descriptor")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Invalid ZIP data descriptor boundary"
+    )
+    assert path.read_bytes() == original
+
+
+def test_zip_unsigned_data_descriptor_remains_accepted(tmp_path: Path) -> None:
+    data = bytearray(_zip_with_data_descriptors())
+    first_descriptor = data.find(b"PK\x07\x08")
+    second_local = data.find(b"PK\x03\x04", 4)
+    assert first_descriptor > 0 and second_local > first_descriptor
+    # The ZIP specification permits descriptors without the optional signature.
+    del data[first_descriptor:first_descriptor + 4]
+    first_central = data.find(b"PK\x01\x02")
+    second_central = data.find(b"PK\x01\x02", first_central + 4)
+    end = data.rfind(b"PK\x05\x06")
+    assert first_central > 0 and second_central > first_central and end > second_central
+    struct.pack_into("<I", data, second_central + 42, second_local - 4)
+    struct.pack_into("<I", data, end + 16, first_central)
+    path = tmp_path / "unsigned-descriptor.xlsx"
+    path.write_bytes(data)
+
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+    assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    assert path.read_bytes() == data
