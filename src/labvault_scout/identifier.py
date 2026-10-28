@@ -525,22 +525,50 @@ def _zip_directory_preflight(path: Path) -> str:
                 return "Ambiguous ZIP local compression method"
             if not (flags & 0x0008) and int.from_bytes(local_header[14:18], "little") != crc:
                 return "Ambiguous ZIP local CRC"
-            if (
-                not (flags & 0x0008)
-                and int.from_bytes(local_header[18:22], "little") != compressed_size
-            ):
-                return "Ambiguous ZIP local compressed size"
-            if (
-                not (flags & 0x0008)
-                and int.from_bytes(local_header[22:26], "little") != uncompressed_size
-            ):
-                return "Ambiguous ZIP local uncompressed size"
+            # ZIP64 local sizes may use 32-bit sentinels with 64-bit extra fields.
             local_name_size = int.from_bytes(local_header[26:28], "little")
             local_extra_size = int.from_bytes(local_header[28:30], "little")
             if local_offset + 30 + local_name_size + local_extra_size > directory_start:
                 return "Invalid ZIP local header length"
             if local_name_size != len(name) or handle.read(local_name_size) != name:
                 return "Ambiguous ZIP local member name"
+            if not (flags & 0x0008):
+                local_compressed = int.from_bytes(local_header[18:22], "little")
+                local_uncompressed = int.from_bytes(local_header[22:26], "little")
+                if 0xFFFFFFFF in (local_compressed, local_uncompressed):
+                    # Scan only the bounded local extra field for ZIP64 size values.
+                    extra = handle.read(local_extra_size)
+                    pos = 0
+                    while pos + 4 <= len(extra):
+                        tag = int.from_bytes(extra[pos:pos + 2], "little")
+                        length = int.from_bytes(extra[pos + 2:pos + 4], "little")
+                        pos += 4
+                        if length > len(extra) - pos:
+                            return "Invalid ZIP local ZIP64 extra"
+                        if tag == 0x0001:
+                            payload = extra[pos:pos + length]
+                            required = 8 * (local_uncompressed == 0xFFFFFFFF)
+                            required += 8 * (local_compressed == 0xFFFFFFFF)
+                            if len(payload) < required:
+                                return "Invalid ZIP local ZIP64 extra"
+                            field_offset = 0
+                            if local_uncompressed == 0xFFFFFFFF:
+                                local_uncompressed = int.from_bytes(
+                                    payload[field_offset:field_offset + 8], "little"
+                                )
+                                field_offset += 8
+                            if local_compressed == 0xFFFFFFFF:
+                                local_compressed = int.from_bytes(
+                                    payload[field_offset:field_offset + 8], "little"
+                                )
+                            break
+                        pos += length
+                    else:
+                        return "Invalid ZIP local ZIP64 extra"
+                if local_compressed != compressed_size:
+                    return "Ambiguous ZIP local compressed size"
+                if local_uncompressed != uncompressed_size:
+                    return "Ambiguous ZIP local uncompressed size"
             data_start = local_offset + 30 + local_name_size + local_extra_size
             next_boundary = (
                 ordered_members[index + 1][0]

@@ -636,3 +636,69 @@ def test_zip_unsigned_data_descriptor_remains_accepted(tmp_path: Path) -> None:
         assert archive.read("[Content_Types].xml") == b"<Types/>"
     assert identifier.inspect_zip_container(path) == "OOXML Excel"
     assert path.read_bytes() == data
+
+
+def _zip_with_forced_zip64_local_member(streaming: bool) -> bytes:
+    """Generate a small valid ZIP64 local member with ordinary central records."""
+    class NonSeekableWriter:
+        def __init__(self) -> None:
+            self.buffer = io.BytesIO()
+
+        def write(self, data: bytes) -> int:
+            return self.buffer.write(data)
+
+        def flush(self) -> None:
+            pass
+
+    writer = NonSeekableWriter() if streaming else io.BytesIO()
+    with zipfile.ZipFile(writer, "w") as archive:
+        with archive.open("[Content_Types].xml", "w", force_zip64=True) as member:
+            member.write(b"<Types/>")
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+    return writer.buffer.getvalue() if streaming else writer.getvalue()
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_zip_forced_zip64_local_sizes_remain_accepted(
+    tmp_path: Path, streaming: bool,
+) -> None:
+    data = _zip_with_forced_zip64_local_member(streaming)
+    assert struct.unpack_from("<II", data, 18) == (0xFFFFFFFF, 0xFFFFFFFF)
+    assert b"PK\\x06\\x07" not in data  # No ZIP64 EOCD locator is needed.
+    assert bool(struct.unpack_from("<H", data, 6)[0] & 0x0008) == streaming
+    path = tmp_path / "forced-zip64.xlsx"
+    path.write_bytes(data)
+
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+    assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    assert path.read_bytes() == data
+
+
+@pytest.mark.parametrize(
+    "extra_offset,expected_status",
+    [
+        (0, "Invalid ZIP local ZIP64 extra"),
+        (4, "Ambiguous ZIP local uncompressed size"),
+        (12, "Ambiguous ZIP local compressed size"),
+    ],
+)
+def test_zip_local_zip64_extra_conflicts_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    extra_offset: int, expected_status: str,
+) -> None:
+    data = bytearray(_zip_with_forced_zip64_local_member(False))
+    name_length = struct.unpack_from("<H", data, 26)[0]
+    extra_start = 30 + name_length
+    assert data[extra_start:extra_start + 4] == b"\\x01\\x00\\x10\\x00"
+    data[extra_start + extra_offset] ^= 1
+    path = tmp_path / "forged-local-zip64.xlsx"
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse conflicting ZIP64 local sizes")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == expected_status
+    assert path.read_bytes() == original
