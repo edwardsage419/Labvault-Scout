@@ -655,7 +655,12 @@ def _zip_with_forced_zip64_local_member(streaming: bool) -> bytes:
         with archive.open("[Content_Types].xml", "w", force_zip64=True) as member:
             member.write(b"<Types/>")
         archive.writestr("xl/workbook.xml", b"<workbook/>")
-    return writer.buffer.getvalue() if streaming else writer.getvalue()
+    data = bytearray(writer.buffer.getvalue() if streaming else writer.getvalue())
+    if not streaming:
+        # Python versions differ in whether force_zip64 leaves local sentinels.
+        # Both sentinel fields with the generated ZIP64 extra are valid.
+        struct.pack_into("<II", data, 18, 0xFFFFFFFF, 0xFFFFFFFF)
+    return bytes(data)
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -663,8 +668,12 @@ def test_zip_forced_zip64_local_sizes_remain_accepted(
     tmp_path: Path, streaming: bool,
 ) -> None:
     data = _zip_with_forced_zip64_local_member(streaming)
-    assert struct.unpack_from("<II", data, 18) == (0xFFFFFFFF, 0xFFFFFFFF)
-    assert b"PK\\x06\\x07" not in data  # No ZIP64 EOCD locator is needed.
+    local_sizes = struct.unpack_from("<II", data, 18)
+    if streaming:
+        assert local_sizes in {(0, 0), (0xFFFFFFFF, 0xFFFFFFFF)}
+    else:
+        assert local_sizes == (0xFFFFFFFF, 0xFFFFFFFF)
+    assert bytes.fromhex("504b0607") not in data  # No ZIP64 EOCD locator.
     assert bool(struct.unpack_from("<H", data, 6)[0] & 0x0008) == streaming
     path = tmp_path / "forced-zip64.xlsx"
     path.write_bytes(data)
@@ -690,7 +699,7 @@ def test_zip_local_zip64_extra_conflicts_rejected_before_zipfile(
     data = bytearray(_zip_with_forced_zip64_local_member(False))
     name_length = struct.unpack_from("<H", data, 26)[0]
     extra_start = 30 + name_length
-    assert data[extra_start:extra_start + 4] == b"\\x01\\x00\\x10\\x00"
+    assert data[extra_start:extra_start + 4] == bytes.fromhex("01001000")
     data[extra_start + extra_offset] ^= 1
     path = tmp_path / "forged-local-zip64.xlsx"
     path.write_bytes(data)
