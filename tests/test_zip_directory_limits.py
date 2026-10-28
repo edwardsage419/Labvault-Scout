@@ -1067,3 +1067,55 @@ def test_zip64_descriptor_small_sizes_accepts_64bit_layout(
     else:
         assert identifier.inspect_zip_container(path) == "OOXML Excel"
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("sentinel", ["compressed", "uncompressed"])
+@pytest.mark.parametrize("corrupt_zip64", [False, True])
+def test_zip_local_zip64_mixed_sentinel_checks_both_sizes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    sentinel: str, corrupt_zip64: bool,
+) -> None:
+    writer = io.BytesIO()
+    with zipfile.ZipFile(writer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        with archive.open("[Content_Types].xml", "w", force_zip64=True) as member:
+            member.write(b"<Types/>" * 50)
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+    data = bytearray(writer.getvalue())
+    central = data.find(bytes.fromhex("504b0102"))
+    assert central > 0
+    compressed, uncompressed = struct.unpack_from("<II", data, central + 20)
+    assert 0 < compressed < uncompressed < 0xFFFFFFFF
+    name_length = struct.unpack_from("<H", data, 26)[0]
+    extra_start = 30 + name_length
+    assert data[extra_start:extra_start + 4] == bytes.fromhex("01001000")
+
+    # Preserve the complete 16-byte ZIP64 payload with only one local sentinel.
+    struct.pack_into("<II", data, 18, 0xFFFFFFFF, 0xFFFFFFFF)
+    if sentinel == "compressed":
+        struct.pack_into("<I", data, 22, uncompressed)
+        mismatched_field = "uncompressed"
+        mutation_offset = extra_start + 4
+    else:
+        struct.pack_into("<I", data, 18, compressed)
+        mismatched_field = "compressed"
+        mutation_offset = extra_start + 12
+    if corrupt_zip64:
+        data[mutation_offset] ^= 1
+    path = tmp_path / "mixed-zip64-local.xlsx"
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    # ZipFile accepts these structures, even when the optional field conflicts.
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>" * 50
+
+    if corrupt_zip64:
+        def fail_if_parsed(*args: object, **kwargs: object) -> None:
+            raise AssertionError("ZipFile must not classify contradictory ZIP64 sizes")
+
+        monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+        expected = f"Ambiguous ZIP local {mismatched_field} size"
+    else:
+        expected = "OOXML Excel"
+    assert identifier.inspect_zip_container(path) == expected
+    assert path.read_bytes() == original

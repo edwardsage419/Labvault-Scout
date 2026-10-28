@@ -605,24 +605,26 @@ def _zip_directory_preflight(path: Path) -> str:
                     if found_zip64:
                         return "Invalid ZIP local ZIP64 extra"
                     found_zip64 = True
-                    required = 8 * (local_uncompressed == 0xFFFFFFFF)
-                    required += 8 * (local_compressed == 0xFFFFFFFF)
-                    if length < required:
-                        return "Invalid ZIP local ZIP64 extra"
-                    payload = handle.read(required)
-                    if len(payload) != required:
-                        return "Invalid ZIP local ZIP64 extra"
-                    field_offset = 0
-                    if local_uncompressed == 0xFFFFFFFF:
-                        local_uncompressed = int.from_bytes(
-                            payload[field_offset:field_offset + 8], "little"
-                        )
-                        field_offset += 8
-                    if local_compressed == 0xFFFFFFFF:
-                        local_compressed = int.from_bytes(
-                            payload[field_offset:field_offset + 8], "little"
-                        )
-                    handle.seek(length - required, 1)
+                    if needs_zip64:
+                        # A ZIP64 local extra contains both 64-bit sizes,
+                        # including when only one local field is a sentinel.
+                        if length != 16:
+                            return "Invalid ZIP local ZIP64 extra"
+                        payload = handle.read(16)
+                        if len(payload) != 16:
+                            return "Invalid ZIP local ZIP64 extra"
+                        zip64_uncompressed = int.from_bytes(payload[:8], "little")
+                        zip64_compressed = int.from_bytes(payload[8:], "little")
+                        if local_uncompressed == 0xFFFFFFFF:
+                            local_uncompressed = zip64_uncompressed
+                        elif local_uncompressed != zip64_uncompressed:
+                            return "Ambiguous ZIP local uncompressed size"
+                        if local_compressed == 0xFFFFFFFF:
+                            local_compressed = zip64_compressed
+                        elif local_compressed != zip64_compressed:
+                            return "Ambiguous ZIP local compressed size"
+                    else:
+                        handle.seek(length, 1)
                 else:
                     handle.seek(length, 1)
                 pos += length
