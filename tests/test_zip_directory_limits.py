@@ -1371,3 +1371,45 @@ def test_streaming_descriptor_central_crc_conflict_precedes_zipfile(
     )
     assert identifier.inspect_zip_container(path) == expected_status
     assert path.read_bytes() == original
+
+@pytest.mark.parametrize("field", ["compressed", "uncompressed"])
+def test_zip_unencrypted_stored_size_conflict_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str,
+) -> None:
+    # A STORED member has identical compressed and uncompressed lengths.
+    # A ZIP reader may still list a forged member without validating this.
+    path = tmp_path / "stored-size-conflict.xlsx"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as archive:
+        archive.writestr("[Content_Types].xml", b"<Types/>")
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+    data = bytearray(path.read_bytes())
+    central = data.find(b"PK\x5cx01\x5cx02")
+    assert central > 0
+    assert struct.unpack_from("<H", data, central + 10)[0] == zipfile.ZIP_STORED
+    assert not (struct.unpack_from("<H", data, central + 8)[0] & 0x0001)
+    local_offset = struct.unpack_from("<I", data, central + 42)[0]
+    assert local_offset == 0
+
+    central_field, local_field = (
+        (20, 18) if field == "compressed" else (24, 22)
+    )
+    original_size = struct.unpack_from("<I", data, central + central_field)[0]
+    forged_size = original_size - 1 if field == "compressed" else original_size + 1
+    struct.pack_into("<I", data, central + central_field, forged_size)
+    struct.pack_into("<I", data, local_offset + local_field, forged_size)
+    assert struct.unpack_from("<I", data, central + 20)[0] != (
+        struct.unpack_from("<I", data, central + 24)[0]
+    )
+    path.write_bytes(data)
+    original = bytes(data)
+    with zipfile.ZipFile(path) as archive:
+        assert "[Content_Types].xml" in archive.namelist()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not classify contradictory STORED sizes")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP stored member sizes"
+    )
+    assert path.read_bytes() == original
