@@ -535,39 +535,55 @@ def _zip_directory_preflight(path: Path) -> str:
             if not (flags & 0x0008):
                 local_compressed = int.from_bytes(local_header[18:22], "little")
                 local_uncompressed = int.from_bytes(local_header[22:26], "little")
-                if 0xFFFFFFFF in (local_compressed, local_uncompressed):
-                    # Scan only the bounded local extra field for ZIP64 size values.
-                    extra = handle.read(local_extra_size)
-                    pos = 0
-                    found_zip64 = False
-                    while pos + 4 <= len(extra):
-                        tag = int.from_bytes(extra[pos:pos + 2], "little")
-                        length = int.from_bytes(extra[pos + 2:pos + 4], "little")
-                        pos += 4
-                        if length > len(extra) - pos:
+                needs_zip64 = 0xFFFFFFFF in (local_compressed, local_uncompressed)
+                # Validate all local extra field lengths, even without ZIP64
+                # sentinels. Seek over payloads to keep inspection bounded.
+                pos = 0
+                found_zip64 = False
+                while pos < local_extra_size:
+                    if local_extra_size - pos < 4:
+                        return (
+                            "Invalid ZIP local ZIP64 extra" if needs_zip64
+                            else "Invalid ZIP local extra"
+                        )
+                    extra_header = handle.read(4)
+                    if len(extra_header) != 4:
+                        return "Invalid ZIP local extra"
+                    tag = int.from_bytes(extra_header[:2], "little")
+                    length = int.from_bytes(extra_header[2:], "little")
+                    pos += 4
+                    if length > local_extra_size - pos:
+                        return (
+                            "Invalid ZIP local ZIP64 extra" if needs_zip64
+                            else "Invalid ZIP local extra"
+                        )
+                    if tag == 0x0001:
+                        if found_zip64:
                             return "Invalid ZIP local ZIP64 extra"
-                        if tag == 0x0001:
-                            if found_zip64:
-                                return "Invalid ZIP local ZIP64 extra"
-                            found_zip64 = True
-                            payload = extra[pos:pos + length]
-                            required = 8 * (local_uncompressed == 0xFFFFFFFF)
-                            required += 8 * (local_compressed == 0xFFFFFFFF)
-                            if len(payload) < required:
-                                return "Invalid ZIP local ZIP64 extra"
-                            field_offset = 0
-                            if local_uncompressed == 0xFFFFFFFF:
-                                local_uncompressed = int.from_bytes(
-                                    payload[field_offset:field_offset + 8], "little"
-                                )
-                                field_offset += 8
-                            if local_compressed == 0xFFFFFFFF:
-                                local_compressed = int.from_bytes(
-                                    payload[field_offset:field_offset + 8], "little"
-                                )
-                        pos += length
-                    if pos != len(extra) or not found_zip64:
-                        return "Invalid ZIP local ZIP64 extra"
+                        found_zip64 = True
+                        required = 8 * (local_uncompressed == 0xFFFFFFFF)
+                        required += 8 * (local_compressed == 0xFFFFFFFF)
+                        if length < required:
+                            return "Invalid ZIP local ZIP64 extra"
+                        payload = handle.read(required)
+                        if len(payload) != required:
+                            return "Invalid ZIP local ZIP64 extra"
+                        field_offset = 0
+                        if local_uncompressed == 0xFFFFFFFF:
+                            local_uncompressed = int.from_bytes(
+                                payload[field_offset:field_offset + 8], "little"
+                            )
+                            field_offset += 8
+                        if local_compressed == 0xFFFFFFFF:
+                            local_compressed = int.from_bytes(
+                                payload[field_offset:field_offset + 8], "little"
+                            )
+                        handle.seek(length - required, 1)
+                    else:
+                        handle.seek(length, 1)
+                    pos += length
+                if needs_zip64 and not found_zip64:
+                    return "Invalid ZIP local ZIP64 extra"
                 if local_compressed != compressed_size:
                     return "Ambiguous ZIP local compressed size"
                 if local_uncompressed != uncompressed_size:
