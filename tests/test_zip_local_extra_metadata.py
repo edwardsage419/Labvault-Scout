@@ -32,9 +32,9 @@ def test_zip_local_extra_without_zip64_sentinels(
     insert_at = 30 + name_length
     data[insert_at:insert_at] = local_extra
     struct.pack_into("<H", data, 28, len(local_extra))
-    first_central = data.find(b"PK\\x01\\x02")
-    second_central = data.find(b"PK\\x01\\x02", first_central + 4)
-    end = data.rfind(b"PK\\x05\\x06")
+    first_central = data.find(bytes.fromhex("504b0102"))
+    second_central = data.find(bytes.fromhex("504b0102"), first_central + 4)
+    end = data.rfind(bytes.fromhex("504b0506"))
     assert first_central > 0 and second_central > first_central
     assert end > second_central
     second_local = struct.unpack_from("<I", data, second_central + 42)[0]
