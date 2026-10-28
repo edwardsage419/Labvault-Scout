@@ -930,6 +930,54 @@ def test_zip_central_extra_malformed_rejected_before_zipfile(
     assert path.read_bytes() == data
 
 
+
+@pytest.mark.parametrize(
+    "zip64_padding",
+    [False, True],
+    ids=["separate-extra-field", "invalid-zip64-padding"],
+)
+def test_zip_central_zip64_extra_rejects_internal_padding_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, zip64_padding: bool,
+) -> None:
+    data = bytearray(_zip_with_central_extra_variant("sizes_offset"))
+    central = data.find(b"PK\x01\x02")
+    end = data.rfind(b"PK\x05\x06")
+    assert 0 < central < end
+    name_size, extra_size = struct.unpack_from("<HH", data, central + 28)
+    zip64_start = central + 46 + name_size
+    assert struct.unpack_from("<HH", data, zip64_start) == (1, 24)
+
+    # Extra data belongs in its own tagged field, not inside ZIP64's payload.
+    addition = (
+        b"\x00" if zip64_padding
+        else struct.pack("<HH", 0xCAFE, 3) + b"abc"
+    )
+    insert_at = zip64_start + 4 + 24
+    data[insert_at:insert_at] = addition
+    if zip64_padding:
+        struct.pack_into("<H", data, zip64_start + 2, 24 + len(addition))
+    struct.pack_into("<H", data, central + 30, extra_size + len(addition))
+    end += len(addition)
+    directory_size = struct.unpack_from("<I", data, end + 12)[0]
+    struct.pack_into("<I", data, end + 12, directory_size + len(addition))
+
+    path = tmp_path / "zip64-central-extra-framing.xlsx"
+    path.write_bytes(data)
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+
+    if zip64_padding:
+        def fail_if_parsed(*args: object, **kwargs: object) -> None:
+            raise AssertionError("ZipFile must not classify padded ZIP64 extras")
+
+        monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+        assert identifier.inspect_zip_container(path) == (
+            "Invalid ZIP directory ZIP64 extra"
+        )
+    else:
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    assert path.read_bytes() == bytes(data)
+
 @pytest.mark.parametrize("forged_size", [0x100000000, 0x100000001])
 def test_zip64_descriptor_large_uncompressed_size_rejected_without_overflow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forged_size: int,

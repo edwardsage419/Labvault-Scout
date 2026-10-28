@@ -522,7 +522,7 @@ def _zip_directory_preflight(path: Path) -> str:
                 required += 8 * (compressed_size == 0xFFFFFFFF)
                 required += 8 * (local_offset == 0xFFFFFFFF)
                 required += 4 * (disk_start == 0xFFFF)
-                if length < required:
+                if length != required:
                     return "Invalid ZIP directory ZIP64 extra"
                 cursor = extra_pos
                 if uncompressed_size == 0xFFFFFFFF:
