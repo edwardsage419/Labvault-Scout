@@ -566,6 +566,53 @@ def _zip_with_data_descriptors() -> bytes:
     return writer.buffer.getvalue()
 
 
+@pytest.mark.parametrize(
+    "field,local_offset,central_offset,expected_error",
+    [
+        ("crc", 14, 16, "Ambiguous ZIP local CRC"),
+        ("compressed", 18, 20, "Ambiguous ZIP local compressed size"),
+        ("uncompressed", 22, 24, "Ambiguous ZIP local uncompressed size"),
+    ],
+)
+@pytest.mark.parametrize("variant", ["zero", "matching", "conflicting"])
+def test_streaming_local_header_nonzero_metadata_matches_central(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    field: str, local_offset: int, central_offset: int,
+    expected_error: str, variant: str,
+) -> None:
+    data = bytearray(_zip_with_data_descriptors())
+    central = data.find(bytes.fromhex("504b0102"))
+    assert central > 0
+    assert struct.unpack_from("<H", data, 6)[0] & 0x0008
+    assert struct.unpack_from("<I", data, local_offset)[0] == 0
+    central_value = struct.unpack_from("<I", data, central + central_offset)[0]
+    assert central_value > 0
+    local_value = {
+        "zero": 0,
+        "matching": central_value,
+        "conflicting": central_value ^ 1,
+    }[variant]
+    assert local_value != central_value if variant == "conflicting" else True
+    struct.pack_into("<I", data, local_offset, local_value)
+    path = tmp_path / f"streaming-local-{field}-{variant}.xlsx"
+    path.write_bytes(data)
+    original = bytes(data)
+
+    # ZipFile uses central metadata and accepts conflicting local values.
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+
+    if variant == "conflicting":
+        def fail_if_parsed(*args: object, **kwargs: object) -> None:
+            raise AssertionError("ZipFile must not classify contradictory local metadata")
+
+        monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+        assert identifier.inspect_zip_container(path) == expected_error
+    else:
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    assert path.read_bytes() == original
+
+
 @pytest.mark.parametrize("descriptor_field_offset", [4, 8, 12])
 def test_zip_data_descriptor_mismatch_rejected_before_zipfile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, descriptor_field_offset: int,

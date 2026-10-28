@@ -649,9 +649,11 @@ def _zip_directory_preflight(path: Path) -> str:
                 pos += length
             if needs_zip64 and not found_zip64:
                 return "Invalid ZIP local ZIP64 extra"
-            if needs_zip64 and flags & 0x0008:
-                # Streaming ZIP64 local sizes may be zero placeholders.
-                # Any nonzero values must agree with central metadata.
+            if flags & 0x0008:
+                # Streaming headers may use zero placeholders. Nonzero
+                # CRC and sizes must agree with the central directory.
+                if int.from_bytes(local_header[14:18], "little") not in (0, crc):
+                    return "Ambiguous ZIP local CRC"
                 if local_uncompressed not in (0, uncompressed_size):
                     return "Ambiguous ZIP local uncompressed size"
                 if local_compressed not in (0, compressed_size):
