@@ -614,18 +614,33 @@ def _zip_directory_preflight(path: Path) -> str:
                     + compressed_size.to_bytes(8, "little")
                     + uncompressed_size.to_bytes(8, "little")
                 )
-                # Between members, a descriptor must end exactly where
-                # the next local header begins. A matching prefix alone
-                # would accept unaccounted bytes in that interval.
-                if not any(
-                    descriptor.startswith(prefix + expected)
-                    and (
-                        index + 1 == len(ordered_members)
-                        or available == len(prefix) + len(expected)
-                    )
-                    for prefix in (b"", b"PK\x07\x08")
-                    for expected in (expected_32, expected_64)
-                ):
+                # Each descriptor must account for the bytes up to its
+                # boundary. The final member may be followed by a complete
+                # ZIP archive extra data record before the central directory.
+                descriptor_matches = False
+                for prefix in (b"", b"PK\x07\x08"):
+                    for expected in (expected_32, expected_64):
+                        candidate = prefix + expected
+                        if not descriptor.startswith(candidate):
+                            continue
+                        remainder = available - len(candidate)
+                        if remainder == 0:
+                            descriptor_matches = True
+                            break
+                        if index + 1 < len(ordered_members) or remainder < 8:
+                            continue
+                        handle.seek(descriptor_start + len(candidate))
+                        archive_extra = handle.read(8)
+                        if (
+                            archive_extra[:4] == b"PK\x06\x08"
+                            and int.from_bytes(archive_extra[4:8], "little")
+                            == remainder - 8
+                        ):
+                            descriptor_matches = True
+                            break
+                    if descriptor_matches:
+                        break
+                if not descriptor_matches:
                     return "Ambiguous ZIP data descriptor metadata"
     return ""
 

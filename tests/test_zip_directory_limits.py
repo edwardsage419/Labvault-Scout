@@ -783,3 +783,58 @@ def test_zip_data_descriptor_inter_member_padding_rejected_before_zipfile(
         "Ambiguous ZIP data descriptor metadata"
     )
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "padding",
+    [b"\x00", b"junk", b"PK\x06\x08" + struct.pack("<I", 5) + b"ABCD"],
+    ids=["single_byte", "four_bytes", "malformed_archive_extra"],
+)
+def test_zip_last_data_descriptor_unaccounted_bytes_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, padding: bytes,
+) -> None:
+    data = bytearray(_zip_with_data_descriptors())
+    first_central = data.find(b"PK\x01\x02")
+    last_descriptor = data.rfind(b"PK\x07\x08", 0, first_central)
+    assert first_central > 0 and last_descriptor + 16 == first_central
+    data[first_central:first_central] = padding
+    end = data.rfind(b"PK\x05\x06")
+    assert end > first_central
+    struct.pack_into("<I", data, end + 16, first_central + len(padding))
+    path = tmp_path / "last-descriptor-gap.xlsx"
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    # ZipFile ignores unaccounted bytes before the central directory.
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("xl/workbook.xml") == b"<workbook/>"
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse ambiguous trailing bytes")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Ambiguous ZIP data descriptor metadata"
+    )
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("payload", [b"", b"ABCD"], ids=["empty", "four_bytes"])
+def test_zip_last_data_descriptor_archive_extra_record_remains_accepted(
+    tmp_path: Path, payload: bytes,
+) -> None:
+    data = bytearray(_zip_with_data_descriptors())
+    first_central = data.find(b"PK\x01\x02")
+    last_descriptor = data.rfind(b"PK\x07\x08", 0, first_central)
+    assert first_central > 0 and last_descriptor + 16 == first_central
+    record = b"PK\x06\x08" + struct.pack("<I", len(payload)) + payload
+    data[first_central:first_central] = record
+    end = data.rfind(b"PK\x05\x06")
+    struct.pack_into("<I", data, end + 16, first_central + len(record))
+    path = tmp_path / "archive-extra.xlsx"
+    path.write_bytes(data)
+
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("xl/workbook.xml") == b"<workbook/>"
+    assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    assert path.read_bytes() == data
