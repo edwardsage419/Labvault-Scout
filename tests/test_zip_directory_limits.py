@@ -1234,3 +1234,52 @@ def test_streaming_zip64_extra_without_sentinels_checks_nonzero_sizes(
         monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
     assert identifier.inspect_zip_container(path) == expected
     assert path.read_bytes() == bytes(data)
+
+
+@pytest.mark.parametrize(
+    "variant,expected",
+    [
+        ("zero", "OOXML Excel"),
+        ("matching", "OOXML Excel"),
+        ("conflicting_uncompressed", "Ambiguous ZIP local uncompressed size"),
+        ("conflicting_compressed", "Ambiguous ZIP local compressed size"),
+    ],
+)
+def test_streaming_zip64_local_sentinels_check_nonzero_sizes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    variant: str, expected: str,
+) -> None:
+    data = bytearray(_zip_with_forced_zip64_local_member(True))
+    assert struct.unpack_from("<H", data, 6)[0] & 0x0008
+    # Normalize the local markers across Python versions.
+    struct.pack_into("<II", data, 18, 0xFFFFFFFF, 0xFFFFFFFF)
+    name_size = struct.unpack_from("<H", data, 26)[0]
+    extra_start = 30 + name_size
+    assert struct.unpack_from("<HH", data, extra_start) == (1, 16)
+    central = data.find(bytes.fromhex("504b0102"))
+    assert central > 0
+    compressed, uncompressed = struct.unpack_from("<II", data, central + 20)
+    assert compressed > 0 and uncompressed > 0
+
+    sizes = {
+        "zero": (0, 0),
+        "matching": (uncompressed, compressed),
+        "conflicting_uncompressed": (uncompressed + 1, compressed),
+        "conflicting_compressed": (uncompressed, compressed + 1),
+    }[variant]
+    struct.pack_into("<QQ", data, extra_start + 4, *sizes)
+    path = tmp_path / "streaming-zip64-sentinels.xlsx"
+    path.write_bytes(data)
+
+    # The standard ZIP reader ignores the conflicting local ZIP64 metadata.
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+        assert archive.read("xl/workbook.xml") == b"<workbook/>"
+
+    if variant.startswith("conflicting"):
+        def fail_if_parsed(*args: object, **kwargs: object) -> None:
+            raise AssertionError("ZipFile must not classify conflicting local ZIP64 sizes")
+
+        monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == expected
+    assert path.read_bytes() == bytes(data)
