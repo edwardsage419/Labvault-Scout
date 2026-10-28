@@ -629,7 +629,15 @@ def _zip_directory_preflight(path: Path) -> str:
                         payload = handle.read(16)
                         if len(payload) != 16:
                             return "Invalid ZIP local ZIP64 extra"
-                        if not (flags & 0x0008):
+                        # With a data descriptor, zero is a legitimate
+                        # streaming placeholder. Nonzero ZIP64 sizes must
+                        # still agree with the central directory.
+                        if flags & 0x0008:
+                            if int.from_bytes(payload[:8], "little") not in (0, uncompressed_size):
+                                return "Ambiguous ZIP local uncompressed size"
+                            if int.from_bytes(payload[8:], "little") not in (0, compressed_size):
+                                return "Ambiguous ZIP local compressed size"
+                        else:
                             if int.from_bytes(payload[:8], "little") != local_uncompressed:
                                 return "Ambiguous ZIP local uncompressed size"
                             if int.from_bytes(payload[8:], "little") != local_compressed:

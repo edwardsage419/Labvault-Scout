@@ -1177,3 +1177,60 @@ def test_zip_local_zip64_extra_without_sentinel_is_bounded(
         monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
     assert identifier.inspect_zip_container(path) == expected
     assert path.read_bytes() == bytes(data)
+
+
+@pytest.mark.parametrize(
+    "variant,expected",
+    [
+        ("zero", "OOXML Excel"),
+        ("matching", "OOXML Excel"),
+        ("conflicting", "Ambiguous ZIP local uncompressed size"),
+    ],
+)
+def test_streaming_zip64_extra_without_sentinels_checks_nonzero_sizes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    variant: str, expected: str,
+) -> None:
+    data = bytearray(_zip_with_data_descriptors())
+    central_signature = bytes.fromhex("504b0102")
+    end_signature = bytes.fromhex("504b0506")
+    first_central = data.find(central_signature)
+    second_central = data.find(central_signature, first_central + 4)
+    end = data.rfind(end_signature)
+    assert 0 < first_central < second_central < end
+    compressed, uncompressed = struct.unpack_from("<II", data, first_central + 20)
+    assert compressed > 0 and uncompressed > 0
+    assert struct.unpack_from("<II", data, 18) == (0, 0)
+    assert struct.unpack_from("<H", data, 6)[0] & 0x0008
+    assert struct.unpack_from("<H", data, 28)[0] == 0
+
+    if variant == "zero":
+        sizes = (0, 0)
+    elif variant == "matching":
+        sizes = (uncompressed, compressed)
+    else:
+        sizes = (uncompressed + 1, compressed)
+    extra = struct.pack("<HHQQ", 1, 16, *sizes)
+    name_size = struct.unpack_from("<H", data, 26)[0]
+    data[30 + name_size:30 + name_size] = extra
+    struct.pack_into("<H", data, 28, len(extra))
+    first_central = data.find(central_signature)
+    second_central = data.find(central_signature, first_central + 4)
+    end = data.rfind(end_signature)
+    second_offset = struct.unpack_from("<I", data, second_central + 42)[0]
+    directory_offset = struct.unpack_from("<I", data, end + 16)[0]
+    struct.pack_into("<I", data, second_central + 42, second_offset + len(extra))
+    struct.pack_into("<I", data, end + 16, directory_offset + len(extra))
+
+    path = tmp_path / "streaming-zip64-no-sentinel.xlsx"
+    path.write_bytes(data)
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("[Content_Types].xml") == b"<Types/>"
+        assert archive.read("xl/workbook.xml") == b"<workbook/>"
+    if variant == "conflicting":
+        def fail_if_parsed(*args: object, **kwargs: object) -> None:
+            raise AssertionError("ZipFile must not classify conflicting ZIP64 sizes")
+
+        monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == expected
+    assert path.read_bytes() == bytes(data)
