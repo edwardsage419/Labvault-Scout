@@ -494,3 +494,54 @@ def test_zip_local_uncompressed_size_mismatch_rejected_before_zipfile(
         "Ambiguous ZIP local uncompressed size"
     )
     assert path.read_bytes() == original
+
+@pytest.mark.parametrize("boundary", ["next_member", "central_directory"])
+def test_zip_compressed_data_boundary_rejected_before_zipfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, boundary: str,
+) -> None:
+    path = tmp_path / "forged-compressed-boundary.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+
+    data = bytearray(path.read_bytes())
+    first_central = data.find(bytes.fromhex("504b0102"))
+    second_central = data.find(bytes.fromhex("504b0102"), first_central + 4)
+    assert first_central > 0 and second_central > first_central
+    first_local = struct.unpack_from("<I", data, first_central + 42)[0]
+    second_local = struct.unpack_from("<I", data, second_central + 42)[0]
+    if boundary == "next_member":
+        local_offset, central_offset, limit = first_local, first_central, second_local
+    else:
+        local_offset, central_offset, limit = second_local, second_central, first_central
+    name_size, extra_size = struct.unpack_from("<HH", data, local_offset + 26)
+    data_start = local_offset + 30 + name_size + extra_size
+    forged_size = limit - data_start + 1
+    assert forged_size > 0
+    # Keep both size declarations consistent while crossing a structural boundary.
+    struct.pack_into("<I", data, local_offset + 18, forged_size)
+    struct.pack_into("<I", data, central_offset + 20, forged_size)
+    path.write_bytes(data)
+    original = path.read_bytes()
+
+    with zipfile.ZipFile(path) as archive:
+        assert "[Content_Types].xml" in archive.namelist()
+        assert "xl/workbook.xml" in archive.namelist()
+
+    def fail_if_parsed(*args: object, **kwargs: object) -> None:
+        raise AssertionError("ZipFile must not parse overlapping compressed data")
+
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_if_parsed)
+    assert identifier.inspect_zip_container(path) == (
+        "Invalid ZIP compressed data boundary"
+    )
+    assert path.read_bytes() == original
+
+
+def test_zip_empty_member_keeps_bounded_classification(tmp_path: Path) -> None:
+    path = tmp_path / "empty-member.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+        archive.writestr("empty", b"")
+    assert identifier.inspect_zip_container(path) == "OOXML Excel"

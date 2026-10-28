@@ -508,10 +508,11 @@ def _zip_directory_preflight(path: Path) -> str:
         return "Ambiguous ZIP directory entry count"
 
     # A central-directory name is insufficient evidence if its local header is absent.
+    ordered_members = sorted(local_members, key=lambda member: member[0])
     with path.open("rb") as handle:
-        for (
+        for index, (
             local_offset, name, method, flags, crc, compressed_size, uncompressed_size
-        ) in local_members:
+        ) in enumerate(ordered_members):
             if local_offset + 30 > directory_start:
                 return "Invalid ZIP local header offset"
             handle.seek(local_offset)
@@ -540,6 +541,14 @@ def _zip_directory_preflight(path: Path) -> str:
                 return "Invalid ZIP local header length"
             if local_name_size != len(name) or handle.read(local_name_size) != name:
                 return "Ambiguous ZIP local member name"
+            data_start = local_offset + 30 + local_name_size + local_extra_size
+            next_boundary = (
+                ordered_members[index + 1][0]
+                if index + 1 < len(ordered_members)
+                else directory_start
+            )
+            if data_start + compressed_size > next_boundary:
+                return "Invalid ZIP compressed data boundary"
     return ""
 
 
