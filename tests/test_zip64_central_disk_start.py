@@ -25,7 +25,8 @@ def make_zip64_central_disk_start(variant: str) -> bytes:
     A ZIP64 disk-start value is encoded in four bytes. The single-disk
     value zero is valid; a nonzero value declares unsupported spanning.
     """
-    if variant not in {"zero", "nonzero", "missing", "short", "offset-zero", "offset-nonzero"}:
+    if variant not in {"zero", "nonzero", "missing", "short", "offset-zero", "offset-nonzero",
+                        "ordinary-before-zero", "ordinary-after-zero", "ordinary-before-nonzero"}:
         raise ValueError("Unknown fixture variant")
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
@@ -49,9 +50,14 @@ def make_zip64_central_disk_start(variant: str) -> bytes:
     payload = (
         b"\x00\x00" if variant == "short"
         else (struct.pack("<Q", 0) if variant.startswith("offset-") else b"")
-        + struct.pack("<I", 1 if variant in {"nonzero", "offset-nonzero"} else 0)
+        + struct.pack("<I", 1 if variant in {"nonzero", "offset-nonzero", "ordinary-before-nonzero"} else 0)
     )
     extra = struct.pack("<HH", 0x0001, len(payload)) + payload
+    ordinary = struct.pack("<HH", 0xCAFE, 3) + b"abc"
+    if variant.startswith("ordinary-before"):
+        extra = ordinary + extra
+    elif variant == "ordinary-after-zero":
+        extra += ordinary
     insertion = central + 46 + name_size
     data[insertion:insertion] = extra
     struct.pack_into("<H", data, central + 30, len(extra))
@@ -71,10 +77,15 @@ def make_zip64_central_disk_start(variant: str) -> bytes:
         ("short", "Invalid ZIP directory ZIP64 extra"),
         ("offset-zero", "OOXML Excel"),
         ("offset-nonzero", "Unsupported ZIP multi-disk metadata"),
+        ("ordinary-before-zero", "OOXML Excel"),
+        ("ordinary-after-zero", "OOXML Excel"),
+        ("ordinary-before-nonzero", "Unsupported ZIP multi-disk metadata"),
     ],
     ids=[
         "valid-single-disk", "unsupported-multidisk", "missing-zip64-extra",
         "short-zip64-extra", "offset-plus-disk-zero", "offset-plus-disk-nonzero",
+        "ordinary-before-valid-disk", "ordinary-after-valid-disk",
+        "ordinary-before-multidisk",
     ],
 )
 def test_zip64_central_disk_start(
@@ -88,10 +99,10 @@ def test_zip64_central_disk_start(
     path.write_bytes(data)
     with zipfile.ZipFile(path) as archive:
         assert archive.namelist() == ["[Content_Types].xml", "xl/workbook.xml"]
-        if variant in {"zero", "offset-zero"}:
+        if variant in {"zero", "offset-zero", "ordinary-before-zero", "ordinary-after-zero"}:
             assert archive.read("[Content_Types].xml") == CONTENT
 
-    if variant not in {"zero", "offset-zero"}:
+    if variant not in {"zero", "offset-zero", "ordinary-before-zero", "ordinary-after-zero"}:
         def fail_if_classified(*args: object, **kwargs: object) -> None:
             raise AssertionError("Malformed ZIP64 disk metadata reached ZipFile")
         with monkeypatch.context() as patch:
@@ -103,11 +114,14 @@ def test_zip64_central_disk_start(
 
 
 def _self_check() -> None:
-    for variant in ("zero", "nonzero", "missing", "short", "offset-zero", "offset-nonzero"):
+    for variant in (
+        "zero", "nonzero", "missing", "short", "offset-zero", "offset-nonzero",
+        "ordinary-before-zero", "ordinary-after-zero", "ordinary-before-nonzero",
+    ):
         data = make_zip64_central_disk_start(variant)
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             assert archive.namelist() == ["[Content_Types].xml", "xl/workbook.xml"]
-            if variant in {"zero", "offset-zero"}:
+            if variant in {"zero", "offset-zero", "ordinary-before-zero", "ordinary-after-zero"}:
                 assert archive.read("[Content_Types].xml") == CONTENT
         print(f"{variant}: synthetic ZIP built and directory readable ({len(data)} bytes)")
 
