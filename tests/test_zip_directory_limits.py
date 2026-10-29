@@ -1175,6 +1175,7 @@ def test_zip_local_zip64_mixed_sentinel_checks_both_sizes(
         ("matching", "OOXML Excel"),
         ("empty", "OOXML Excel"),
         ("conflicting", "Ambiguous ZIP local uncompressed size"),
+        ("conflicting-compressed", "Ambiguous ZIP local compressed size"),
         ("truncated", "Invalid ZIP local ZIP64 extra"),
     ],
 )
@@ -1197,7 +1198,8 @@ def test_zip_local_zip64_extra_without_sentinel_is_bounded(
         payload = b"X"
     else:
         payload = struct.pack(
-            "<QQ", uncompressed + (variant == "conflicting"), compressed,
+            "<QQ", uncompressed + (variant == "conflicting"),
+            compressed + (variant == "conflicting-compressed"),
         )
     extra = struct.pack("<HH", 1, len(payload)) + payload
     local_name_size = struct.unpack_from("<H", data, 26)[0]
@@ -1232,6 +1234,7 @@ def test_zip_local_zip64_extra_without_sentinel_is_bounded(
         ("zero", "OOXML Excel"),
         ("matching", "OOXML Excel"),
         ("conflicting", "Ambiguous ZIP local uncompressed size"),
+        ("conflicting-compressed", "Ambiguous ZIP local compressed size"),
     ],
 )
 def test_streaming_zip64_extra_without_sentinels_checks_nonzero_sizes(
@@ -1255,8 +1258,10 @@ def test_streaming_zip64_extra_without_sentinels_checks_nonzero_sizes(
         sizes = (0, 0)
     elif variant == "matching":
         sizes = (uncompressed, compressed)
-    else:
+    elif variant == "conflicting":
         sizes = (uncompressed + 1, compressed)
+    else:
+        sizes = (uncompressed, compressed + 1)
     extra = struct.pack("<HHQQ", 1, 16, *sizes)
     name_size = struct.unpack_from("<H", data, 26)[0]
     data[30 + name_size:30 + name_size] = extra
@@ -1274,7 +1279,7 @@ def test_streaming_zip64_extra_without_sentinels_checks_nonzero_sizes(
     with zipfile.ZipFile(path) as archive:
         assert archive.read("[Content_Types].xml") == b"<Types/>"
         assert archive.read("xl/workbook.xml") == b"<workbook/>"
-    if variant == "conflicting":
+    if variant in ("conflicting", "conflicting-compressed"):
         def fail_if_parsed(*args: object, **kwargs: object) -> None:
             raise AssertionError("ZipFile must not classify conflicting ZIP64 sizes")
 
