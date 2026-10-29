@@ -473,11 +473,14 @@ def _zip_directory_preflight(path: Path) -> str:
     offset = count = 0
     local_members: list[tuple[int, bytes, int, int, int, int, int]] = []
     while offset < len(directory):
-        if (
-            len(directory) - offset < 46
-            or directory[offset:offset + 4] != b"PK\x01\x02"
-        ):
-            return ""  # Let ZipFile reject malformed member records.
+        if len(directory) - offset < 46:
+            # A short suffix after all declared members is a truncated
+            # directory record, including an underreported final comment.
+            if count == entries:
+                return "Invalid ZIP directory record length"
+            return ""  # Preserve the existing truncated-member fallback.
+        if directory[offset:offset + 4] != b"PK\x01\x02":
+            return ""  # Preserve the existing bad-signature fallback.
         name_bytes = int.from_bytes(directory[offset + 28:offset + 30], "little")
         extra_bytes = int.from_bytes(directory[offset + 30:offset + 32], "little")
         comment_bytes = int.from_bytes(directory[offset + 32:offset + 34], "little")
