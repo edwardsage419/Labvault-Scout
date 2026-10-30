@@ -183,6 +183,8 @@ def make_zip64_member_association(variant: str) -> bytes:
         zip64_local_offset = central + 46 + name_length + 4 + 16
         assert struct.unpack_from("<Q", data, zip64_local_offset)[0] == 0
         struct.pack_into("<Q", data, zip64_local_offset, second_local)
+        # Match the redirected local CRC to isolate the member-name check.
+        struct.pack_into("<I", data, central + 16, struct.unpack_from("<I", data, second_local + 14)[0])
     return bytes(data)
 
 
