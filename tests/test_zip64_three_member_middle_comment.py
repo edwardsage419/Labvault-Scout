@@ -89,6 +89,47 @@ def test_zip64_three_member_middle_comment_boundary(
     assert path.read_bytes() == payload
 
 
+
+@pytest.mark.parametrize("declared_length", [3, 4, 5], ids=["short", "valid", "long"])
+def test_zip64_middle_member_ordinary_extra_inner_length_with_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared_length: int,
+) -> None:
+    """Validate ordinary extra field boundaries before the ZIP64 offset and comment."""
+    from labvault_scout import identifier
+
+    payload = bytearray(make_three_member_zip64_middle_comment(0))
+    first = payload.find(CENTRAL)
+    middle = payload.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len = struct.unpack_from("<H", payload, middle + 28)[0]
+    extra_start = middle + 46 + name_len
+    assert payload[extra_start:extra_start + len(ORDINARY)] == ORDINARY
+    # Change only the inner ordinary-field length; retain all outer ZIP lengths.
+    struct.pack_into("<H", payload, extra_start + 2, declared_length)
+    original = bytes(payload)
+    path = tmp_path / f"middle-ordinary-extra-{declared_length}.xlsx"
+    path.write_bytes(original)
+
+    if declared_length == 4:
+        with zipfile.ZipFile(io.BytesIO(original)) as archive:
+            assert archive.namelist() == list(NAMES)
+            assert archive.infolist()[1].comment == COMMENT
+            assert archive.infolist()[1].extra == ORDINARY + struct.pack(
+                "<HHQ", 0x0001, 8, archive.infolist()[1].header_offset
+            )
+            for name, content in zip(NAMES, CONTENTS):
+                assert archive.read(name) == content
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Malformed middle ordinary extra reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
+    assert path.read_bytes() == original
+
+
 if __name__ == "__main__":
     for change in (-1, 0, 1):
         blob = make_three_member_zip64_middle_comment(change)
