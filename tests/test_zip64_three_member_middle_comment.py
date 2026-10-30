@@ -192,3 +192,44 @@ def test_zip64_middle_member_trailing_ordinary_extra_length_with_comment(
             patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
             assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
     assert path.read_bytes() == payload
+
+@pytest.mark.parametrize("declared_length", [7, 8, 9], ids=["short", "valid", "long"])
+def test_zip64_middle_member_required_offset_inner_length_with_trailing_ordinary_and_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared_length: int,
+) -> None:
+    """Require the exact ZIP64 offset field length before an ordinary extra and comment."""
+    from labvault_scout import identifier
+
+    payload = bytearray(make_three_member_middle_zip64_then_ordinary(4))
+    first = payload.find(CENTRAL)
+    middle = payload.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from("<HHH", payload, middle + 28)
+    extra_start = middle + 46 + name_len
+    assert extra_len == 12 + len(ORDINARY)
+    assert comment_len == len(COMMENT)
+    assert payload[extra_start:extra_start + 2] == b"\\x01\\x00"
+    assert struct.unpack_from("<H", payload, extra_start + 2)[0] == 8
+    struct.pack_into("<H", payload, extra_start + 2, declared_length)
+    original = bytes(payload)
+    path = tmp_path / f"middle-zip64-offset-inner-{declared_length}.xlsx"
+    path.write_bytes(original)
+
+    if declared_length == 8:
+        with zipfile.ZipFile(io.BytesIO(original)) as archive:
+            assert archive.namelist() == list(NAMES)
+            assert archive.infolist()[1].comment == COMMENT
+            assert archive.infolist()[1].extra == (
+                struct.pack("<HHQ", 0x0001, 8, archive.infolist()[1].header_offset) + ORDINARY
+            )
+            for name, content in zip(NAMES, CONTENTS):
+                assert archive.read(name) == content
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Malformed middle ZIP64 offset length reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory ZIP64 extra"
+    assert path.read_bytes() == original
