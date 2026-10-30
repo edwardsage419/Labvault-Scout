@@ -115,6 +115,55 @@ def test_reordered_final_member_zip64_single_sentinel_with_ordinary_extra(
     assert path.read_bytes() == payload
 
 
+
+def make_reordered_single_sentinel_with_comment(delta: int) -> bytes:
+    """Place an opaque comment after the first reordered ZIP64 central record."""
+    if delta not in (-1, 0, 1):
+        raise ValueError(delta)
+    data = bytearray(make_reordered_single_sentinel_extra("compressed", "before", 0))
+    first = data.find(CENTRAL)
+    next_record = data.find(CENTRAL, first + 4)
+    assert 0 < first < next_record
+    name_size, extra_size, comment_size = struct.unpack_from("<HHH", data, first + 28)
+    assert extra_size > 0 and comment_size == 0
+    insertion = first + 46 + name_size + extra_size
+    assert insertion == next_record
+    comment = b"opaque:PK\x01\x02:PK\x05\x06:end"
+    data[insertion:insertion] = comment
+    struct.pack_into("<H", data, first + 32, len(comment) + delta)
+    eocd = data.rfind(EOCD)
+    assert eocd > insertion + len(comment)
+    directory_size = struct.unpack_from("<I", data, eocd + 12)[0]
+    struct.pack_into("<I", data, eocd + 12, directory_size + len(comment))
+    return bytes(data)
+
+
+@pytest.mark.parametrize("delta", [-1, 0, 1], ids=["underreported", "valid", "overreported"])
+def test_reordered_zip64_first_central_member_comment_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, delta: int,
+) -> None:
+    from labvault_scout import identifier
+
+    payload = make_reordered_single_sentinel_with_comment(delta)
+    path = tmp_path / f"zip64-reordered-comment-{delta}.xlsx"
+    path.write_bytes(payload)
+    if delta == 0:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            assert archive.namelist() == [SECOND, FIRST]
+            assert archive.infolist()[0].comment == b"opaque:PK\x01\x02:PK\x05\x06:end"
+            assert archive.read(SECOND) == SECOND_DATA
+            assert archive.read(FIRST) == FIRST_DATA
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Misaligned central member reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory record length"
+    assert path.read_bytes() == payload
+
+
 if __name__ == "__main__":
     for size_field in ("compressed", "uncompressed"):
         for ordinary_position in ("before", "after"):

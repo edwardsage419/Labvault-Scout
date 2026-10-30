@@ -480,7 +480,9 @@ def _zip_directory_preflight(path: Path) -> str:
                 return "Invalid ZIP directory record length"
             return ""  # Preserve the existing truncated-member fallback.
         if directory[offset:offset + 4] != b"PK\x01\x02":
-            return ""  # Preserve the existing bad-signature fallback.
+            # A malformed comment in a preceding member can shift the next
+            # record boundary. Reject it before invoking ZipFile.
+            return "Invalid ZIP directory record length" if count else ""
         name_bytes = int.from_bytes(directory[offset + 28:offset + 30], "little")
         extra_bytes = int.from_bytes(directory[offset + 30:offset + 32], "little")
         comment_bytes = int.from_bytes(directory[offset + 32:offset + 34], "little")
