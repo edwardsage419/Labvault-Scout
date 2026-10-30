@@ -140,3 +140,55 @@ if __name__ == "__main__":
                 for name, expected in zip(NAMES, CONTENTS):
                     assert archive.read(name) == expected
         print(f"delta={change}, bytes={len(blob)}")
+
+def make_three_member_middle_zip64_then_ordinary(declared_length: int) -> bytes:
+    """Keep the ZIP64 offset and member comment, with an ordinary extra after ZIP64."""
+    if declared_length not in (3, 4, 5):
+        raise ValueError(declared_length)
+    data = bytearray(make_three_member_zip64_middle_comment(0))
+    first = data.find(CENTRAL)
+    middle = data.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from("<HHH", data, middle + 28)
+    extra_start = middle + 46 + name_len
+    local_offset = struct.unpack_from("<Q", data, extra_start + len(ORDINARY) + 4)[0]
+    zip64 = struct.pack("<HHQ", 0x0001, 8, local_offset)
+    assert extra_len == len(ORDINARY) + len(zip64)
+    assert comment_len == len(COMMENT)
+    assert data[extra_start:extra_start + extra_len] == ORDINARY + zip64
+    data[extra_start:extra_start + extra_len] = zip64 + ORDINARY
+    ordinary_start = extra_start + len(zip64)
+    struct.pack_into("<H", data, ordinary_start + 2, declared_length)
+    assert data[extra_start + extra_len:extra_start + extra_len + comment_len] == COMMENT
+    assert data[extra_start + extra_len + comment_len:extra_start + extra_len + comment_len + 4] == CENTRAL
+    return bytes(data)
+
+
+@pytest.mark.parametrize("declared_length", [3, 4, 5], ids=["short", "valid", "long"])
+def test_zip64_middle_member_trailing_ordinary_extra_length_with_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared_length: int,
+) -> None:
+    """Check trailing ordinary extra boundaries before a middle-member comment."""
+    from labvault_scout import identifier
+
+    payload = make_three_member_middle_zip64_then_ordinary(declared_length)
+    path = tmp_path / f"middle-trailing-ordinary-{declared_length}.xlsx"
+    path.write_bytes(payload)
+    if declared_length == 4:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            assert archive.namelist() == list(NAMES)
+            assert archive.infolist()[1].comment == COMMENT
+            assert archive.infolist()[1].extra == struct.pack(
+                "<HHQ", 0x0001, 8, archive.infolist()[1].header_offset
+            ) + ORDINARY
+            for name, expected in zip(NAMES, CONTENTS):
+                assert archive.read(name) == expected
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Malformed trailing ordinary extra reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
+    assert path.read_bytes() == payload
