@@ -190,7 +190,7 @@ def test_zip64_reordered_streaming_archive_extra_record_boundary(
     assert first_descriptor + 24 == second_local
     assert second_descriptor + 16 == first_central
 
-    record = b"PK\\x06\\x08" + struct.pack("<I", len(payload) + length_delta) + payload
+    record = b"PK\x06\x08" + struct.pack("<I", len(payload) + length_delta) + payload
     insert_at = first_central if location == "after-last" else second_local
     data[insert_at:insert_at] = record
 
