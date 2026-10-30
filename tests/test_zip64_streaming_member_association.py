@@ -152,3 +152,75 @@ def test_zip64_reordered_streaming_descriptor_rejects_inter_member_padding(
             "Ambiguous ZIP data descriptor metadata"
         )
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "location,payload,length_delta,expected",
+    [
+        ("after-last", b"", 0, "OOXML Excel"),
+        ("after-last", b"notes", 0, "OOXML Excel"),
+        ("after-last", b"notes", -1, "Ambiguous ZIP data descriptor metadata"),
+        ("after-last", b"notes", 1, "Ambiguous ZIP data descriptor metadata"),
+        ("between-members", b"notes", 0, "Ambiguous ZIP data descriptor metadata"),
+    ],
+    ids=[
+        "final-empty-record",
+        "final-payload-record",
+        "final-underreported-length",
+        "final-overreported-length",
+        "complete-record-between-members",
+    ],
+)
+def test_zip64_reordered_streaming_archive_extra_record_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    location: str,
+    payload: bytes,
+    length_delta: int,
+    expected: str,
+) -> None:
+    """Accept a complete final archive extra record, reject misplaced or malformed ones."""
+    from labvault_scout import identifier
+
+    data = bytearray(make_streaming_zip64_member_association("valid"))
+    first_central = data.find(CENTRAL)
+    first_descriptor = data.find(DESCRIPTOR)
+    second_descriptor = data.rfind(DESCRIPTOR, 0, first_central)
+    second_local = data.find(LOCAL, 4)
+    assert first_descriptor + 24 == second_local
+    assert second_descriptor + 16 == first_central
+
+    record = b"PK\\x06\\x08" + struct.pack("<I", len(payload) + length_delta) + payload
+    insert_at = first_central if location == "after-last" else second_local
+    data[insert_at:insert_at] = record
+
+    if location == "between-members":
+        # Central records are reversed: the first record describes the second local member.
+        struct.pack_into(
+            "<I", data, first_central + len(record) + 42,
+            second_local + len(record),
+        )
+    end = data.rfind(EOCD)
+    struct.pack_into("<I", data, end + 16, first_central + len(record))
+
+    original = bytes(data)
+    path = tmp_path / "zip64-reordered-archive-extra.xlsx"
+    path.write_bytes(original)
+
+    # Standard zipfile accepts these synthetic archives, including malformed variants.
+    with zipfile.ZipFile(io.BytesIO(original)) as archive:
+        assert archive.namelist() == [SECOND_NAME, FIRST_NAME]
+        assert archive.read(FIRST_NAME) == FIRST_CONTENT
+        assert archive.read(SECOND_NAME) == SECOND_CONTENT
+
+    if expected == "OOXML Excel":
+        assert identifier.inspect_zip_container(path) == expected
+    else:
+        def fail_if_classified(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Ambiguous archive extra record reached ZIP classification")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", fail_if_classified)
+            assert identifier.inspect_zip_container(path) == expected
+
+    assert path.read_bytes() == original
