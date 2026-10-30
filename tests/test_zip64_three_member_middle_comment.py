@@ -208,7 +208,7 @@ def test_zip64_middle_member_required_offset_inner_length_with_trailing_ordinary
     extra_start = middle + 46 + name_len
     assert extra_len == 12 + len(ORDINARY)
     assert comment_len == len(COMMENT)
-    assert payload[extra_start:extra_start + 2] == b"\\x01\\x00"
+    assert int.from_bytes(payload[extra_start:extra_start + 2], "little") == 1
     assert struct.unpack_from("<H", payload, extra_start + 2)[0] == 8
     struct.pack_into("<H", payload, extra_start + 2, declared_length)
     original = bytes(payload)
