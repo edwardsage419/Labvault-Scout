@@ -284,3 +284,61 @@ def test_zip64_middle_trailing_ordinary_extra_partial_header_with_comment(
             patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
             assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
     assert path.read_bytes() == payload
+
+
+def make_three_member_middle_two_ordinary_extras(declared_length: int) -> bytes:
+    """Add a second ordinary extra after ZIP64 and an existing ordinary field."""
+    if declared_length not in (3, 4, 5):
+        raise ValueError(declared_length)
+    data = bytearray(make_three_member_middle_zip64_then_ordinary(4))
+    first = data.find(CENTRAL)
+    middle = data.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from("<HHH", data, middle + 28)
+    extra_start = middle + 46 + name_len
+    assert extra_len == 12 + len(ORDINARY)
+    assert comment_len == len(COMMENT)
+    assert data[extra_start + 12:extra_start + extra_len] == ORDINARY
+    second_extra = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    insertion = extra_start + extra_len
+    data[insertion:insertion] = second_extra
+    struct.pack_into("<H", data, middle + 30, extra_len + len(second_extra))
+    end = data.rfind(EOCD)
+    assert end > insertion
+    directory_size = struct.unpack_from("<I", data, end + 12)[0]
+    struct.pack_into("<I", data, end + 12, directory_size + len(second_extra))
+    struct.pack_into("<H", data, insertion + 2, declared_length)
+    assert data[insertion + len(second_extra):insertion + len(second_extra) + comment_len] == COMMENT
+    assert data[insertion + len(second_extra) + comment_len:insertion + len(second_extra) + comment_len + 4] == CENTRAL
+    return bytes(data)
+
+
+@pytest.mark.parametrize("declared_length", [3, 4, 5], ids=["short", "valid", "long"])
+def test_zip64_middle_two_ordinary_extras_last_length_with_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared_length: int,
+) -> None:
+    """Reject a malformed last ordinary field after two valid preceding extras."""
+    from labvault_scout import identifier
+
+    payload = make_three_member_middle_two_ordinary_extras(declared_length)
+    path = tmp_path / f"middle-two-ordinary-extras-{declared_length}.xlsx"
+    path.write_bytes(payload)
+    if declared_length == 4:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            assert archive.namelist() == list(NAMES)
+            assert archive.infolist()[1].comment == COMMENT
+            assert archive.infolist()[1].extra == (
+                struct.pack("<HHQ", 0x0001, 8, archive.infolist()[1].header_offset)
+                + ORDINARY + struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+            )
+            for name, content in zip(NAMES, CONTENTS):
+                assert archive.read(name) == content
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Malformed second ordinary extra reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
+    assert path.read_bytes() == payload
