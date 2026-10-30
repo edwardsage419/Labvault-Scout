@@ -160,3 +160,60 @@ def test_zip64_all_sentinels_with_opaque_ordinary_extra(
     else:
         assert identifier.inspect_zip_container(path) == expected
     assert path.read_bytes() == data
+
+
+def make_zip64_member_association(variant: str) -> bytes:
+    """Forge reordered central entries or a ZIP64 offset into another member."""
+    if variant not in {"reordered", "cross-member-offset"}:
+        raise ValueError(variant)
+    data = bytearray(make_zip64_all_sentinels("valid"))
+    central = data.find(CENTRAL)
+    eocd = data.rfind(EOCD)
+    assert 0 < central < eocd
+    name_length, extra_length, comment_length = struct.unpack_from("<HHH", data, central + 28)
+    assert extra_length == 32
+    second_central = central + 46 + name_length + extra_length + comment_length
+    assert data[second_central:second_central + 4] == CENTRAL
+    if variant == "reordered":
+        data[central:eocd] = data[second_central:eocd] + data[central:second_central]
+    else:
+        second_local = data.find(b"PK\x03\x04", 4)
+        assert 0 < second_local < central
+        # First member's ZIP64 payload stores 8+8+8+4 bytes in that order.
+        zip64_local_offset = central + 46 + name_length + 4 + 16
+        assert struct.unpack_from("<Q", data, zip64_local_offset)[0] == 0
+        struct.pack_into("<Q", data, zip64_local_offset, second_local)
+    return bytes(data)
+
+
+@pytest.mark.parametrize("variant,expected", [
+    ("reordered", "OOXML Excel"),
+    ("cross-member-offset", "Ambiguous ZIP local member name"),
+])
+def test_zip64_central_member_association(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variant: str, expected: str,
+) -> None:
+    """Bind ZIP64 offsets to local headers independently of central record order."""
+    from labvault_scout import identifier
+
+    data = make_zip64_member_association(variant)
+    path = tmp_path / f"zip64-member-association-{variant}.xlsx"
+    path.write_bytes(data)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        if variant == "reordered":
+            assert archive.namelist() == ["xl/workbook.xml", "[Content_Types].xml"]
+            assert archive.read("[Content_Types].xml") == CONTENT
+            assert archive.read("xl/workbook.xml") == b"<workbook/>"
+        else:
+            assert archive.namelist() == ["[Content_Types].xml", "xl/workbook.xml"]
+            assert archive.infolist()[0].header_offset == archive.infolist()[1].header_offset
+
+    if variant == "cross-member-offset":
+        def fail_if_classified(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Cross-member ZIP64 offset reached ZipFile")
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", fail_if_classified)
+            assert identifier.inspect_zip_container(path) == expected
+    else:
+        assert identifier.inspect_zip_container(path) == expected
+    assert path.read_bytes() == data
