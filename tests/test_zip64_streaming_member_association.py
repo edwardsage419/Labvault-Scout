@@ -106,3 +106,49 @@ def test_zip64_streaming_reordered_central_descriptor_binding(
             patch.setattr(identifier.zipfile, "ZipFile", fail_if_classified)
             assert identifier.inspect_zip_container(path) == expected
     assert path.read_bytes() == data
+
+
+@pytest.mark.parametrize(
+    "padding", [b"\x00", b"JUNK"],
+    ids=["single-byte", "four-bytes"],
+)
+def test_zip64_reordered_streaming_descriptor_rejects_inter_member_padding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, padding: bytes,
+) -> None:
+    """Reject unaccounted bytes after a ZIP64 descriptor with reordered entries."""
+    from labvault_scout import identifier
+
+    data = bytearray(make_streaming_zip64_member_association("valid"))
+    first_descriptor = data.find(DESCRIPTOR)
+    second_local = data.find(LOCAL, 4)
+    first_central = data.find(CENTRAL)
+    assert first_descriptor + 24 == second_local < first_central
+    # After reversal, the first central record describes the second member.
+    assert struct.unpack_from("<I", data, first_central + 42)[0] == second_local
+
+    data[second_local:second_local] = padding
+    struct.pack_into(
+        "<I", data, first_central + len(padding) + 42,
+        second_local + len(padding),
+    )
+    eocd = data.rfind(EOCD)
+    struct.pack_into("<I", data, eocd + 16, first_central + len(padding))
+    original = bytes(data)
+    path = tmp_path / "zip64-reordered-descriptor-gap.xlsx"
+    path.write_bytes(original)
+
+    # The standard ZIP reader tolerates this unaccounted inter-member gap.
+    with zipfile.ZipFile(io.BytesIO(original)) as archive:
+        assert archive.namelist() == [SECOND_NAME, FIRST_NAME]
+        assert archive.read(FIRST_NAME) == FIRST_CONTENT
+        assert archive.read(SECOND_NAME) == SECOND_CONTENT
+
+    def fail_if_classified(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Unaccounted ZIP64 descriptor gap reached ZipFile")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(identifier.zipfile, "ZipFile", fail_if_classified)
+        assert identifier.inspect_zip_container(path) == (
+            "Ambiguous ZIP data descriptor metadata"
+        )
+    assert path.read_bytes() == original
