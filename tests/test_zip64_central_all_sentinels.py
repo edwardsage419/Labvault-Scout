@@ -100,3 +100,63 @@ def test_zip64_central_all_sentinels(
     else:
         assert identifier.inspect_zip_container(path) == expected
     assert path.read_bytes() == data
+
+
+# An ordinary extra field may contain bytes resembling another ZIP64 field.
+# Its payload must remain opaque even with all four ZIP64 sentinels present.
+OPAQUE_NESTED_ZIP64 = (
+    struct.pack("<HH", 0xCAFE, 32)
+    + struct.pack("<HH", 0x0001, 28)
+    + b"Q" * 28
+)
+
+
+def make_all_sentinels_with_ordinary_extra(variant: str) -> bytes:
+    """Mix a real four-sentinel ZIP64 field with an opaque ordinary extra."""
+    if variant not in {"before", "after", "multidisk-before"}:
+        raise ValueError(variant)
+    data = bytearray(make_zip64_all_sentinels(
+        "multidisk" if variant == "multidisk-before" else "valid"
+    ))
+    central = data.find(CENTRAL)
+    end = data.rfind(EOCD)
+    name_length, old_extra = struct.unpack_from("<HH", data, central + 28)
+    assert old_extra == 32
+    start = central + 46 + name_length
+    assert data[start:start + 4] == struct.pack("<HH", 0x0001, 28)
+    insertion = start if variant.endswith("before") else start + old_extra
+    data[insertion:insertion] = OPAQUE_NESTED_ZIP64
+    struct.pack_into("<H", data, central + 30, old_extra + len(OPAQUE_NESTED_ZIP64))
+    end += len(OPAQUE_NESTED_ZIP64)
+    assert data[end:end + 4] == EOCD
+    old_directory_size = struct.unpack_from("<I", data, end + 12)[0]
+    struct.pack_into("<I", data, end + 12, old_directory_size + len(OPAQUE_NESTED_ZIP64))
+    return bytes(data)
+
+
+@pytest.mark.parametrize("variant,expected", [
+    ("before", "OOXML Excel"),
+    ("after", "OOXML Excel"),
+    ("multidisk-before", "Unsupported ZIP multi-disk metadata"),
+])
+def test_zip64_all_sentinels_with_opaque_ordinary_extra(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variant: str, expected: str
+) -> None:
+    from labvault_scout import identifier
+
+    data = make_all_sentinels_with_ordinary_extra(variant)
+    path = tmp_path / f"all-sentinels-opaque-{variant}.xlsx"
+    path.write_bytes(data)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        assert archive.namelist() == ["[Content_Types].xml", "xl/workbook.xml"]
+        assert archive.read("[Content_Types].xml") == CONTENT
+
+    if variant == "multidisk-before":
+        def fail_if_classified(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Multi-disk ZIP64 metadata reached ZipFile")
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", fail_if_classified)
+            assert identifier.inspect_zip_container(path) == expected
+    else:
+        assert identifier.inspect_zip_container(path) == expected
+    assert path.read_bytes() == data
