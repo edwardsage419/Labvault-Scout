@@ -233,3 +233,54 @@ def test_zip64_middle_member_required_offset_inner_length_with_trailing_ordinary
             patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
             assert identifier.inspect_zip_container(path) == "Invalid ZIP directory ZIP64 extra"
     assert path.read_bytes() == original
+
+def make_three_member_middle_partial_ordinary_header(header_bytes: int) -> bytes:
+    """Reclassify the tail of an ordinary extra as comment without moving bytes."""
+    if header_bytes not in (1, 2, 3, len(ORDINARY)):
+        raise ValueError(header_bytes)
+    data = bytearray(make_three_member_middle_zip64_then_ordinary(4))
+    first = data.find(CENTRAL)
+    middle = data.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from("<HHH", data, middle + 28)
+    extra_start = middle + 46 + name_len
+    zip64 = data[extra_start:extra_start + 12]
+    assert zip64[:4] == struct.pack("<HH", 0x0001, 8)
+    assert extra_len == 12 + len(ORDINARY)
+    assert comment_len == len(COMMENT)
+    assert data[extra_start + 12:extra_start + extra_len] == ORDINARY
+    assert data[extra_start + extra_len:extra_start + extra_len + comment_len] == COMMENT
+    moved = len(ORDINARY) - header_bytes
+    struct.pack_into("<H", data, middle + 30, extra_len - moved)
+    struct.pack_into("<H", data, middle + 32, comment_len + moved)
+    assert data[extra_start + 12:extra_start + 12 + header_bytes] == ORDINARY[:header_bytes]
+    assert data[extra_start + extra_len + comment_len:extra_start + extra_len + comment_len + 4] == CENTRAL
+    return bytes(data)
+
+
+@pytest.mark.parametrize("header_bytes", [1, 2, 3, 8], ids=["one-byte", "two-byte", "three-byte", "valid"])
+def test_zip64_middle_trailing_ordinary_extra_partial_header_with_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, header_bytes: int,
+) -> None:
+    """Reject truncated ordinary-field headers following ZIP64, before ZipFile."""
+    from labvault_scout import identifier
+
+    payload = make_three_member_middle_partial_ordinary_header(header_bytes)
+    path = tmp_path / f"middle-partial-extra-header-{header_bytes}.xlsx"
+    path.write_bytes(payload)
+    if header_bytes == 8:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            assert archive.namelist() == list(NAMES)
+            assert archive.infolist()[1].comment == COMMENT
+            assert archive.infolist()[1].extra.endswith(ORDINARY)
+            for name, content in zip(NAMES, CONTENTS):
+                assert archive.read(name) == content
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Truncated middle ordinary extra header reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
+    assert path.read_bytes() == payload
