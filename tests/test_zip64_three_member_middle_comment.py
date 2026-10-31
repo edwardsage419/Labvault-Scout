@@ -537,3 +537,58 @@ def test_zip64_middle_second_ordinary_partial_header_before_comment(
             patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
             assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
     assert path.read_bytes() == payload
+
+
+def make_three_member_middle_interleaved_extra(first_length: int) -> bytes:
+    """Place required ZIP64 offset between two ordinary fields."""
+    if first_length not in (3, 4, 5):
+        raise ValueError(first_length)
+    data = bytearray(make_three_member_middle_two_ordinary_extras(4))
+    first = data.find(CENTRAL)
+    middle = data.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from("<HHH", data, middle + 28)
+    extra_start = middle + 46 + name_len
+    second = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    assert extra_len == 12 + len(ORDINARY) + len(second)
+    assert comment_len == len(COMMENT)
+    zip64 = bytes(data[extra_start:extra_start + 12])
+    assert zip64[:4] == struct.pack("<HH", 0x0001, 8)
+    assert data[extra_start + 12:extra_start + extra_len] == ORDINARY + second
+    data[extra_start:extra_start + extra_len] = ORDINARY + zip64 + second
+    struct.pack_into("<H", data, extra_start + 2, first_length)
+    next_record = extra_start + extra_len + comment_len
+    assert data[next_record:next_record + 4] == CENTRAL
+    return bytes(data)
+
+
+@pytest.mark.parametrize("first_length", [3, 4, 5], ids=["short", "valid", "long"])
+def test_zip64_middle_interleaved_ordinary_extra_length_with_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, first_length: int,
+) -> None:
+    """Reject malformed ordinary fields before an interleaved ZIP64 offset."""
+    from labvault_scout import identifier
+
+    payload = make_three_member_middle_interleaved_extra(first_length)
+    path = tmp_path / f"middle-interleaved-{first_length}.xlsx"
+    path.write_bytes(payload)
+    if first_length == 4:
+        second = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            assert archive.namelist() == list(NAMES)
+            info = archive.infolist()[1]
+            assert info.comment == COMMENT
+            assert info.extra == (
+                ORDINARY + struct.pack("<HHQ", 0x0001, 8, info.header_offset) + second
+            )
+            for name, content in zip(NAMES, CONTENTS):
+                assert archive.read(name) == content
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Malformed interleaved extra reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
+    assert path.read_bytes() == payload
