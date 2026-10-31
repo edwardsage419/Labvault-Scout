@@ -683,3 +683,69 @@ def test_zip64_middle_interleaved_required_offset_length_with_comment(
             patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
             assert identifier.inspect_zip_container(path) == "Invalid ZIP directory ZIP64 extra"
     assert path.read_bytes() == original
+
+def make_three_member_middle_interleaved_partial_zip64_header(header_bytes: int) -> bytes:
+    """Place an incomplete ZIP64 field header before an ordinary field."""
+    if header_bytes not in (1, 2, 3, 12):
+        raise ValueError(header_bytes)
+    data = bytearray(make_three_member_middle_interleaved_extra(4))
+    first = data.find(CENTRAL)
+    middle = data.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from("<HHH", data, middle + 28)
+    extra_start = middle + 46 + name_len
+    zip64_start = extra_start + len(ORDINARY)
+    zip64 = bytes(data[zip64_start:zip64_start + 12])
+    trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    assert extra_len == len(ORDINARY) + len(zip64) + len(trailing)
+    assert data[extra_start:zip64_start] == ORDINARY
+    assert zip64[:4] == struct.pack("<HH", 0x0001, 8)
+    assert data[zip64_start + 12:extra_start + extra_len] == trailing
+    comment = bytes(data[extra_start + extra_len:extra_start + extra_len + comment_len])
+    assert comment == COMMENT
+    replacement_extra = ORDINARY + zip64[:header_bytes] + trailing
+    replacement_comment = zip64[header_bytes:] + comment
+    data[extra_start:extra_start + extra_len + comment_len] = (
+        replacement_extra + replacement_comment
+    )
+    struct.pack_into("<H", data, middle + 30, len(replacement_extra))
+    struct.pack_into("<H", data, middle + 32, len(replacement_comment))
+    next_record = extra_start + len(replacement_extra) + len(replacement_comment)
+    assert data[next_record:next_record + 4] == CENTRAL
+    return bytes(data)
+
+
+@pytest.mark.parametrize(
+    "header_bytes", [1, 2, 3, 12],
+    ids=["one-byte", "two-byte", "three-byte", "valid"],
+)
+def test_zip64_middle_interleaved_partial_zip64_header_before_ordinary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, header_bytes: int,
+) -> None:
+    """Reject truncated ZIP64 headers before a trailing ordinary extra."""
+    from labvault_scout import identifier
+
+    payload = make_three_member_middle_interleaved_partial_zip64_header(header_bytes)
+    path = tmp_path / f"middle-interleaved-partial-zip64-{header_bytes}.xlsx"
+    path.write_bytes(payload)
+
+    if header_bytes == 12:
+        trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            assert archive.namelist() == list(NAMES)
+            info = archive.infolist()[1]
+            assert info.comment == COMMENT
+            assert info.extra == (
+                ORDINARY + struct.pack("<HHQ", 0x0001, 8, info.header_offset) + trailing
+            )
+            for name, expected in zip(NAMES, CONTENTS):
+                assert archive.read(name) == expected
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Partial interleaved ZIP64 header reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
+    assert path.read_bytes() == payload
