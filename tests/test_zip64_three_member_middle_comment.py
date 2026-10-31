@@ -387,3 +387,85 @@ def test_zip64_middle_two_ordinary_extras_first_length_with_comment(
             patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
             assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
     assert path.read_bytes() == original
+
+
+def make_three_member_middle_first_ordinary_partial_header_with_second(
+    header_bytes: int,
+) -> bytes:
+    """Keep a later ordinary field after a truncated first ordinary header."""
+    if header_bytes not in (1, 2, 3, len(ORDINARY)):
+        raise ValueError(header_bytes)
+    data = bytearray(make_three_member_middle_two_ordinary_extras(4))
+    first = data.find(CENTRAL)
+    middle = data.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from("<HHH", data, middle + 28)
+    extra_start = middle + 46 + name_len
+    ordinary_start = extra_start + 12
+    second_extra = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    assert extra_len == 12 + len(ORDINARY) + len(second_extra)
+    assert comment_len == len(COMMENT)
+    assert data[ordinary_start:ordinary_start + len(ORDINARY)] == ORDINARY
+    assert data[
+        ordinary_start + len(ORDINARY):
+        ordinary_start + len(ORDINARY) + len(second_extra)
+    ] == second_extra
+
+    # Remove only the first ordinary field's trailing bytes. The next field,
+    # member comment, and following central member retain their byte contents.
+    removed = len(ORDINARY) - header_bytes
+    del data[ordinary_start + header_bytes:ordinary_start + len(ORDINARY)]
+    struct.pack_into("<H", data, middle + 30, extra_len - removed)
+    end = data.rfind(EOCD)
+    assert end > ordinary_start
+    directory_size = struct.unpack_from("<I", data, end + 12)[0]
+    struct.pack_into("<I", data, end + 12, directory_size - removed)
+
+    assert data[ordinary_start:ordinary_start + header_bytes] == ORDINARY[:header_bytes]
+    assert data[
+        ordinary_start + header_bytes:
+        ordinary_start + header_bytes + len(second_extra)
+    ] == second_extra
+    comment_start = extra_start + extra_len - removed
+    assert data[comment_start:comment_start + comment_len] == COMMENT
+    assert data[
+        comment_start + comment_len:comment_start + comment_len + 4
+    ] == CENTRAL
+    return bytes(data)
+
+
+@pytest.mark.parametrize(
+    "header_bytes", [1, 2, 3, 8],
+    ids=["one-byte", "two-byte", "three-byte", "valid"],
+)
+def test_zip64_middle_first_ordinary_partial_header_before_second_with_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, header_bytes: int,
+) -> None:
+    """Reject a partial first ordinary header without consuming the next field."""
+    from labvault_scout import identifier
+
+    payload = make_three_member_middle_first_ordinary_partial_header_with_second(
+        header_bytes
+    )
+    path = tmp_path / f"middle-first-partial-before-second-{header_bytes}.xlsx"
+    path.write_bytes(payload)
+    if header_bytes == 8:
+        second_extra = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            assert archive.namelist() == list(NAMES)
+            assert archive.infolist()[1].comment == COMMENT
+            assert archive.infolist()[1].extra == (
+                struct.pack("<HHQ", 0x0001, 8, archive.infolist()[1].header_offset)
+                + ORDINARY + second_extra
+            )
+            for name, expected in zip(NAMES, CONTENTS):
+                assert archive.read(name) == expected
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Truncated first ordinary extra reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
+    assert path.read_bytes() == payload
