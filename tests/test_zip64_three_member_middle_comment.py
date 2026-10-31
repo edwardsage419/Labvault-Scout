@@ -1064,3 +1064,67 @@ def test_zip64_middle_duplicate_trailing_header_before_comment(
         assert identifier.inspect_zip_container(path) == expected
         assert identifier.inspect_zip_container(path) == expected
     assert path.read_bytes() == original
+
+@pytest.mark.parametrize(
+    "header_bytes", [1, 2, 3, 12],
+    ids=["one-byte", "two-byte", "three-byte", "complete-duplicate"],
+)
+def test_zip64_middle_duplicate_first_header_before_ordinary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, header_bytes: int,
+) -> None:
+    """Reject a truncated leading duplicate ZIP64 header before ordinary extras."""
+    from labvault_scout import identifier
+
+    payload = bytearray(make_three_member_middle_interleaved_duplicate_zip64(
+        "before-ordinary"
+    ))
+    first = payload.find(CENTRAL)
+    middle = payload.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from(
+        "<HHH", payload, middle + 28
+    )
+    extra_start = middle + 46 + name_len
+    zip64 = bytes(payload[extra_start:extra_start + 12])
+    trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    assert zip64[:4] == struct.pack("<HH", 0x0001, 8)
+    assert extra_len == 24 + len(ORDINARY) + len(trailing)
+    assert comment_len == len(COMMENT)
+    assert payload[extra_start:extra_start + extra_len] == (
+        zip64 + ORDINARY + zip64 + trailing
+    )
+
+    # Shorten the first ZIP64 header while retaining the later valid ZIP64.
+    removed = len(zip64) - header_bytes
+    del payload[extra_start + header_bytes:extra_start + len(zip64)]
+    struct.pack_into("<H", payload, middle + 30, extra_len - removed)
+    end = payload.rfind(EOCD)
+    assert end > middle
+    directory_size = struct.unpack_from("<I", payload, end + 12)[0]
+    struct.pack_into("<I", payload, end + 12, directory_size - removed)
+    assert payload[extra_start:extra_start + extra_len - removed] == (
+        zip64[:header_bytes] + ORDINARY + zip64 + trailing
+    )
+    assert payload[
+        extra_start + extra_len - removed:
+        extra_start + extra_len - removed + comment_len
+    ] == COMMENT
+    next_record = extra_start + extra_len - removed + comment_len
+    assert payload[next_record:next_record + 4] == CENTRAL
+
+    original = bytes(payload)
+    path = tmp_path / f"middle-leading-duplicate-partial-{header_bytes}.xlsx"
+    path.write_bytes(original)
+    expected = (
+        "Invalid ZIP directory ZIP64 extra" if header_bytes == len(zip64)
+        else "Invalid ZIP directory extra"
+    )
+
+    def reject_late_parse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Partial leading duplicate ZIP64 reached ZipFile")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+        assert identifier.inspect_zip_container(path) == expected
+        assert identifier.inspect_zip_container(path) == expected
+    assert path.read_bytes() == original
