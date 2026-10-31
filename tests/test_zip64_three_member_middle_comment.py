@@ -826,3 +826,54 @@ def test_zip64_middle_interleaved_duplicate_offset_with_comment(
             patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
             assert identifier.inspect_zip_container(path) == "Invalid ZIP directory ZIP64 extra"
     assert path.read_bytes() == payload
+
+
+@pytest.mark.parametrize(
+    "duplicate_position,malformed_field,expected",
+    [
+        ("adjacent", "trailing", "Invalid ZIP directory ZIP64 extra"),
+        ("after-ordinary", "trailing", "Invalid ZIP directory extra"),
+        ("before-ordinary", "first", "Invalid ZIP directory extra"),
+        ("adjacent", "first", "Invalid ZIP directory extra"),
+    ],
+)
+def test_zip64_middle_interleaved_duplicate_and_malformed_ordinary_precedence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    duplicate_position: str,
+    malformed_field: str,
+    expected: str,
+) -> None:
+    """Reject combined central-extra defects deterministically before ZipFile."""
+    from labvault_scout import identifier
+
+    payload = bytearray(make_three_member_middle_interleaved_duplicate_zip64(
+        duplicate_position
+    ))
+    first = payload.find(CENTRAL)
+    middle = payload.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from("<HHH", payload, middle + 28)
+    extra_start = middle + 46 + name_len
+    extra = bytes(payload[extra_start:extra_start + extra_len])
+    trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    assert extra_len == len(ORDINARY) + 24 + len(trailing)
+    assert comment_len == len(COMMENT)
+    assert extra.count(struct.pack("<HH", 0x0001, 8)) == 2
+    first_start = extra.find(ORDINARY)
+    trailing_start = extra.find(trailing)
+    assert 0 <= first_start < trailing_start
+    malformed_start = first_start if malformed_field == "first" else trailing_start
+    struct.pack_into("<H", payload, extra_start + malformed_start + 2, 5)
+    original = bytes(payload)
+    path = tmp_path / f"mixed-duplicate-{duplicate_position}-{malformed_field}.xlsx"
+    path.write_bytes(original)
+
+    def reject_late_parse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Combined malformed central extras reached ZipFile")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+        assert identifier.inspect_zip_container(path) == expected
+        assert identifier.inspect_zip_container(path) == expected
+    assert path.read_bytes() == original
