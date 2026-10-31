@@ -749,3 +749,80 @@ def test_zip64_middle_interleaved_partial_zip64_header_before_ordinary(
             patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
             assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
     assert path.read_bytes() == payload
+
+
+def make_three_member_middle_interleaved_duplicate_zip64(variant: str) -> bytes:
+    """Duplicate the required middle-member ZIP64 offset field in three positions."""
+    if variant not in ("valid", "before-ordinary", "adjacent", "after-ordinary"):
+        raise ValueError(variant)
+    data = bytearray(make_three_member_middle_interleaved_extra(4))
+    first = data.find(CENTRAL)
+    middle = data.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from("<HHH", data, middle + 28)
+    extra_start = middle + 46 + name_len
+    zip64_start = extra_start + len(ORDINARY)
+    zip64 = bytes(data[zip64_start:zip64_start + 12])
+    trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    assert zip64[:4] == struct.pack("<HH", 0x0001, 8)
+    assert extra_len == len(ORDINARY) + len(zip64) + len(trailing)
+    assert data[extra_start:extra_start + extra_len] == ORDINARY + zip64 + trailing
+    assert data[extra_start + extra_len:extra_start + extra_len + comment_len] == COMMENT
+    if variant == "valid":
+        return bytes(data)
+
+    insertion = {
+        "before-ordinary": extra_start,
+        "adjacent": zip64_start + len(zip64),
+        "after-ordinary": extra_start + extra_len,
+    }[variant]
+    data[insertion:insertion] = zip64
+    struct.pack_into("<H", data, middle + 30, extra_len + len(zip64))
+    end = data.rfind(EOCD)
+    assert end > middle
+    directory_size = struct.unpack_from("<I", data, end + 12)[0]
+    struct.pack_into("<I", data, end + 12, directory_size + len(zip64))
+    next_record = extra_start + extra_len + len(zip64) + comment_len
+    assert data[next_record:next_record + 4] == CENTRAL
+    return bytes(data)
+
+
+@pytest.mark.parametrize(
+    "variant", ["valid", "before-ordinary", "adjacent", "after-ordinary"],
+)
+def test_zip64_middle_interleaved_duplicate_offset_with_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variant: str,
+) -> None:
+    """Reject duplicate ZIP64 offsets before ZipFile, preserving valid ordering."""
+    from labvault_scout import identifier
+
+    payload = make_three_member_middle_interleaved_duplicate_zip64(variant)
+    path = tmp_path / f"middle-interleaved-duplicate-{variant}.xlsx"
+    path.write_bytes(payload)
+    trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        assert archive.namelist() == list(NAMES)
+        info = archive.infolist()[1]
+        assert info.comment == COMMENT
+        zip64 = struct.pack("<HHQ", 0x0001, 8, info.header_offset)
+        expected = {
+            "valid": ORDINARY + zip64 + trailing,
+            "before-ordinary": zip64 + ORDINARY + zip64 + trailing,
+            "adjacent": ORDINARY + zip64 + zip64 + trailing,
+            "after-ordinary": ORDINARY + zip64 + trailing + zip64,
+        }[variant]
+        assert info.extra == expected
+        if variant == "valid":
+            for name, content in zip(NAMES, CONTENTS):
+                assert archive.read(name) == content
+
+    if variant == "valid":
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Duplicate middle ZIP64 offset reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory ZIP64 extra"
+    assert path.read_bytes() == payload
