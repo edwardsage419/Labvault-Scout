@@ -859,7 +859,14 @@ def test_zip64_middle_interleaved_duplicate_and_malformed_ordinary_precedence(
     trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
     assert extra_len == len(ORDINARY) + 24 + len(trailing)
     assert comment_len == len(COMMENT)
-    assert extra.count(struct.pack("<HH", 0x0001, 8)) == 2
+    zip64_start = 0 if duplicate_position == "before-ordinary" else len(ORDINARY)
+    zip64 = extra[zip64_start:zip64_start + 12]
+    assert zip64[:4] == struct.pack("<HH", 0x0001, 8)
+    assert extra == {
+        "before-ordinary": zip64 + ORDINARY + zip64 + trailing,
+        "adjacent": ORDINARY + zip64 + zip64 + trailing,
+        "after-ordinary": ORDINARY + zip64 + trailing + zip64,
+    }[duplicate_position]
     first_start = extra.find(ORDINARY)
     trailing_start = extra.find(trailing)
     assert 0 <= first_start < trailing_start
