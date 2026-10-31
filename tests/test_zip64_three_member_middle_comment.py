@@ -342,3 +342,48 @@ def test_zip64_middle_two_ordinary_extras_last_length_with_comment(
             patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
             assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
     assert path.read_bytes() == payload
+
+
+@pytest.mark.parametrize("declared_length", [3, 4, 5], ids=["short", "valid", "long"])
+def test_zip64_middle_two_ordinary_extras_first_length_with_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared_length: int,
+) -> None:
+    """Reject a malformed first ordinary field before a second ordinary field."""
+    from labvault_scout import identifier
+
+    payload = bytearray(make_three_member_middle_two_ordinary_extras(4))
+    first = payload.find(CENTRAL)
+    middle = payload.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from("<HHH", payload, middle + 28)
+    extra_start = middle + 46 + name_len
+    ordinary_start = extra_start + 12
+    second_extra = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    assert extra_len == 12 + len(ORDINARY) + len(second_extra)
+    assert comment_len == len(COMMENT)
+    assert payload[ordinary_start:ordinary_start + len(ORDINARY)] == ORDINARY
+    assert payload[ordinary_start + len(ORDINARY):ordinary_start + len(ORDINARY) + len(second_extra)] == second_extra
+    struct.pack_into("<H", payload, ordinary_start + 2, declared_length)
+    original = bytes(payload)
+    path = tmp_path / f"middle-first-ordinary-length-{declared_length}.xlsx"
+    path.write_bytes(original)
+
+    if declared_length == 4:
+        with zipfile.ZipFile(io.BytesIO(original)) as archive:
+            assert archive.namelist() == list(NAMES)
+            assert archive.infolist()[1].comment == COMMENT
+            assert archive.infolist()[1].extra == (
+                struct.pack("<HHQ", 0x0001, 8, archive.infolist()[1].header_offset)
+                + ORDINARY + second_extra
+            )
+            for name, expected in zip(NAMES, CONTENTS):
+                assert archive.read(name) == expected
+        assert identifier.inspect_zip_container(path) == "OOXML Excel"
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Malformed first ordinary extra reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == "Invalid ZIP directory extra"
+    assert path.read_bytes() == original
