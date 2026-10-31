@@ -1241,3 +1241,60 @@ def test_zip64_middle_duplicate_trailing_offset_length_precedence(
         assert identifier.inspect_zip_container(path) == expected_error
         assert identifier.inspect_zip_container(path) == expected_error
     assert path.read_bytes() == original
+
+@pytest.mark.parametrize(
+    "declared_length,expected_error",
+    [
+        (7, "Invalid ZIP directory ZIP64 extra"),
+        (8, "Invalid ZIP directory ZIP64 extra"),
+        (9, "Invalid ZIP directory ZIP64 extra"),
+        (65535, "Invalid ZIP directory extra"),
+    ],
+    ids=["short", "duplicate", "overlong-within-extra", "overrun"],
+)
+def test_zip64_middle_duplicate_offset_length_before_final_ordinary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    declared_length: int,
+    expected_error: str,
+) -> None:
+    """Check duplicate ZIP64 length precedence with a following ordinary field."""
+    from labvault_scout import identifier
+
+    payload = bytearray(make_three_member_middle_interleaved_duplicate_zip64(
+        "before-ordinary"
+    ))
+    first = payload.find(CENTRAL)
+    middle = payload.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from(
+        "<HHH", payload, middle + 28
+    )
+    extra_start = middle + 46 + name_len
+    zip64 = bytes(payload[extra_start:extra_start + 12])
+    trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    duplicate_start = extra_start + len(zip64) + len(ORDINARY)
+    assert zip64[:4] == struct.pack("<HH", 0x0001, 8)
+    assert extra_len == 2 * len(zip64) + len(ORDINARY) + len(trailing)
+    assert comment_len == len(COMMENT)
+    assert payload[extra_start:extra_start + extra_len] == (
+        zip64 + ORDINARY + zip64 + trailing
+    )
+    next_record = extra_start + extra_len + comment_len
+    assert payload[next_record:next_record + 4] == CENTRAL
+
+    # Preserve all outer boundaries and the following ordinary field.
+    struct.pack_into("<H", payload, duplicate_start + 2, declared_length)
+    assert payload[duplicate_start + 12:duplicate_start + 12 + len(trailing)] == trailing
+    original = bytes(payload)
+    path = tmp_path / f"middle-duplicate-before-ordinary-{declared_length}.xlsx"
+    path.write_bytes(original)
+
+    def reject_late_parse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Malformed duplicate ZIP64 reached ZipFile")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+        assert identifier.inspect_zip_container(path) == expected_error
+        assert identifier.inspect_zip_container(path) == expected_error
+    assert path.read_bytes() == original
