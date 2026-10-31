@@ -1298,3 +1298,66 @@ def test_zip64_middle_duplicate_offset_length_before_final_ordinary(
         assert identifier.inspect_zip_container(path) == expected_error
         assert identifier.inspect_zip_container(path) == expected_error
     assert path.read_bytes() == original
+
+@pytest.mark.parametrize(
+    "duplicate_length,expected_error",
+    [
+        (7, "Invalid ZIP directory ZIP64 extra"),
+        (8, "Invalid ZIP directory ZIP64 extra"),
+        (9, "Invalid ZIP directory ZIP64 extra"),
+        (65535, "Invalid ZIP directory extra"),
+    ],
+    ids=["short-and-malformed", "duplicate-and-malformed",
+         "long-and-malformed", "overrun-and-malformed"],
+)
+def test_zip64_middle_duplicate_length_with_malformed_following_ordinary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    duplicate_length: int,
+    expected_error: str,
+) -> None:
+    """Preserve ZIP64 error priority when a later ordinary extra is malformed."""
+    from labvault_scout import identifier
+
+    payload = bytearray(make_three_member_middle_interleaved_duplicate_zip64(
+        "before-ordinary"
+    ))
+    first = payload.find(CENTRAL)
+    middle = payload.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from(
+        "<HHH", payload, middle + 28
+    )
+    extra_start = middle + 46 + name_len
+    zip64 = bytes(payload[extra_start:extra_start + 12])
+    trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    duplicate_start = extra_start + len(zip64) + len(ORDINARY)
+    trailing_start = duplicate_start + len(zip64)
+    assert extra_len == 2 * len(zip64) + len(ORDINARY) + len(trailing)
+    assert comment_len == len(COMMENT)
+    assert payload[extra_start:extra_start + extra_len] == (
+        zip64 + ORDINARY + zip64 + trailing
+    )
+    assert payload[
+        extra_start + extra_len:extra_start + extra_len + comment_len
+    ] == COMMENT
+    assert payload[
+        extra_start + extra_len + comment_len:
+        extra_start + extra_len + comment_len + 4
+    ] == CENTRAL
+
+    # Mutate only the inner lengths, retaining the central-directory bounds.
+    struct.pack_into("<H", payload, duplicate_start + 2, duplicate_length)
+    struct.pack_into("<H", payload, trailing_start + 2, 5)
+    original = bytes(payload)
+    path = tmp_path / f"middle-mixed-length-{duplicate_length}.xlsx"
+    path.write_bytes(original)
+
+    def reject_late_parse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Combined malformed extras reached ZipFile")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+        assert identifier.inspect_zip_container(path) == expected_error
+        assert identifier.inspect_zip_container(path) == expected_error
+    assert path.read_bytes() == original
