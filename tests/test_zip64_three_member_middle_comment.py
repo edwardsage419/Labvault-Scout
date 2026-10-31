@@ -1128,3 +1128,56 @@ def test_zip64_middle_duplicate_first_header_before_ordinary(
         assert identifier.inspect_zip_container(path) == expected
         assert identifier.inspect_zip_container(path) == expected
     assert path.read_bytes() == original
+
+@pytest.mark.parametrize(
+    "declared_length", [7, 8, 9, 65535],
+    ids=["short", "duplicate", "long", "overrun"],
+)
+def test_zip64_middle_duplicate_leading_offset_length_before_ordinary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared_length: int,
+) -> None:
+    """Reject invalid leading ZIP64 lengths before ordinary and duplicate extras."""
+    from labvault_scout import identifier
+
+    payload = bytearray(make_three_member_middle_interleaved_duplicate_zip64(
+        "before-ordinary"
+    ))
+    first = payload.find(CENTRAL)
+    middle = payload.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, extra_len, comment_len = struct.unpack_from(
+        "<HHH", payload, middle + 28
+    )
+    extra_start = middle + 46 + name_len
+    leading = bytes(payload[extra_start:extra_start + 12])
+    trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    assert leading[:4] == struct.pack("<HH", 0x0001, 8)
+    assert extra_len == 24 + len(ORDINARY) + len(trailing)
+    assert comment_len == len(COMMENT)
+    assert payload[extra_start:extra_start + extra_len] == (
+        leading + ORDINARY + leading + trailing
+    )
+    assert payload[
+        extra_start + extra_len:extra_start + extra_len + comment_len
+    ] == COMMENT
+    next_record = extra_start + extra_len + comment_len
+    assert payload[next_record:next_record + 4] == CENTRAL
+
+    # Change only the first ZIP64 field's declared inner length.
+    struct.pack_into("<H", payload, extra_start + 2, declared_length)
+    original = bytes(payload)
+    path = tmp_path / f"middle-leading-zip64-length-{declared_length}.xlsx"
+    path.write_bytes(original)
+
+    def reject_late_parse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Malformed leading ZIP64 extra reached ZipFile")
+
+    expected_error = (
+        "Invalid ZIP directory extra" if declared_length == 65535
+        else "Invalid ZIP directory ZIP64 extra"
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+        assert identifier.inspect_zip_container(path) == expected_error
+        assert identifier.inspect_zip_container(path) == expected_error
+    assert path.read_bytes() == original
