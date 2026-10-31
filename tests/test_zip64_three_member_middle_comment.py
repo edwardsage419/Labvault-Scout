@@ -1361,3 +1361,89 @@ def test_zip64_middle_duplicate_length_with_malformed_following_ordinary(
         assert identifier.inspect_zip_container(path) == expected_error
         assert identifier.inspect_zip_container(path) == expected_error
     assert path.read_bytes() == original
+
+def make_three_member_middle_zip64_three_sentinels(variant: str) -> bytes:
+    """Combine three required ZIP64 fields with opaque extras and a member comment."""
+    if variant not in {
+        "valid", "short", "long", "compressed-conflict",
+        "uncompressed-conflict", "swapped-sizes",
+    }:
+        raise ValueError(variant)
+    data = bytearray(make_three_member_zip64_middle_comment(0))
+    first = data.find(CENTRAL)
+    middle = data.find(CENTRAL, first + 4)
+    assert 0 < first < middle
+    name_len, old_extra_len, comment_len = struct.unpack_from("<HHH", data, middle + 28)
+    extra_start = middle + 46 + name_len
+    assert comment_len == len(COMMENT)
+    assert old_extra_len == len(ORDINARY) + 12
+    local_offset = struct.unpack_from("<Q", data, extra_start + len(ORDINARY) + 4)[0]
+    compressed, uncompressed = struct.unpack_from("<II", data, middle + 20)
+    assert 0 < compressed and 0 < uncompressed and compressed != uncompressed
+    assert data[extra_start:extra_start + old_extra_len] == (
+        ORDINARY + struct.pack("<HHQ", 0x0001, 8, local_offset)
+    )
+
+    zip64_uncompressed = uncompressed + (variant == "uncompressed-conflict")
+    zip64_compressed = compressed + (variant == "compressed-conflict")
+    if variant == "swapped-sizes":
+        zip64_uncompressed, zip64_compressed = zip64_compressed, zip64_uncompressed
+    zip64 = struct.pack(
+        "<HHQQQ", 0x0001, 24, zip64_uncompressed, zip64_compressed, local_offset
+    )
+    trailing = struct.pack("<HH", 0xBEEF, 4) + CENTRAL
+    extras = ORDINARY + zip64 + trailing
+    data[extra_start:extra_start + old_extra_len] = extras
+    struct.pack_into("<II", data, middle + 20, 0xFFFFFFFF, 0xFFFFFFFF)
+    struct.pack_into("<H", data, middle + 30, len(extras))
+    end = data.rfind(EOCD)
+    assert data[end:end + 4] == EOCD
+    directory_size = struct.unpack_from("<I", data, end + 12)[0]
+    struct.pack_into("<I", data, end + 12, directory_size + len(extras) - old_extra_len)
+    if variant in {"short", "long"}:
+        struct.pack_into(
+            "<H", data, extra_start + len(ORDINARY) + 2,
+            23 if variant == "short" else 25,
+        )
+    next_record = extra_start + len(extras) + comment_len
+    assert data[extra_start + len(extras):next_record] == COMMENT
+    assert data[next_record:next_record + 4] == CENTRAL
+    return bytes(data)
+
+
+@pytest.mark.parametrize(
+    "variant,expected",
+    [
+        ("valid", "OOXML Excel"),
+        ("short", "Invalid ZIP directory ZIP64 extra"),
+        ("long", "Invalid ZIP directory ZIP64 extra"),
+        ("compressed-conflict", "Ambiguous ZIP local compressed size"),
+        ("uncompressed-conflict", "Ambiguous ZIP local uncompressed size"),
+        ("swapped-sizes", "Ambiguous ZIP local compressed size"),
+    ],
+)
+def test_zip64_middle_three_required_fields_with_ordinary_extras_and_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variant: str, expected: str,
+) -> None:
+    """Validate field order, exact length and local evidence for three sentinels."""
+    from labvault_scout import identifier
+
+    payload = make_three_member_middle_zip64_three_sentinels(variant)
+    path = tmp_path / f"middle-three-sentinels-{variant}.xlsx"
+    path.write_bytes(payload)
+    if variant == "valid":
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            assert archive.namelist() == list(NAMES)
+            assert archive.infolist()[1].comment == COMMENT
+            for name, content in zip(NAMES, CONTENTS):
+                assert archive.read(name) == content
+        assert identifier.inspect_zip_container(path) == expected
+    else:
+        def reject_late_parse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("Invalid three-sentinel ZIP64 reached ZipFile")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(identifier.zipfile, "ZipFile", reject_late_parse)
+            assert identifier.inspect_zip_container(path) == expected
+            assert identifier.inspect_zip_container(path) == expected
+    assert path.read_bytes() == payload
