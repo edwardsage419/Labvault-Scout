@@ -1,2 +1,3 @@
 # Keep the pinned public research fixture byte-for-byte identical on all platforms.
 tests/fixtures/seattle-weather.csv -text
+tests/fixtures/unemployment.tsv -text
