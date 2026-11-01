@@ -5751,7 +5751,7 @@ def test_scan_reports_file_changed_during_container_inspection(tmp_path: Path, m
     target.write_bytes(b"PK\x03\x04synthetic")
     output = tmp_path / "changing_container_report"
 
-    def changing_inspect(path: Path):
+    def changing_inspect(path: Path, *, stream=None):
         path.write_bytes(path.read_bytes() + b"changed")
         return "ZIP archive"
 
