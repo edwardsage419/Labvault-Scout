@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+from contextlib import nullcontext
 import zipfile
 import zlib
 from pathlib import Path
@@ -236,10 +237,11 @@ def _find_hdf5_signature_offset(handle: BinaryIO, size: int) -> int | None:
     return None
 
 
-def inspect_signature(path: Path) -> str:
+def inspect_signature(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Return a coarse container/signature label without executing file content."""
-    size = path.stat().st_size
-    with path.open("rb") as handle:
+    size = path.stat().st_size if stream is None else stream.seek(0, 2)
+    with (path.open("rb") if stream is None else nullcontext(stream)) as handle:
+        handle.seek(0)
         head = handle.read(8)
         signature = signature_from_head(head)
         if signature:
@@ -407,9 +409,9 @@ ZIP_MAX_CENTRAL_DIRECTORY_BYTES = 2 * 1024 * 1024
 ZIP_EOCD_SEARCH_BYTES = 22 + 65_535
 
 
-def _zip_directory_preflight(path: Path) -> str:
+def _zip_directory_preflight(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Bound ZIP directory parsing and check its actual record count."""
-    with path.open("rb") as handle:
+    with (path.open("rb") if stream is None else nullcontext(stream)) as handle:
         handle.seek(0, 2)
         size = handle.tell()
         tail_start = max(0, size - ZIP_EOCD_SEARCH_BYTES)
@@ -559,7 +561,7 @@ def _zip_directory_preflight(path: Path) -> str:
 
     # A central-directory name is insufficient evidence if its local header is absent.
     ordered_members = sorted(local_members, key=lambda member: member[0])
-    with path.open("rb") as handle:
+    with (path.open("rb") if stream is None else nullcontext(stream)) as handle:
         for index, (
             local_offset, name, method, flags, crc, compressed_size, uncompressed_size
         ) in enumerate(ordered_members):
@@ -733,15 +735,15 @@ def _zip_directory_preflight(path: Path) -> str:
     return ""
 
 
-def inspect_zip_container(path: Path) -> str:
+def inspect_zip_container(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Identify selected ZIP based formats from member names without extraction."""
-    if inspect_signature(path) != "ZIP":
+    if inspect_signature(path, stream=stream) != "ZIP":
         return ""
-    directory_status = _zip_directory_preflight(path)
+    directory_status = _zip_directory_preflight(path, stream=stream)
     if directory_status:
         return directory_status
     try:
-        with zipfile.ZipFile(path) as archive:
+        with zipfile.ZipFile(path if stream is None else stream) as archive:
             member_names = archive.namelist()
             names = set(member_names)
             if len(names) != len(member_names):

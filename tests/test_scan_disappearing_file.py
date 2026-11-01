@@ -1,4 +1,7 @@
 import json
+import multiprocessing as mp
+import zipfile
+from unittest.mock import patch
 import os
 from pathlib import Path
 
@@ -232,12 +235,8 @@ def test_scan_records_zip_container_read_error_and_preserves_report_integrity(
     (source / "healthy.csv").write_text("sample data", encoding="utf-8")
     output = tmp_path / "report"
 
-    original_zipfile = identifier.zipfile.ZipFile
-
     def fail_zip_container_open(path, *args, **kwargs):
-        if Path(path) == blocked:
-            raise PermissionError("ZIP container read denied")
-        return original_zipfile(path, *args, **kwargs)
+        raise PermissionError("ZIP container read denied")
 
     monkeypatch.setattr(identifier.zipfile, "ZipFile", fail_zip_container_open)
 
@@ -375,7 +374,7 @@ def test_scan_records_zip_mimetype_member_io_failure(
     original_open = identifier.zipfile.ZipFile.open
 
     def fail_mimetype_open(archive, member, *args, **kwargs):
-        if Path(archive.filename) == blocked and member == "mimetype":
+        if member == "mimetype":
             raise PermissionError("ZIP mimetype member read denied")
         return original_open(archive, member, *args, **kwargs)
 
@@ -393,3 +392,118 @@ def test_scan_records_zip_mimetype_member_io_failure(
     verified = verify_report(payload)
     assert verified["status"] == "VERIFIED"
     assert verified["error_count"] == 1
+
+
+def test_scan_rejects_posthash_zip_symlink_without_external_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import labvault_scout.identifier as identifier
+
+    source = tmp_path / "source"
+    source.mkdir()
+    target = source / "target.zip"
+    saved = tmp_path / "saved.zip"
+    outside = tmp_path / "outside.zip"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("original.txt", b"original")
+    with zipfile.ZipFile(outside, "w") as archive:
+        archive.writestr("outside.txt", b"outside")
+    original_bytes = target.read_bytes()
+    outside_bytes = outside.read_bytes()
+    trial = tmp_path / "symlink-trial"
+    try:
+        trial.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("File symlinks unavailable")
+    trial.unlink()
+
+    original_signature = cli.signature_from_head
+    original_path_open = Path.open
+    original_zipfile = identifier.zipfile.ZipFile
+    swapped = False
+    forbidden_reads = []
+
+    def swap_after_first_hash(head: bytes) -> str:
+        nonlocal swapped
+        signature = original_signature(head)
+        if signature == "ZIP" and not swapped:
+            target.rename(saved)
+            target.symlink_to(outside)
+            swapped = True
+        return signature
+
+    def guard_path_open(path: Path, *args, **kwargs):
+        if path == target and path.is_symlink():
+            forbidden_reads.append("Path.open")
+            raise PermissionError("Outside path read")
+        return original_path_open(path, *args, **kwargs)
+
+    def guard_zipfile(file, *args, **kwargs):
+        if isinstance(file, (str, os.PathLike)) and Path(file) == target and target.is_symlink():
+            forbidden_reads.append("ZipFile")
+            raise PermissionError("Outside path read")
+        return original_zipfile(file, *args, **kwargs)
+
+    monkeypatch.setattr(cli, "signature_from_head", swap_after_first_hash)
+    monkeypatch.setattr(Path, "open", guard_path_open)
+    monkeypatch.setattr(identifier.zipfile, "ZipFile", guard_zipfile)
+    output = tmp_path / "report"
+    assert cli.scan(source, output) == 0
+    assert swapped
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert payload["files"] == []
+    assert payload["errors"] == [{"path": "target.zip", "error": "FileChangedDuringScan"}]
+    assert forbidden_reads == []
+    assert saved.read_bytes() == original_bytes
+    assert outside.read_bytes() == outside_bytes
+
+
+def _posthash_fifo_scan_worker(source: str, target: str, saved: str, output: str) -> None:
+    original_signature = cli.signature_from_head
+    swapped = False
+
+    def swap_after_first_hash(head: bytes) -> str:
+        nonlocal swapped
+        signature = original_signature(head)
+        if signature == "ZIP" and not swapped:
+            Path(target).rename(saved)
+            os.mkfifo(target)
+            swapped = True
+        return signature
+
+    with patch.object(cli, "signature_from_head", swap_after_first_hash):
+        cli.scan(Path(source), Path(output))
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or not hasattr(os, "mkfifo") or "fork" not in mp.get_all_start_methods(),
+    reason="POSIX FIFO and fork required",
+)
+def test_scan_posthash_zip_fifo_swap_does_not_block(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    target = source / "target.zip"
+    saved = tmp_path / "saved.zip"
+    output = tmp_path / "report"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("original.txt", b"original")
+    original_bytes = target.read_bytes()
+
+    worker = mp.get_context("fork").Process(
+        target=_posthash_fifo_scan_worker,
+        args=(str(source), str(target), str(saved), str(output)),
+    )
+    worker.start()
+    worker.join(timeout=3.0)
+    if worker.is_alive():
+        worker.terminate()
+        worker.join(timeout=2.0)
+        if worker.is_alive():
+            worker.kill()
+            worker.join(timeout=2.0)
+        pytest.fail("ZIP scanner blocked on substituted FIFO")
+    assert worker.exitcode == 0
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert payload["files"] == []
+    assert payload["errors"] == [{"path": "target.zip", "error": "FileChangedDuringScan"}]
+    assert saved.read_bytes() == original_bytes

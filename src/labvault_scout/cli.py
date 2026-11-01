@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import re
 import stat as stat_module
@@ -34,6 +35,42 @@ def _file_changed_during_scan(before: stat_result, after: stat_result) -> bool:
     """Return True when stable file identity or metadata changed during hashing."""
     fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
     return any(getattr(before, field, None) != getattr(after, field, None) for field in fields)
+
+
+def _open_verified_regular_file(path: Path, expected_stat: stat_result):
+    """Open a regular file for inspection without following a changed path."""
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        try:
+            current_stat = path.lstat()
+        except OSError:
+            raise hashing_module.FileChangedDuringScan("File identity changed before inspection") from exc
+        if (
+            not stat_module.S_ISREG(current_stat.st_mode)
+            or hashing_module._file_identity_changed(expected_stat, current_stat)
+        ):
+            raise hashing_module.FileChangedDuringScan("File identity changed before inspection") from exc
+        raise
+    try:
+        opened_stat = os.fstat(fd)
+        if (
+            not stat_module.S_ISREG(opened_stat.st_mode)
+            or hashing_module._file_identity_changed(expected_stat, opened_stat)
+        ):
+            raise hashing_module.FileChangedDuringScan("File identity changed before inspection")
+        handle = os.fdopen(fd, "rb")
+        fd = -1
+        return handle
+    finally:
+        if fd != -1:
+            os.close(fd)
 
 
 def scan(root: Path, output: Path) -> int:
@@ -94,7 +131,8 @@ def scan(root: Path, output: Path) -> int:
             if not signature and path.suffix.lower() in {".h5", ".hdf5", ".mat"}:
                 signature = inspect_signature(path)
             if signature == "ZIP":
-                container_type = inspect_zip_container(path)
+                with _open_verified_regular_file(path, entry_stat) as stream:
+                    container_type = inspect_zip_container(path, stream=stream)
             elif signature == "OLE":
                 container_type = ole_container_from_header(header, stat.st_size)
             elif signature == "HDF5":
