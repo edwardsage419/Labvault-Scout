@@ -141,10 +141,11 @@ def fits_container_from_header(header: bytes, size: int) -> str:
     return "FITS primary HDU (SIMPLE=T)"
 
 
-def inspect_fits_container(path: Path) -> str:
+def inspect_fits_container(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Validate FITS header termination within a bounded number of header blocks."""
-    size = path.stat().st_size
-    with path.open("rb") as handle:
+    size = path.stat().st_size if stream is None else stream.seek(0, 2)
+    with (path.open("rb") if stream is None else nullcontext(stream)) as handle:
+        handle.seek(0)
         first_block = handle.read(FITS_BLOCK_SIZE)
         status = fits_container_from_header(first_block, size)
         if status != "FITS primary HDU (SIMPLE=T)":
@@ -264,10 +265,10 @@ def hdf5_container_from_header(header: bytes) -> str:
         return "Invalid HDF5 container"
 
 
-def inspect_hdf5_container(path: Path) -> str:
+def inspect_hdf5_container(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Validate HDF5 superblock evidence without parsing datasets."""
-    size = path.stat().st_size
-    with path.open("rb") as handle:
+    size = path.stat().st_size if stream is None else stream.seek(0, 2)
+    with (path.open("rb") if stream is None else nullcontext(stream)) as handle:
         offset = _find_hdf5_signature_offset(handle, size)
         if offset is None:
             return ""
@@ -392,12 +393,14 @@ def nifti1_container_from_header(header: bytes) -> str:
     return "Invalid NIfTI-1 magic"
 
 
-def inspect_gzip_nifti(path: Path) -> str:
+def inspect_gzip_nifti(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Inspect only the decompressed NIfTI-1 header inside a gzip stream."""
-    if inspect_signature(path) != "GZIP":
+    if inspect_signature(path, stream=stream) != "GZIP":
         return ""
     try:
-        with gzip.open(path, "rb") as handle:
+        if stream is not None:
+            stream.seek(0)
+        with (gzip.open(path, "rb") if stream is None else gzip.GzipFile(fileobj=stream, mode="rb")) as handle:
             header = handle.read(348)
         return nifti1_container_from_header(header)
     except (gzip.BadGzipFile, EOFError, zlib.error):

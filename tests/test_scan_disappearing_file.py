@@ -1,3 +1,4 @@
+import gzip
 import json
 import multiprocessing as mp
 import zipfile
@@ -269,21 +270,22 @@ def test_scan_records_hdf5_container_read_error_without_false_format_claim(
     (source / "healthy.csv").write_text("sample data", encoding="utf-8")
     output = tmp_path / "report"
 
-    original_open = Path.open
-    blocked_opens = 0
+    import labvault_scout.identifier as identifier
 
-    def deny_second_hdf5_open(path: Path, *args, **kwargs):
-        nonlocal blocked_opens
-        if path == blocked:
-            blocked_opens += 1
-            if blocked_opens == 2:
-                raise PermissionError("HDF5 superblock read denied")
-        return original_open(path, *args, **kwargs)
+    original_find = identifier._find_hdf5_signature_offset
+    signature_checks = 0
 
-    monkeypatch.setattr(Path, "open", deny_second_hdf5_open)
+    def deny_second_hdf5_check(handle, size):
+        nonlocal signature_checks
+        signature_checks += 1
+        if signature_checks == 2:
+            raise PermissionError("HDF5 superblock read denied")
+        return original_find(handle, size)
+
+    monkeypatch.setattr(identifier, "_find_hdf5_signature_offset", deny_second_hdf5_check)
 
     assert cli.scan(source, output) == 1
-    assert blocked_opens == 2
+    assert signature_checks == 2
 
     payload = load_scan_report(output / "scan.json")
     assert [row["path"] for row in payload["files"]] == ["healthy.csv"]
@@ -312,14 +314,14 @@ def test_scan_records_gzip_nifti_inspection_io_error_and_keeps_valid_report(
     (source / "healthy.csv").write_text("sample data", encoding="utf-8")
     output = tmp_path / "report"
 
-    original_open = identifier.gzip.open
+    original_gzipfile = identifier.gzip.GzipFile
 
-    def fail_gzip_open(path, *args, **kwargs):
-        if Path(path) == blocked:
+    def fail_gzip_stream(*args, **kwargs):
+        if kwargs.get("fileobj") is not None:
             raise PermissionError("GZIP content read denied")
-        return original_open(path, *args, **kwargs)
+        return original_gzipfile(*args, **kwargs)
 
-    monkeypatch.setattr(identifier.gzip, "open", fail_gzip_open)
+    monkeypatch.setattr(identifier.gzip, "GzipFile", fail_gzip_stream)
 
     assert cli.scan(source, output) == 1
     payload = load_scan_report(output / "scan.json")
@@ -507,3 +509,84 @@ def test_scan_posthash_zip_fifo_swap_does_not_block(tmp_path: Path) -> None:
     assert payload["files"] == []
     assert payload["errors"] == [{"path": "target.zip", "error": "FileChangedDuringScan"}]
     assert saved.read_bytes() == original_bytes
+
+
+def _br01_fits_header() -> bytes:
+    cards = [
+        b"SIMPLE  =                    T".ljust(80, b" "),
+        b"BITPIX  =                    8".ljust(80, b" "),
+        b"NAXIS   =                    0".ljust(80, b" "),
+        b"END".ljust(80, b" "),
+    ]
+    return b"".join(cards).ljust(2880, b" ")
+
+
+def _br01_gzip_nifti() -> bytes:
+    header = bytearray(348)
+    header[:4] = (348).to_bytes(4, "little")
+    header[344:348] = b"n+1\x00"
+    return gzip.compress(bytes(header), mtime=0)
+
+
+@pytest.mark.parametrize(
+    ("suffix", "contents"),
+    [
+        (".h5", b"U" * 512 + bytes.fromhex("894844460d0a1a0a") + bytes([2]) + bytes(64)),
+        (".fits", _br01_fits_header()),
+        (".nii.gz", _br01_gzip_nifti()),
+    ],
+    ids=["hdf5-userblock", "fits", "gzip-nifti"],
+)
+def test_scan_rejects_posthash_structural_symlink_without_external_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str, contents: bytes
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    target = source / ("target" + suffix)
+    target.write_bytes(contents)
+    saved = tmp_path / ("saved" + suffix)
+    outside = tmp_path / ("outside" + suffix)
+    outside.write_bytes(contents + b"outside marker")
+    original_bytes = target.read_bytes()
+    outside_bytes = outside.read_bytes()
+
+    probe = tmp_path / "symlink-probe"
+    try:
+        probe.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("File symlinks unavailable")
+    probe.unlink()
+
+    original_signature = cli.signature_from_head
+    original_path_open = Path.open
+    swapped = False
+    forbidden_reads = []
+
+    def swap_after_hash(head: bytes) -> str:
+        nonlocal swapped
+        signature = original_signature(head)
+        if not swapped:
+            target.rename(saved)
+            target.symlink_to(outside)
+            swapped = True
+        return signature
+
+    def guard_path_open(path: Path, *args, **kwargs):
+        if path == target and path.is_symlink():
+            forbidden_reads.append("Path.open")
+            raise PermissionError("Unverified outside read")
+        return original_path_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(cli, "signature_from_head", swap_after_hash)
+    monkeypatch.setattr(Path, "open", guard_path_open)
+    output = tmp_path / "report"
+    assert cli.scan(source, output) == 0
+    assert swapped
+    payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert payload["files"] == []
+    assert payload["errors"] == [
+        {"path": target.name, "error": "FileChangedDuringScan"}
+    ]
+    assert forbidden_reads == []
+    assert saved.read_bytes() == original_bytes
+    assert outside.read_bytes() == outside_bytes

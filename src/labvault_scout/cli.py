@@ -129,22 +129,28 @@ def scan(root: Path, output: Path) -> int:
                 continue
             signature = signature_from_head(header)
             if not signature and path.suffix.lower() in {".h5", ".hdf5", ".mat"}:
-                signature = inspect_signature(path)
+                with _open_verified_regular_file(path, entry_stat) as stream:
+                    signature = inspect_signature(path, stream=stream)
             if signature == "ZIP":
                 with _open_verified_regular_file(path, entry_stat) as stream:
                     container_type = inspect_zip_container(path, stream=stream)
             elif signature == "OLE":
                 container_type = ole_container_from_header(header, stat.st_size)
             elif signature == "HDF5":
-                container_type = hdf5_container_from_header(header) or inspect_hdf5_container(path)
+                container_type = hdf5_container_from_header(header)
+                if not container_type:
+                    with _open_verified_regular_file(path, entry_stat) as stream:
+                        container_type = inspect_hdf5_container(path, stream=stream)
             elif signature == "GZIP" and path.name.lower().endswith(".nii.gz"):
-                container_type = inspect_gzip_nifti(path)
+                with _open_verified_regular_file(path, entry_stat) as stream:
+                    container_type = inspect_gzip_nifti(path, stream=stream)
             elif signature == "NETCDF":
                 container_type = netcdf_container_from_header(header)
             elif signature == "TIFF":
                 container_type = validate_tiff_first_ifd_offset(header, tiff_container_from_header(header))
             elif signature == "FITS":
-                container_type = validate_fits_mandatory_value_indicators(header, inspect_fits_container(path))
+                with _open_verified_regular_file(path, entry_stat) as stream:
+                    container_type = validate_fits_mandatory_value_indicators(header, inspect_fits_container(path, stream=stream))
             elif signature == "MAT5":
                 container_type = matlab5_container_from_header(header)
             elif signature == "DICOM":
