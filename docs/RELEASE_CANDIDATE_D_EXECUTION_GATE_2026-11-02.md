@@ -62,10 +62,10 @@ Until it is executed, historical interoperability remains **UNVERIFIED**.
 
 | ID | Required decision or evidence | Current status |
 | --- | --- | --- |
-| D-C01 | Decide and document safe treatment of historical POSIX drive-prefix paths; preserve strict current validation. | OPEN, source-confirmed break |
-| D-C02 | Real v0.3.2 scan report from the stable executable passes development load and verify for normal, empty, and representative error-bearing cases. | UNVERIFIED; synthetic contract tests only |
-| D-C03 | Real stable report bundles and cross-version comparison are verified. | UNVERIFIED |
-| D-C04 | Real stable comparison and verification JSON are validated against development schemas. | UNVERIFIED |
+| D-C01 | Decide and document safe treatment of historical POSIX drive-prefix paths; preserve strict current validation. | CONFIRMED by actual stable CLI on POSIX; release disclosure decision OPEN |
+| D-C02 | Real v0.3.2 scan report from the stable executable passes development load and verify for normal, empty, and representative error-bearing cases. | PARTIAL PASS: actual normal and empty reports accepted on six CI jobs; error-bearing case OPEN |
+| D-C03 | Real stable report bundles and cross-version comparison are verified. | BOUNDED PASS: actual stable bundle and two stable scan reports verified/compared by development CLI on six CI jobs |
+| D-C04 | Real stable comparison and verification JSON are validated against development schemas. | BOUNDED PASS: actual stable outputs validated with Draft 2020-12 on six CI jobs |
 | D-C05 | Select distinct candidate version, update both package and runtime version, release notes, and compatibility disclosure. | OPEN, still 0.3.2 |
 | D-FREEZE | Freeze candidate SHA, recheck exact branch HEAD and six completed successful matrix jobs, inspect final diff and metadata. | OPEN |
 
@@ -86,3 +86,41 @@ is diagnosed and a full six-job rerun succeeds. A new reproducible integrity
 or source-safety blocker reopens the relevant bounded gate. Otherwise,
 avoid additional synthetic boundary enumeration and focus on D-C01 through
 D-FREEZE. No main changes, PR merges, or GitHub Releases are authorized.
+
+
+## 6. Actual stable executable interoperability result (2026-11-02 UTC)
+
+Execution source: \`tools/release_gate_v032_interop.py\` added at
+\`a6d2a5365603f805a4bcf7547035f720838b1ca4\`.
+Six-platform GitHub Actions run:
+https://github.com/edwardsage419/Labvault-Scout/actions/runs/41376047935
+completed with conclusion \`success\` and six successful matrix jobs.
+
+This CI gate exports actual stable \`4877a9a8c794ba7d78d229ef395ad7f9d38961c9\`
+\`src\` from local Git objects using \`git archive\`. It runs stable and
+development CLI executables in separate subprocesses on synthetic, temporary,
+read-only scanned sources. The test makes no network calls and leaves the
+repository and synthetic scanned sources unchanged.
+
+Observed acceptance coverage:
+
+* Stable \`--version\` identified \`0.3.2\`.
+* Stable normal and empty scan reports passed development \`verify --json\`.
+* Stable normal report bundle passed development \`verify-bundle --json\`.
+* Development \`compare\` accepted two actual stable-generated scan reports.
+* Actual stable \`comparison.json\` and stable \`verify --json\` output passed
+  the development Draft 2020-12 comparison and verification schemas using
+  \`jsonschema.Draft202012Validator\`.
+* On Linux and macOS, stable scanned a real POSIX filename
+  \`C:sample.csv\` and development rejected the resulting actual stable report
+  as \`INVALID\` with exit code 2. This confirms C-01 as an intentional
+  backward-compatibility break. Windows does not execute this POSIX-only case.
+* Synthetic source SHA-256, size, and modification timestamp were unchanged.
+
+Evidence limits: This CI run did not preserve per-report SHA-256 values in
+an uploaded artifact and did not produce a representative error-bearing
+stable report. Those omissions must remain explicit. The test does not
+establish full backward compatibility for all historical user reports.
+D-C02 stays open for the error-bearing case. D-C01 still requires release
+disclosure and a final versioning decision. D-C05 and D-FREEZE remain open.
+No release is authorized by this bounded CI success.
