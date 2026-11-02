@@ -63,7 +63,7 @@ Until it is executed, historical interoperability remains **UNVERIFIED**.
 | ID | Required decision or evidence | Current status |
 | --- | --- | --- |
 | D-C01 | Decide and document safe treatment of historical POSIX drive-prefix paths; preserve strict current validation. | CONFIRMED by actual stable CLI on POSIX; release disclosure decision OPEN |
-| D-C02 | Real v0.3.2 scan report from the stable executable passes development load and verify for normal, empty, and representative error-bearing cases. | PARTIAL PASS: actual normal and empty reports accepted on six CI jobs; error-bearing case OPEN |
+| D-C02 | Real v0.3.2 scan report from the stable executable passes development load and verify for normal, empty, and representative error-bearing cases. | BOUNDED PASS: actual normal and empty reports plus stable CLI error-bearing report with explicitly injected PermissionError accepted on six CI jobs; genuine OS permission failure remains untested |
 | D-C03 | Real stable report bundles and cross-version comparison are verified. | BOUNDED PASS: actual stable bundle and two stable scan reports verified/compared by development CLI on six CI jobs |
 | D-C04 | Real stable comparison and verification JSON are validated against development schemas. | BOUNDED PASS: actual stable outputs validated with Draft 2020-12 on six CI jobs |
 | D-C05 | Select distinct candidate version, update both package and runtime version, release notes, and compatibility disclosure. | OPEN, still 0.3.2 |
@@ -124,3 +124,41 @@ establish full backward compatibility for all historical user reports.
 D-C02 stays open for the error-bearing case. D-C01 still requires release
 disclosure and a final versioning decision. D-C05 and D-FREEZE remain open.
 No release is authorized by this bounded CI success.
+
+## 7. Actual stable error-bearing report gate (2026-11-02 UTC)
+
+Commit: `2acc1548c1dfaa3d1941061e801f8717402a191b`.
+Full six-job CI: https://github.com/edwardsage419/Labvault-Scout/actions/runs/41381961337
+Status: **SUCCESS** on Windows, Linux, and macOS, Python 3.10 and 3.12.
+
+The gate executes the actual stable v0.3.2 CLI in an isolated subprocess
+with a deterministic `PermissionError` injected at its
+`sha256_with_head` call for `blocked.csv`. The synthetic source files are
+unchanged. This is a controlled fault-injection test of stable error handling,
+not evidence that the runner experienced an actual filesystem permission denial.
+
+The resulting stable report contains one healthy file and one error
+(`blocked.csv`, `PermissionError`). Both stable and development
+`verify --json` report `VERIFIED` with one scan error. Development
+`verify-bundle --json` accepts the stable bundle. The stable verification
+JSON passes the development Draft 2020-12 schema. Pre/post SHA-256, file
+sizes and modification timestamps match for both scanned source files.
+
+The gate now prints a machine-readable JSON line containing the stable and
+development commit SHAs, platform, Python version, source-unchanged flag,
+error count, and SHA-256 hashes for normal, empty and injected-error
+`scan.json` reports. These values are retained in individual CI job logs,
+not in a separate uploaded artifact. For example, Ubuntu Python 3.12 logged
+an injected-error report SHA-256 of
+`e63f3e287b9792c58e2f1d0e03f251f05637c5961b501010b58ec96c7aace604`.
+Report hashes can differ across runs due to generated report metadata.
+
+**D-C02 = BOUNDED PASS** for the tested real stable CLI output paths,
+including a controlled read-error path. This does not establish every
+historical report or every real OS error case is compatible.
+
+**D-C01 remains OPEN** for release disclosure of the confirmed POSIX
+`C:sample.csv` incompatibility. **D-C05 remains OPEN** for owner-reviewed
+candidate version selection, synchronized metadata and release notes.
+**D-FREEZE remains OPEN** pending the final candidate commit and its own
+six-job CI. Overall release status remains **NOT READY**.
