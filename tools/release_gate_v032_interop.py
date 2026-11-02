@@ -55,9 +55,24 @@ def snapshot(path: Path) -> tuple[str, int, int]:
     return hashlib.sha256(path.read_bytes()).hexdigest(), s.st_size, s.st_mtime_ns
 
 
-def cli(src: Path, cwd: Path, *args: str, expected: int = 0) -> str:
+def cli(src: Path, cwd: Path, *args: str, expected: int = 0,
+        inject_read_error: bool = False) -> str:
     env = dict(os.environ, PYTHONPATH=str(src / "src"), PYTHONDONTWRITEBYTECODE="1")
-    return command([sys.executable, "-c", "from labvault_scout.cli import main; main()", *map(str, args)],
+    script = "from labvault_scout.cli import main; main()"
+    if inject_read_error:
+        # Fault injection runs inside the actual stable CLI subprocess.
+        # Source files remain untouched; the simulated OS error is explicit.
+        script = (
+            "from labvault_scout import cli as app\n"
+            "original = app.sha256_with_head\n"
+            "def injected(path):\n"
+            "    if path.name == 'blocked.csv':\n"
+            "        raise PermissionError('injected read failure')\n"
+            "    return original(path)\n"
+            "app.sha256_with_head = injected\n"
+            "app.main()\n"
+        )
+    return command([sys.executable, "-c", script, *map(str, args)],
                    cwd=cwd, env=env, expected=expected)
 
 
@@ -109,6 +124,49 @@ def run() -> None:
         validate(stable_comparison / "comparison.json", schemas / "comparison-1.schema.json")
         validate(stable_verify_json, schemas / "verification-1.schema.json")
         assert snapshot(csv) == original and snapshot(added) == added_original
+
+        # Actual stable CLI creates an error-bearing report under deterministic
+        # injected read failure. This is a simulated OS error, not a real permission
+        # denial; the scanner, report writer, and verifier are the real v0.3.2 code.
+        error_source = work / "error-input"
+        error_source.mkdir()
+        healthy = error_source / "healthy.csv"
+        blocked = error_source / "blocked.csv"
+        healthy.write_bytes(b"a,b\n1,2\n")
+        blocked.write_bytes(b"a,b\n3,4\n")
+        healthy_original, blocked_original = snapshot(healthy), snapshot(blocked)
+        error_report_dir = work / "error-report"
+        cli(stable, work, "scan", str(error_source), "-o", str(error_report_dir),
+            inject_read_error=True)
+        error_report = error_report_dir / "scan.json"
+        error_payload = json.loads(error_report.read_text(encoding="utf-8"))
+        assert [row["path"] for row in error_payload["files"]] == ["healthy.csv"]
+        assert error_payload["errors"] == [{"path": "blocked.csv", "error": "PermissionError"}]
+        assert error_payload["summary"]["error_count"] == 1
+        stable_error_verification = json.loads(cli(stable, work, "verify", str(error_report), "--json"))
+        dev_error_verification = json.loads(cli(dev, work, "verify", str(error_report), "--json"))
+        assert stable_error_verification["status"] == "VERIFIED"
+        assert dev_error_verification["status"] == "VERIFIED"
+        assert dev_error_verification["error_count"] == 1
+        validate(json.dumps(stable_error_verification), schemas / "verification-1.schema.json")
+        assert json.loads(cli(dev, work, "verify-bundle", str(error_report_dir), "--json"))["status"] == "VERIFIED"
+        assert snapshot(healthy) == healthy_original and snapshot(blocked) == blocked_original
+        print("D-C02: actual stable CLI error-bearing report accepted by development (injected PermissionError)")
+        print(json.dumps({
+            "gate": "v0.3.2-interop",
+            "stable_sha": STABLE_SHA,
+            "development_sha": command(["git", "-C", str(REPO), "rev-parse", "HEAD"]).strip(),
+            "python": sys.version.split()[0],
+            "platform": sys.platform,
+            "report_sha256": {
+                "normal": hashlib.sha256(stable_report.read_bytes()).hexdigest(),
+                "empty": hashlib.sha256((empty_report / "scan.json").read_bytes()).hexdigest(),
+                "error_injected": hashlib.sha256(error_report.read_bytes()).hexdigest(),
+            },
+            "error_count": error_payload["summary"]["error_count"],
+            "source_snapshots_unchanged": True,
+            "error_mode": "injected PermissionError during stable SHA256 read",
+        }, sort_keys=True))
 
         if os.name == "posix":
             colon = work / "colon"
