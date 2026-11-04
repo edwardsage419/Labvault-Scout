@@ -22,7 +22,7 @@ Do not disable or bypass the candidate's path validation. Preserve historical re
 
 ### Evidence and limits
 
-The development branch's previous six-job acceptance baseline is commit `5e8ccdc3ba7508e0272a1b43734df11d2b998d23`, GitHub Actions run `41382188397`. The candidate version change itself requires a **new** six-job CI run and a matching final HEAD check before it can pass release-candidate freeze. Current evidence supports bounded regression and interoperability claims only. No complete compatibility guarantee, scientific-format certification, or release approval is implied.
+The development branch's previous six-job acceptance baseline is commit `5e8ccdc3ba7508e0272a1b43734df11d2b998d23`, GitHub Actions run `41382188397`. The candidate metadata commit `2fc1ee5f57d2855181d504a6fb8829f856803cca` passed all six CI jobs in run `41386826567`. The subsequent D-C05 evidence addendum commit `3ca369ea5f7f17af6caab29992fce869aa359aae` passed all six jobs in run `41884372924`, attempt 2 (the first attempt had one cancelled macOS job before test execution). These are bounded CI records. A final HEAD check and D-FREEZE review remain required before release-candidate acceptance. Current evidence supports bounded regression and interoperability claims only. No complete compatibility guarantee, scientific-format certification, or release approval is implied.
 
 ## 中文
 
@@ -44,6 +44,6 @@ The development branch's previous six-job acceptance baseline is commit `5e8ccdc
 
 ### 证据边界与发布门槛
 
-候选版本元数据修改前的六平台基线为提交 `5e8ccdc3ba7508e0272a1b43734df11d2b998d23`，CI `41382188397`。候选版本修改本身必须重新通过六项 CI，并复核远程 HEAD，才可进入最终冻结验收。现有结论属于有界回归和互操作验证，尚无完整兼容性保证，也未获得发布授权。
+候选版本元数据修改前的六平台基线为提交 `5e8ccdc3ba7508e0272a1b43734df11d2b998d23`，CI `41382188397`。候选版本元数据提交 `2fc1ee5f57d2855181d504a6fb8829f856803cca` 已通过 CI `41386826567` 的六项任务。后续 D-C05 证据归档提交 `3ca369ea5f7f17af6caab29992fce869aa359aae` 已通过 CI `41884372924` 第二次尝试的六项任务（第一次尝试有一项 macOS 任务在执行测试前取消）。最终冻结仍需复核最新 HEAD 和 D-FREEZE 差异验收。现有结论属于有界回归和互操作验证，尚无完整兼容性保证，也未获得发布授权。
 
 **No merge to main, tag, PR merge, or Release is authorized. / 未授权修改 main、合并 PR、创建标签或 Release。**
