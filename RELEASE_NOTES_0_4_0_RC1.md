@@ -1,6 +1,6 @@
 # LabVault Scout 0.4.0rc1 candidate notes / 候选版说明
 
-Status: **development candidate only**. The published stable release remains **v0.3.2**. This file and candidate metadata do not authorize merging, tagging, publishing, or creating a GitHub Release.
+Status: **v0.4.0rc1 GitHub prerelease published on 2026-11-07**. The latest stable release remains **v0.3.2**. Publication of this candidate does not authorize a final v0.4.0 stable release.
 
 ## English
 
@@ -22,7 +22,7 @@ Do not disable or bypass the candidate's path validation. Preserve historical re
 
 ### Evidence and limits
 
-The development branch's previous six-job acceptance baseline is commit `5e8ccdc3ba7508e0272a1b43734df11d2b998d23`, GitHub Actions run `41382188397`. The candidate metadata commit `2fc1ee5f57d2855181d504a6fb8829f856803cca` passed all six CI jobs in run `41386826567`. The subsequent D-C05 evidence addendum commit `3ca369ea5f7f17af6caab29992fce869aa359aae` passed all six jobs in run `41884372924`, attempt 2 (the first attempt had one cancelled macOS job before test execution). These are bounded CI records. A final HEAD check and D-FREEZE review remain required before release-candidate acceptance. Current evidence supports bounded regression and interoperability claims only. No complete compatibility guarantee, scientific-format certification, or release approval is implied.
+Historical prepublication gates included six-job runs `41382188397`, `41386826567`, and `41884372924` (attempt 2). The final D-FREEZE review and owner acceptance of D-C01 were subsequently completed. The candidate was merged to `main` at `655a3b81834f13b83164951020d3c1e66db4491a`, and [run 42334584791](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42334584791) passed all six matrix jobs. The public [v0.4.0rc1 prerelease](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0rc1) has a wheel and SHA256 file. Actual downloads of that wheel passed SHA256 checking, offline installation, and CLI scans on Windows, Ubuntu and macOS with Python 3.10 and 3.12 in [run 42345772714](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42345772714). These are bounded regression and distribution checks, not universal backward-compatibility evidence, scientific-format certification, or independent real-user acceptance.
 
 ## 中文
 
@@ -44,6 +44,6 @@ The development branch's previous six-job acceptance baseline is commit `5e8ccdc
 
 ### 证据边界与发布门槛
 
-候选版本元数据修改前的六平台基线为提交 `5e8ccdc3ba7508e0272a1b43734df11d2b998d23`，CI `41382188397`。候选版本元数据提交 `2fc1ee5f57d2855181d504a6fb8829f856803cca` 已通过 CI `41386826567` 的六项任务。后续 D-C05 证据归档提交 `3ca369ea5f7f17af6caab29992fce869aa359aae` 已通过 CI `41884372924` 第二次尝试的六项任务（第一次尝试有一项 macOS 任务在执行测试前取消）。最终冻结仍需复核最新 HEAD 和 D-FREEZE 差异验收。现有结论属于有界回归和互操作验证，尚无完整兼容性保证，也未获得发布授权。
+此前候选版本的六平台 CI 证据包括 `41382188397`、`41386826567` 和 `41884372924`（第二次尝试）。之后已完成 D-C01 所有者接受与 D-FREEZE 冻结审查。候选代码合并到 `main` 的 SHA 为 `655a3b81834f13b83164951020d3c1e66db4491a`，对应 [CI 42334584791](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42334584791) 六项全绿。公开的 [v0.4.0rc1 预发布版](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0rc1) 已附带 wheel 和 SHA256 文件；从公开 Release 下载 wheel 后，在 Windows、Ubuntu、macOS 的 Python 3.10 与 3.12 上完成哈希核验、离线安装及 CLI 扫描，[CI 42345772714](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42345772714) 六项全绿。上述证据属于有界回归与发行物测试，不能证明全部历史兼容性、所有科研格式准确性或独立真实用户验收。
 
-**No merge to main, tag, PR merge, or Release is authorized. / 未授权修改 main、合并 PR、创建标签或 Release。**
+**RC1 is published; a final stable v0.4.0 release remains subject to separate technical review and owner authorization. / RC1 已作为预发布版公开，最终 v0.4.0 稳定版仍需单独技术审查与所有者授权。**
