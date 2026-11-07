@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.0 (stable release pending)
+
+**PREPUBLICATION / 正式版尚未发布.** The stable v0.4.0 release is under review. The latest published stable release remains v0.3.2. The v0.4.0rc1 prerelease is available for validation.
+
+**正式版准备阶段。** v0.4.0 尚未公开发布；最新稳定正式版仍是 v0.3.2，v0.4.0rc1 预发布版可供验证。
+
+### Proposed stable contents / 拟发布内容
+
+* Retain the security and preservation-risk hardening validated in v0.4.0rc1: bounded ZIP/ZIP64 structural checks, file identity/race protection, stricter malformed scan/compare/bundle validation, and conservative scientific-format evidence.
+* Preserve the documented D-C01 path compatibility change for certain older POSIX schema-1 reports, including `C:sample.csv`; retain strict path verification and rescan safely renamed copies when necessary.
+* Align package version and runtime version at `0.4.0`. The stable preparation changes have not modified scanner production logic since the RC1 code freeze.
+
+### Evidence and outstanding gates / 证据与剩余门槛
+
+* The [public v0.4.0rc1 wheel](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0rc1) passed publicly downloaded wheel checksum verification, offline installation, and CLI smoke tests across Windows, Ubuntu, and macOS × Python 3.10 and 3.12 ([run 42345772714](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42345772714)).
+* The `0.4.0` package/runtime version commit `0b5e6774ed2aeb2530f563960d385403021c8b4b` passed all six CI matrix jobs ([run 42357754325](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42357754325)).
+* Stable release still requires final versioned artifact checks, exact final HEAD review and six-job CI, and separate authorization for merging, tagging and publishing. Real independent end-user RC acceptance remains UNKNOWN.
+
+正式发布仍需完成精确最终提交的发行物验收、六平台 CI 与独立授权；外部真实用户的 RC 验收证据目前为 UNKNOWN。详见 [v0.4.0 正式版发布说明草稿](RELEASE_NOTES_0_4_0.md)。
+
 ## 0.4.0rc1 (GitHub prerelease, published 2026-11-07)
 
 This candidate was published as a GitHub prerelease on 2026-11-07. The latest published stable release remains v0.3.2. Publication of the prerelease does not authorize the final v0.4.0 release.
