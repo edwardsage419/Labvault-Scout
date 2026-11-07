@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.0rc1 (unreleased candidate)
+
+This is a development candidate. The latest published stable release remains v0.3.2. No release approval is implied.
+
+### Changed
+
+* Tightened ZIP and ZIP64 bounded structural validation, including malformed central directory and extra-field metadata.
+* Strengthened file identity checks across hashing and read-only format identification for selected scientific containers.
+* Tightened schema-1 report validation and packaged JSON Schema constraints.
+
+### Testing
+
+* Expanded deterministic malformed-input, filesystem-error, scan, comparison, report-verification, and bundle regressions.
+* Added pinned offline CSV and TSV public sample regressions.
+* Exercised actual stable v0.3.2 outputs against candidate verification, bundle, comparison, and schemas on Windows, Linux, and macOS with Python 3.10 and 3.12.
+
+### Known compatibility change
+
+* Historical schema-1 reports generated on POSIX with drive-prefixed relative names such as `C:sample.csv` can be rejected by the candidate. This preserves strict path validation. Keep historical reports intact; rescan a separately named copy when a new candidate report is needed. Other reports violating tightened validation may also be rejected.
+
+See [candidate release notes](RELEASE_NOTES_0_4_0_RC1.md) for precise evidence boundaries and migration guidance.
+
 ## 0.3.2 — 2026-10-05
 
 ### Fixed
