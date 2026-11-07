@@ -9,10 +9,13 @@ from typing import Callable, Iterator
 def _is_within(path: Path, excluded: Path | None) -> bool:
     if excluded is None:
         return False
+    # A known report subtree remains excluded even if resolving it fails.
+    if path.is_relative_to(excluded):
+        return True
     try:
         path.resolve().relative_to(excluded)
         return True
-    except (ValueError, OSError):
+    except ValueError:
         return False
 
 
@@ -34,11 +37,16 @@ def iter_files(
 
     for current, dirs, files in os.walk(root, followlinks=False, onerror=report_walk_error):
         current_path = Path(current)
-        dirs[:] = sorted(
-            name for name in dirs
-            if not (current_path / name).is_symlink()
-            and not _is_within(current_path / name, excluded)
-        )
+        safe_dirs = []
+        for name in sorted(dirs):
+            directory = current_path / name
+            try:
+                if not directory.is_symlink() and not _is_within(directory, excluded):
+                    safe_dirs.append(name)
+            except OSError as exc:
+                if on_error is not None:
+                    on_error(directory, exc)
+        dirs[:] = safe_dirs
         for name in sorted(files):
             path = current_path / name
             try:

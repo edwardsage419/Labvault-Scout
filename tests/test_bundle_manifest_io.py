@@ -1,0 +1,451 @@
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from labvault_scout.bundle import load_bundle_manifest
+
+
+def test_load_bundle_manifest_wraps_symlink_check_io_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    original_is_symlink = Path.is_symlink
+
+    def unreadable_is_symlink(path: Path) -> bool:
+        if path == manifest:
+            raise PermissionError("denied")
+        return original_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", unreadable_is_symlink)
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_load_bundle_manifest_rejects_symlink_swap_after_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from labvault_scout.bundle import BUNDLE_FILES, manifest_payload_sha256
+
+    manifest = tmp_path / "bundle_manifest.json"
+    external = tmp_path / "external.json"
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.2"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    data = json.dumps(payload)
+    manifest.write_text(data, encoding="utf-8")
+    external.write_text(data, encoding="utf-8")
+
+    original_is_symlink = Path.is_symlink
+    swapped = False
+
+    def swap_after_check(path: Path) -> bool:
+        nonlocal swapped
+        result = original_is_symlink(path)
+        if path == manifest and not swapped:
+            assert result is False
+            manifest.unlink()
+            try:
+                manifest.symlink_to(external)
+            except (OSError, NotImplementedError):
+                pytest.skip("symlink creation is unavailable")
+            swapped = True
+        return result
+
+    monkeypatch.setattr(Path, "is_symlink", swap_after_check)
+
+    with pytest.raises(ValueError, match="Bundle manifest"):
+        load_bundle_manifest(tmp_path)
+
+    assert swapped
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows st_ctime tracks creation time")
+def test_load_bundle_manifest_rejects_same_size_change_with_restored_mtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from labvault_scout.bundle import BUNDLE_FILES, manifest_payload_sha256
+
+    manifest = tmp_path / "bundle_manifest.json"
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.2"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    original_lstat = Path.lstat
+    manifest_checks = 0
+    changed = False
+
+    def changing_lstat(path: Path, *args, **kwargs):
+        nonlocal manifest_checks, changed
+        if path == manifest:
+            manifest_checks += 1
+            # is_symlink(), pre-read lstat(), then post-read lstat().
+            if manifest_checks == 3:
+                before = original_lstat(path, *args, **kwargs)
+                content = manifest.read_bytes()
+                replaced = content.replace(
+                    b'"algorithm": "sha256"',
+                    b'"algorithm": "sha25x"',
+                )
+                assert len(replaced) == len(content)
+                assert replaced != content
+                manifest.write_bytes(replaced)
+                os.utime(manifest, ns=(before.st_atime_ns, before.st_mtime_ns))
+                if original_lstat(path, *args, **kwargs).st_ctime_ns == before.st_ctime_ns:
+                    pytest.skip("File system cannot distinguish metadata changes")
+                changed = True
+        return original_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", changing_lstat)
+
+    with pytest.raises(ValueError, match="Bundle manifest changed during read"):
+        from labvault_scout.bundle import load_bundle_manifest
+
+        load_bundle_manifest(tmp_path)
+
+    assert changed
+
+
+def test_load_bundle_manifest_wraps_json_parser_recursion_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_text("[" * 4000 + "0" + "]" * 4000, encoding="utf-8")
+
+    def raise_recursion_error(
+        text: str, *, object_pairs_hook: object = None,
+        parse_constant: object = None, parse_float: object = None,
+        parse_int: object = None
+    ) -> object:
+        assert text.startswith("[" * 4000)
+        assert callable(object_pairs_hook)
+        assert callable(parse_constant)
+        assert callable(parse_float)
+        assert callable(parse_int)
+        raise RecursionError("JSON nesting exceeds parser recursion limit")
+
+    monkeypatch.setattr(json, "loads", raise_recursion_error)
+    with pytest.raises(ValueError, match="Cannot read bundle manifest"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("kind", ["array", "object"])
+def test_load_bundle_manifest_rejects_real_excessive_json_nesting(
+    tmp_path: Path, kind: str,
+) -> None:
+    # Exercise the actual JSON parser instead of injecting RecursionError.
+    depth = 12000
+    if kind == "array":
+        nested = "[" * depth + "0" + "]" * depth
+    else:
+        nested = '{"nested":' * depth + "0" + "}" * depth
+    manifest_text = (
+        '{"schema_version":"1","tool":{"name":"LabVault Scout",'
+        '"version":"0.3.2"},"algorithm":"sha256","files":'
+        + nested
+        + ',"manifest_sha256":"'
+        + "0" * 64
+        + '"}'
+    )
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_text(manifest_text, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest") as exc_info:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(exc_info.value.__cause__, RecursionError)
+
+
+def test_load_bundle_manifest_wraps_excessive_integer_digits(tmp_path: Path) -> None:
+    number = "9" * 5000
+    try:
+        json.loads(number)
+    except ValueError:
+        pass
+    else:
+        pytest.skip("JSON parser does not enforce an integer digit limit")
+
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_text(number, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_load_bundle_manifest_rejects_nonstandard_json_constant(
+    tmp_path: Path, constant: str
+) -> None:
+    from labvault_scout.bundle import BUNDLE_FILES, manifest_payload_sha256
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.2"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    encoded = json.dumps(payload)
+    assert '"size": 0' in encoded
+    malformed = encoded.replace('"size": 0', f'"size": {constant}', 1)
+    (tmp_path / "bundle_manifest.json").write_text(malformed, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest") as exc_info:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert f"Non-standard bundle manifest JSON constant: {constant}" in str(
+        exc_info.value.__cause__
+    )
+
+
+@pytest.mark.parametrize("number", ["1e999", "-1e999"])
+def test_load_bundle_manifest_rejects_float_overflow(
+    tmp_path: Path, number: str
+) -> None:
+    from labvault_scout.bundle import BUNDLE_FILES, manifest_payload_sha256
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.2"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    encoded = json.dumps(payload)
+    assert '"size": 0' in encoded
+    malformed = encoded.replace('"size": 0', f'"size": {number}', 1)
+    (tmp_path / "bundle_manifest.json").write_text(malformed, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest") as exc_info:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "Bundle manifest JSON number exceeds floating-point range" in str(
+        exc_info.value.__cause__
+    )
+
+
+@pytest.mark.parametrize("number", ["1e-999", "-1e-999", "1E-999"])
+def test_load_bundle_manifest_rejects_float_underflow(
+    tmp_path: Path, number: str
+) -> None:
+    from labvault_scout.bundle import BUNDLE_FILES, manifest_payload_sha256
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.2"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    encoded = json.dumps(payload)
+    assert '"size": 0' in encoded
+    malformed = encoded.replace('"size": 0', f'"size": {number}', 1)
+    (tmp_path / "bundle_manifest.json").write_text(malformed, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest") as exc_info:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "Bundle manifest JSON number underflows floating-point range" in str(
+        exc_info.value.__cause__
+    )
+
+
+def test_load_bundle_manifest_does_not_classify_exact_float_zero_as_underflow(
+    tmp_path: Path,
+) -> None:
+    from labvault_scout.bundle import BUNDLE_FILES, manifest_payload_sha256
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.3.2"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in BUNDLE_FILES
+        ],
+    }
+    payload["files"][0]["size"] = 0.0
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    encoded = json.dumps(payload)
+    assert '"size": 0.0' in encoded
+    (tmp_path / "bundle_manifest.json").write_text(
+        encoded.replace('"size": 0.0', '"size": 0e-999', 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest size"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_load_bundle_manifest_preserves_stream_setup_error_during_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, close_fails: bool,
+) -> None:
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    opened_fds: list[int] = []
+    original_close = os.close
+
+    def fail_fdopen(fd: int, *args, **kwargs):
+        opened_fds.append(fd)
+        raise ValueError("synthetic manifest stream setup failure")
+
+    def close_descriptor(fd: int) -> None:
+        original_close(fd)
+        if close_fails and opened_fds and fd == opened_fds[0]:
+            raise OSError(5, "synthetic manifest descriptor close failure")
+
+    import labvault_scout.bundle as bundle
+
+    with monkeypatch.context() as patch:
+        patch.setattr(bundle.os, "fdopen", fail_fdopen)
+        patch.setattr(bundle.os, "close", close_descriptor)
+        with pytest.raises(ValueError, match="synthetic manifest stream setup failure") as caught:
+            load_bundle_manifest(tmp_path)
+
+    assert len(opened_fds) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened_fds[0])
+    if close_fails:
+        assert isinstance(caught.value.__cause__, OSError)
+        assert "synthetic manifest descriptor close failure" in str(caught.value.__cause__)
+    else:
+        assert caught.value.__cause__ is None
+    assert manifest.read_text(encoding="utf-8") == "{}"
+
+
+@pytest.mark.parametrize("version", ["0.3.2", "é"])
+def test_load_bundle_manifest_rejects_short_read_with_stable_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str,
+) -> None:
+    import labvault_scout.bundle as bundle
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": version},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in bundle.BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = bundle.manifest_payload_sha256(payload)
+    text = json.dumps(payload, ensure_ascii=False)
+    encoded = text.encode("utf-8")
+    manifest = tmp_path / bundle.BUNDLE_MANIFEST_NAME
+    original = encoded + b" " * 24
+    manifest.write_bytes(original)
+
+    original_fdopen = os.fdopen
+    streams = []
+
+    class ShortReadStream:
+        def __init__(self, stream, limit: int):
+            self.stream = stream
+            self.limit = limit
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def fileno(self):
+            return self.stream.fileno()
+
+        def read(self, size=-1):
+            return self.stream.read(min(size, self.limit))
+
+    def short_fdopen(fd, mode, *args, **kwargs):
+        limit = len(encoded) if "b" in mode else len(text)
+        wrapped = ShortReadStream(original_fdopen(fd, mode, *args, **kwargs), limit)
+        streams.append(wrapped)
+        return wrapped
+
+    with monkeypatch.context() as patch:
+        patch.setattr(bundle.os, "fdopen", short_fdopen)
+        with pytest.raises(ValueError, match="Bundle manifest incomplete read"):
+            load_bundle_manifest(tmp_path)
+
+    assert len(streams) == 1
+    assert streams[0].stream.closed
+    assert manifest.read_bytes() == original
+
+
+def test_load_bundle_manifest_accepts_complete_utf8_crlf_stream(tmp_path: Path) -> None:
+    import labvault_scout.bundle as bundle
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "é"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in bundle.BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = bundle.manifest_payload_sha256(payload)
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8") + b"\r\n\t "
+    (tmp_path / bundle.BUNDLE_MANIFEST_NAME).write_bytes(data)
+
+    assert load_bundle_manifest(tmp_path) == payload
+
+
+def test_load_bundle_manifest_classifies_path_disappearance_after_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = tmp_path / "bundle_manifest.json"
+    manifest.write_bytes(b"{}")
+    original_lstat = Path.lstat
+    manifest_checks = 0
+
+    def disappearing_lstat(path: Path, *args, **kwargs):
+        nonlocal manifest_checks
+        if path == manifest:
+            manifest_checks += 1
+            # Symlink check, pre-read identity, then post-read identity.
+            if manifest_checks == 3:
+                raise FileNotFoundError(
+                    2, "synthetic manifest path disappearance", str(path)
+                )
+        return original_lstat(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "lstat", disappearing_lstat)
+        with pytest.raises(
+            ValueError, match="^Bundle manifest changed during read$"
+        ) as caught:
+            load_bundle_manifest(tmp_path)
+
+    assert manifest_checks == 3
+    assert isinstance(caught.value.__cause__, FileNotFoundError)
+    assert manifest.read_bytes() == b"{}"

@@ -3,12 +3,14 @@ from __future__ import annotations
 import csv
 import html
 import json
+import math
 import re
+from decimal import Decimal
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
 
 from . import __version__
-from .report import FIELDS, inventory_sha256, report_payload_sha256
+from .report import FIELDS, _safe_csv_row, inventory_sha256, report_payload_sha256
 from .safeio import atomic_text_writer, atomic_write_text
 
 COMPARISON_SCHEMA_VERSION = "1"
@@ -17,6 +19,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SCHEMA1_RISKS = {"SAFE", "WATCH", "RESCUE", "UNKNOWN"}
 SCHEMA1_CONFIDENCE = {"LOW", "MEDIUM", "HIGH"}
 SCHEMA1_PRIORITY = {"LOW", "MEDIUM", "HIGH"}
+MAX_EXACT_LEGACY_FLOAT_INT = (1 << 53) - 1
 ASSESSMENT_FIELDS = (
     "format",
     "signature",
@@ -56,9 +59,20 @@ CSV_FIELDS = (
 )
 
 
+def _safe_scan_json_diagnostic_text(value: str) -> str:
+    """Escape invalid Unicode in untrusted JSON diagnostics."""
+    return value.encode("utf-8", errors="backslashreplace").decode("utf-8")
+
+
 def _validate_report_path(value: object, *, allow_root: bool = False) -> str:
     if not isinstance(value, str) or not value or "\x00" in value:
         raise ValueError("Report path must be a non-empty string")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("Report path contains invalid Unicode") from exc
+    if re.match(r"^[A-Za-z]:", value):
+        raise ValueError(f"Report path is not canonical POSIX form: {value}")
     path = PurePosixPath(value)
     if path.is_absolute() or ".." in path.parts:
         raise ValueError(f"Report path must be relative and must not traverse parents: {value}")
@@ -77,7 +91,7 @@ def _validate_schema1_payload(payload: dict) -> None:
     if missing_top:
         raise ValueError(f"Schema 1 report is missing top-level fields: {', '.join(missing_top)}")
     if extra_top:
-        raise ValueError(f"Schema 1 report has unexpected top-level fields: {', '.join(extra_top)}")
+        raise ValueError(f"Schema 1 report has unexpected top-level fields: {', '.join(_safe_scan_json_diagnostic_text(field) for field in extra_top)}")
 
     tool = payload["tool"]
     if (
@@ -88,6 +102,10 @@ def _validate_schema1_payload(payload: dict) -> None:
         or not tool["version"]
     ):
         raise ValueError("Schema 1 report has invalid tool metadata")
+    try:
+        tool["version"].encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("Schema 1 report contains invalid Unicode in tool.version") from exc
 
     provenance = payload["provenance"]
     required_provenance = {"hash_algorithm", "path_style", "rules_sha256", "rules_count", "source_access"}
@@ -122,12 +140,18 @@ def _validate_schema1_payload(payload: dict) -> None:
             raise ValueError(f"Schema 1 report has invalid summary {field}")
     if not isinstance(summary["inventory_sha256"], str) or not SHA256_RE.fullmatch(summary["inventory_sha256"]):
         raise ValueError("Schema 1 report has invalid inventory_sha256")
-    for field in ("risk_counts", "priority_counts"):
+    for field, allowed in (("risk_counts", SCHEMA1_RISKS), ("priority_counts", SCHEMA1_PRIORITY)):
         counts = summary[field]
         if not isinstance(counts, dict):
             raise ValueError(f"Schema 1 report has invalid summary {field}")
         for key, value in counts.items():
-            if not isinstance(key, str) or not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            if (
+                not isinstance(key, str)
+                or key not in allowed
+                or not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < 1
+            ):
                 raise ValueError(f"Schema 1 report has invalid summary {field}")
 
     if not isinstance(payload["files"], list):
@@ -139,6 +163,7 @@ def _validate_schema1_payload(payload: dict) -> None:
 
     required_file_fields = set(FIELDS)
     string_fields = required_file_fields - {"size", "priority_score"}
+    seen_file_paths: set[str] = set()
     for row in payload["files"]:
         if not isinstance(row, dict):
             raise ValueError("Schema 1 report contains a non-object file row")
@@ -148,8 +173,11 @@ def _validate_schema1_payload(payload: dict) -> None:
         if missing:
             raise ValueError(f"Schema 1 file row is missing fields: {', '.join(missing)}")
         if extra:
-            raise ValueError(f"Schema 1 file row has unexpected fields: {', '.join(extra)}")
-        _validate_report_path(row["path"])
+            raise ValueError(f"Schema 1 file row has unexpected fields: {', '.join(_safe_scan_json_diagnostic_text(field) for field in extra)}")
+        path = _validate_report_path(row["path"])
+        if path in seen_file_paths:
+            raise ValueError(f"Duplicate path in scan report: {path}")
+        seen_file_paths.add(path)
         if not isinstance(row["size"], int) or isinstance(row["size"], bool) or row["size"] < 0:
             raise ValueError(f"Schema 1 file row has invalid size: {row['path']}")
         if not isinstance(row["sha256"], str) or not SHA256_RE.fullmatch(row["sha256"]):
@@ -159,6 +187,12 @@ def _validate_schema1_payload(payload: dict) -> None:
         for field in string_fields:
             if not isinstance(row[field], str):
                 raise ValueError(f"Schema 1 file row has non-string {field}: {row['path']}")
+            try:
+                row[field].encode("utf-8")
+            except UnicodeEncodeError as exc:
+                raise ValueError(
+                    f"Schema 1 file row contains invalid Unicode in {field}: {row['path']}"
+                ) from exc
         if row["risk"] not in SCHEMA1_RISKS:
             raise ValueError(f"Schema 1 file row has invalid risk: {row['path']}")
         if row["confidence"] not in SCHEMA1_CONFIDENCE:
@@ -172,12 +206,71 @@ def _validate_schema1_payload(payload: dict) -> None:
         _validate_report_path(error["path"], allow_root=True)
         if not isinstance(error["error"], str) or not error["error"]:
             raise ValueError("Schema 1 report contains an invalid error type")
+        try:
+            error["error"].encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("Schema 1 report contains invalid Unicode in error text") from exc
+
+def _reject_duplicate_scan_report_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Reject ambiguous JSON object keys at every nesting level."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate scan report JSON key: {_safe_scan_json_diagnostic_text(key)}")
+        result[key] = value
+    return result
+
+
+def _reject_nonstandard_scan_json_constant(value: str) -> None:
+    """Reject NaN and Infinity, which are not valid JSON numbers."""
+    raise ValueError(f"Non-standard scan report JSON constant: {value}")
+
+
+def _validate_future_schema_json_text(payload: dict) -> None:
+    """Reject unencodable JSON text without constraining future schema fields."""
+    try:
+        json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+        raise ValueError("Unsupported scan schema contains invalid Unicode or JSON metadata") from exc
+
+
+def _parse_bounded_scan_json_int(value: str) -> int:
+    """Apply a consistent integer token limit on Python 3.10 and newer."""
+    if len(value.lstrip("-")) > 4300:
+        raise ValueError("Scan report JSON integer exceeds 4300 digits")
+    return int(value)
+
+
+def _parse_finite_scan_json_float(value: str) -> float:
+    """Bound JSON float tokens and reject overflow or nonzero underflow."""
+    if len(value.lstrip("-")) > 4300:
+        raise ValueError("Scan report JSON float exceeds 4300 characters")
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("Scan report JSON number exceeds floating-point range")
+    significand = value.split("e", 1)[0].split("E", 1)[0]
+    if parsed == 0.0 and any(digit in "123456789" for digit in significand):
+        raise ValueError("Scan report JSON number underflows floating-point range")
+    # A fractional JSON token can round to a whole float even below 2**53.
+    # Reject the loss before legacy size and priority checks can trust it.
+    if parsed != 0.0 and parsed.is_integer():
+        exact = Decimal(value)
+        if exact != exact.to_integral_value():
+            raise ValueError("Scan report JSON fractional number loses precision")
+    return parsed
+
 
 def load_scan_report(path: Path) -> dict:
     """Load a LabVault Scout scan report with version-aware validation."""
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        payload = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_reject_duplicate_scan_report_keys,
+            parse_constant=_reject_nonstandard_scan_json_constant,
+            parse_float=_parse_finite_scan_json_float,
+            parse_int=_parse_bounded_scan_json_int,
+        )
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"Cannot read scan report: {path}") from exc
 
     if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
@@ -187,18 +280,24 @@ def load_scan_report(path: Path) -> dict:
         raw_schema_version = payload["schema_version"]
         if not isinstance(raw_schema_version, str) or not raw_schema_version:
             raise ValueError(f"Invalid scan schema_version in report: {path}")
+        try:
+            raw_schema_version.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError(f"Scan report contains invalid Unicode in schema_version: {path}") from exc
         schema_version = raw_schema_version
     else:
         schema_version = "legacy"
     if schema_version == "1":
         _validate_schema1_payload(payload)
+    elif schema_version != "legacy":
+        _validate_future_schema_json_text(payload)
 
     seen: set[str] = set()
     for row in payload["files"]:
         if not isinstance(row, dict) or not isinstance(row.get("path"), str) or not row["path"]:
             raise ValueError(f"Invalid file row in scan report: {path}")
         if row["path"] in seen:
-            raise ValueError(f"Duplicate path in scan report: {row['path']}")
+            raise ValueError(f"Duplicate path in scan report: {_safe_scan_json_diagnostic_text(row['path'])}")
         seen.add(row["path"])
     return payload
 
@@ -210,9 +309,9 @@ def _file_index(payload: dict) -> tuple[dict[str, dict], bool]:
     normalized = False
     for source_row in payload["files"]:
         path = source_row["path"]
-        canonical = path.replace("\\", "/") if legacy else path
+        canonical = PurePosixPath(path.replace("\\", "/")).as_posix() if legacy else path
         if canonical in indexed:
-            raise ValueError(f"Path collision after legacy normalization: {canonical}")
+            raise ValueError(f"Path collision after legacy normalization: {_safe_scan_json_diagnostic_text(canonical)}")
         row = dict(source_row)
         if canonical != path:
             row["path"] = canonical
@@ -228,7 +327,15 @@ def scan_metrics(payload: dict) -> dict:
     total_bytes = 0
     for row in payload["files"]:
         raw_size = row.get("size", 0)
-        if not isinstance(raw_size, bool):
+        if isinstance(raw_size, str) and (
+            len(raw_size) > 4300 or not re.fullmatch(r"[0-9]+", raw_size)
+        ):
+            # Do not let int() accept whitespace, signs, underscores, or Unicode digits.
+            raw_size = None
+        if not isinstance(raw_size, bool) and not (
+            isinstance(raw_size, float)
+            and (not raw_size.is_integer() or raw_size > MAX_EXACT_LEGACY_FLOAT_INT)
+        ):
             try:
                 size = int(raw_size)
             except (TypeError, ValueError):
@@ -269,18 +376,191 @@ def metrics_delta(before: dict, after: dict) -> dict:
 
 def report_integrity_status(payload: dict) -> str:
     """Validate embedded inventory and summary consistency when available."""
+    if "schema_version" in payload:
+        schema_value = payload["schema_version"]
+        if not isinstance(schema_value, str) or not schema_value:
+            return "MISMATCH"
+        try:
+            schema_value.encode("utf-8")
+        except UnicodeEncodeError:
+            return "MISMATCH"
+    if payload.get("schema_version") == "1":
+        try:
+            _validate_schema1_payload(payload)
+        except (ValueError, TypeError, KeyError):
+            return "MISMATCH"
+    elif "schema_version" in payload:
+        try:
+            _validate_future_schema_json_text(payload)
+        except ValueError:
+            return "MISMATCH"
+
+    if not isinstance(payload.get("files"), list):
+        return "MISMATCH"
+    legacy = "schema_version" not in payload
+    if legacy:
+        # Optional legacy metadata must remain objects when present.
+        # Inventory hashes do not cover these fields.
+        if any(
+            key in payload and not isinstance(payload[key], dict)
+            for key in ("tool", "provenance")
+        ):
+            return "MISMATCH"
+        # Legacy inventory hashes omit top-level and summary extensions.
+        # Check the full JSON tree, including nested keys and values.
+        try:
+            json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError, RecursionError):
+            return "MISMATCH"
+    seen_paths: set[str] = set()
+    for row in payload["files"]:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str) or not row["path"]:
+            return "MISMATCH"
+        canonical = PurePosixPath(row["path"].replace("\\", "/")).as_posix() if legacy else row["path"]
+        if canonical in seen_paths:
+            return "MISMATCH"
+        seen_paths.add(canonical)
+        if legacy:
+            parsed_file_path = PurePosixPath(canonical)
+            if (
+                "\x00" in canonical
+                or parsed_file_path.is_absolute()
+                or ".." in parsed_file_path.parts
+                or canonical == "."
+                or row["path"].replace("\\", "/") != canonical
+                or re.match(r"^[A-Za-z]:", canonical)
+            ):
+                return "MISMATCH"
+            # Legacy inventory hashes omit metadata; reject unencodable text
+            # before a malformed file row can be marked VERIFIED.
+            try:
+                json.dumps(row, ensure_ascii=False).encode("utf-8")
+            except (TypeError, ValueError, UnicodeError, RecursionError):
+                return "MISMATCH"
+        # Legacy inventory hashes omit assessment metadata. Reject non-string
+        # labels and open-copy paths before truthiness can mask invalid types.
+        if legacy and any(
+            key in row and not isinstance(row[key], str)
+            for key in (
+                "risk", "priority", "open_copy", "confidence", "recommended_action",
+                "reason", "priority_reason", "format", "signature",
+                "signature_status", "container_type",
+                "relationship_strength", "relationship_evidence", "evidence",
+            )
+        ):
+            return "MISMATCH"
+        # Legacy assessment labels are omitted from the inventory checksum.
+        # Apply Schema 1 enums while preserving absent optional legacy fields.
+        if legacy and any(
+            key in row and row[key] not in allowed
+            for key, allowed in (
+                ("risk", SCHEMA1_RISKS),
+                ("priority", SCHEMA1_PRIORITY),
+                ("confidence", SCHEMA1_CONFIDENCE),
+            )
+        ):
+            return "MISMATCH"
+        # Legacy priority scores are not covered by the inventory checksum.
+        # Accept historical whole-number encodings, while rejecting malformed
+        # types, fractions, and scores outside the Schema 1 range.
+        if legacy and "priority_score" in row:
+            score = row["priority_score"]
+            if isinstance(score, bool) or not (
+                isinstance(score, int)
+                or (isinstance(score, float) and score.is_integer())
+                or (isinstance(score, str) and re.fullmatch(r"[0-9]+", score))
+            ):
+                return "MISMATCH"
+            if isinstance(score, str) and len(score) > 4300:
+                return "MISMATCH"
+            try:
+                numeric_score = int(score)
+            except (TypeError, ValueError, OverflowError):
+                return "MISMATCH"
+            if not 0 <= numeric_score <= 100:
+                return "MISMATCH"
+        size = row.get("size")
+        if "size" in row and not isinstance(size, (int, float, str)):
+            return "MISMATCH"
+        if isinstance(size, bool) or (
+            isinstance(size, float)
+            and (not size.is_integer() or size > MAX_EXACT_LEGACY_FLOAT_INT)
+        ):
+            return "MISMATCH"
+        if (
+            isinstance(size, (int, float))
+            and size < 0
+        ) or (isinstance(size, str) and (len(size) > 4300 or not re.fullmatch(r"[0-9]+", size))):
+            return "MISMATCH"
+    if "errors" in payload and not isinstance(payload["errors"], list):
+        return "MISMATCH"
+    if legacy and isinstance(payload.get("tool"), dict):
+        # Legacy inventory hashes omit tool metadata, including nested fields.
+        try:
+            json.dumps(payload["tool"], ensure_ascii=False).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError, RecursionError):
+            return "MISMATCH"
+
+    if legacy and isinstance(payload.get("provenance"), dict):
+        # Legacy inventory hashes omit provenance, including nested metadata.
+        try:
+            json.dumps(payload["provenance"], ensure_ascii=False).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError, RecursionError):
+            return "MISMATCH"
+
     summary = payload.get("summary")
     if not isinstance(summary, dict):
         return "UNKNOWN"
     expected = summary.get("inventory_sha256")
     if not isinstance(expected, str) or not expected:
         return "UNKNOWN"
+    for error in payload.get("errors", []):
+        if not isinstance(error, dict) or not isinstance(error.get("path"), str) or not error["path"]:
+            return "MISMATCH"
+        if not isinstance(error.get("error"), str) or not error["error"]:
+            return "MISMATCH"
+        if legacy:
+            # Legacy inventory hashes omit additional error metadata.
+            try:
+                json.dumps(error, ensure_ascii=False).encode("utf-8")
+            except (TypeError, ValueError, UnicodeError, RecursionError):
+                return "MISMATCH"
+        canonical_error_path = error["path"].replace("\\", "/") if legacy else error["path"]
+        try:
+            canonical_error_path.encode("utf-8")
+            error["error"].encode("utf-8")
+        except UnicodeEncodeError:
+            return "MISMATCH"
+        parsed_error_path = PurePosixPath(canonical_error_path)
+        if (
+            "\x00" in canonical_error_path
+            or parsed_error_path.is_absolute()
+            or ".." in parsed_error_path.parts
+            or canonical_error_path != parsed_error_path.as_posix()
+        ):
+            return "MISMATCH"
+        if legacy and re.match(r"^[A-Za-z]:", canonical_error_path):
+            return "MISMATCH"
+        # A path cannot be both successfully scanned and recorded as an error.
+        # Compare normalized legacy paths to prevent separator aliases.
+        if canonical_error_path in seen_paths:
+            return "MISMATCH"
+    for row in payload["files"]:
+        digest = row.get("sha256")
+        if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+            return "MISMATCH"
 
     report_checksum = payload.get("report_sha256")
-    if report_checksum is not None:
+    if payload.get("schema_version") == "1" and report_checksum is None:
+        return "MISMATCH"
+    if "report_sha256" in payload:
         if not isinstance(report_checksum, str) or not report_checksum:
             return "MISMATCH"
-        if report_payload_sha256(payload) != report_checksum:
+        try:
+            actual_checksum = report_payload_sha256(payload)
+        except UnicodeError:
+            return "MISMATCH"
+        if actual_checksum != report_checksum:
             return "MISMATCH"
 
     try:
@@ -288,7 +568,7 @@ def report_integrity_status(payload: dict) -> str:
         metrics = scan_metrics(payload)
         errors = payload.get("errors")
         error_count = len(errors) if isinstance(errors, list) else 0
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, UnicodeError):
         return "MISMATCH"
 
     if actual != expected:
@@ -314,7 +594,13 @@ def report_integrity_status(payload: dict) -> str:
         "duplicate_group_count": duplicate_group_count,
     }
     for key, value in required_summary.items():
-        if summary.get(key) != value:
+        reported = summary.get(key)
+        if isinstance(value, dict):
+            if not isinstance(reported, dict) or any(type(count) is not int for count in reported.values()):
+                return "MISMATCH"
+        elif type(reported) is not int:
+            return "MISMATCH"
+        if reported != value:
             return "MISMATCH"
     return "VERIFIED"
 
@@ -336,12 +622,17 @@ def report_identity(payload: dict) -> dict:
     error_count = len(errors) if isinstance(errors, list) else 0
     summary = payload.get("summary")
     inventory = summary.get("inventory_sha256", "") if isinstance(summary, dict) else ""
-    _, legacy_paths_normalized = _file_index(payload)
+    try:
+        _, legacy_paths_normalized = _file_index(payload)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        if report_integrity_status(payload) != "MISMATCH":
+            raise
+        legacy_paths_normalized = False
     provenance = payload.get("provenance")
     if not isinstance(provenance, dict):
         provenance = {}
     raw_schema_version = payload.get("schema_version")
-    if raw_schema_version is None:
+    if "schema_version" not in payload:
         schema_version = "legacy"
     elif isinstance(raw_schema_version, str) and raw_schema_version:
         schema_version = raw_schema_version
@@ -377,10 +668,29 @@ def _priority_change(before: dict | None, after: dict | None) -> tuple[str, int 
 
     before_score = before.get("priority_score")
     after_score = after.get("priority_score")
-    try:
-        delta = int(after_score) - int(before_score)
-    except (TypeError, ValueError):
+    if any(
+        isinstance(score, bool)
+        or (isinstance(score, float) and not score.is_integer())
+        or (
+            isinstance(score, str)
+            and (len(score) > 4300 or re.fullmatch(r"[0-9]+", score) is None)
+        )
+        for score in (before_score, after_score)
+    ):
+        # Legacy boolean and fractional scores cannot support an integer priority delta.
         delta = None
+    else:
+        try:
+            before_value = int(before_score)
+            after_value = int(after_score)
+        except (TypeError, ValueError):
+            delta = None
+        else:
+            delta = (
+                after_value - before_value
+                if 0 <= before_value <= 100 and 0 <= after_value <= 100
+                else None
+            )
 
     if delta is not None:
         if delta > 0:
@@ -644,7 +954,7 @@ def write_comparison(result: dict, output_dir: Path) -> None:
     with atomic_text_writer(output_dir / "changes.csv", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
         writer.writeheader()
-        writer.writerows(_csv_row(item) for item in result["changes"])
+        writer.writerows(_safe_csv_row(_csv_row(item)) for item in result["changes"])
 
     rows = "".join(
         "<tr>"

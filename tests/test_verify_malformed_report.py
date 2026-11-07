@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from labvault_scout.cli import main
+from labvault_scout.cli import main, scan
+from labvault_scout.compare import load_scan_report
 
 
 def test_cli_verify_malformed_json_is_concise_and_json_capable(
@@ -33,3 +34,2408 @@ def test_cli_verify_malformed_json_is_concise_and_json_capable(
     assert result["status"] == "INVALID"
     assert result["exit_code"] == 2
     assert "Cannot read scan report" in result["error"]
+
+
+
+
+@pytest.mark.parametrize("invalid_files", [{}, ""])
+def test_direct_integrity_rejects_non_array_legacy_files(
+    tmp_path: Path, invalid_files: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert verify_report(valid)["status"] == "VERIFIED"
+
+    malformed = {**valid, "files": invalid_files}
+    assert report_integrity_status(malformed) == "MISMATCH"
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+    report = tmp_path / "non_array_legacy_scan.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid scan report"):
+        load_scan_report(report)
+
+
+
+@pytest.mark.parametrize("invalid_errors", [{}, "", None, {"path": "bad.csv"}])
+def test_direct_integrity_rejects_non_array_legacy_errors(
+    invalid_errors: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    without_errors = {key: value for key, value in valid.items() if key != "errors"}
+    assert report_integrity_status(without_errors) == "VERIFIED"
+
+    malformed = {**valid, "errors": invalid_errors}
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize("bad_path", ["", None, 0])
+def test_direct_integrity_rejects_invalid_legacy_file_paths(
+    tmp_path: Path, bad_path: object,
+) -> None:
+    from labvault_scout.compare import report_integrity_status, verify_report
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert verify_report(valid)["status"] == "VERIFIED"
+
+    bad_row = {**row, "path": bad_path}
+    malformed = {
+        **valid,
+        "files": [bad_row],
+        "summary": build_summary([bad_row], [], []),
+    }
+    assert report_integrity_status(malformed) == "MISMATCH"
+    result = verify_report(malformed)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+
+    report = tmp_path / "bad_legacy_path.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid file row"):
+        load_scan_report(report)
+
+
+
+def test_direct_integrity_rejects_duplicate_legacy_file_paths(tmp_path: Path) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, duplicate_groups
+
+    rows = [
+        {
+            "path": path,
+            "size": 1,
+            "sha256": "a" * 64,
+            "risk": "SAFE",
+            "priority": "LOW",
+            "open_copy": "",
+        }
+        for path in ("first.csv", "second.csv")
+    ]
+    valid = {
+        "files": rows,
+        "errors": [],
+        "summary": build_summary(rows, [], duplicate_groups(rows)),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert verify_report(valid)["status"] == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][1]["path"] = malformed["files"][0]["path"]
+    malformed["summary"] = build_summary(
+        malformed["files"], [], duplicate_groups(malformed["files"])
+    )
+    assert malformed["summary"]["duplicate_group_count"] == 1
+    assert report_integrity_status(malformed) == "MISMATCH"
+    result = verify_report(malformed)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+
+    report = tmp_path / "duplicate_legacy_paths.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(ValueError, match="Duplicate path"):
+        load_scan_report(report)
+    with pytest.raises(ValueError, match="Path collision after legacy normalization"):
+        compare_payloads(valid, malformed)
+
+
+
+def test_direct_integrity_rejects_legacy_path_normalization_collisions() -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, duplicate_groups
+
+    rows = [
+        {
+            "path": path,
+            "size": 1,
+            "sha256": digest,
+            "risk": "SAFE",
+            "priority": "LOW",
+            "open_copy": "",
+        }
+        for path, digest in (
+            ("nested\\data.csv", "a" * 64),
+            ("other.csv", "b" * 64),
+        )
+    ]
+    valid = {
+        "files": rows,
+        "errors": [],
+        "summary": build_summary(rows, [], duplicate_groups(rows)),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert verify_report(valid)["status"] == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][1]["path"] = "nested/data.csv"
+    malformed["summary"] = build_summary(
+        malformed["files"], [], duplicate_groups(malformed["files"])
+    )
+    assert malformed["files"][0]["path"] != malformed["files"][1]["path"]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    with pytest.raises(ValueError, match="Path collision after legacy normalization"):
+        compare_payloads(valid, malformed)
+
+
+
+@pytest.mark.parametrize("invalid_size", [-1, -1.5, "-1"])
+def test_legacy_negative_size_cannot_have_verified_inventory(
+    tmp_path: Path, invalid_size: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["size"] = invalid_size
+    malformed["summary"] = build_summary(malformed["files"], [], [])
+    malformed["summary"]["total_bytes"] = 0
+    assert malformed["summary"]["inventory_sha256"] != valid["summary"]["inventory_sha256"]
+
+    # The legacy loader stays lenient for comparison, but must not confer trust.
+    report = tmp_path / "negative-size-legacy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["files"][0]["size"] == invalid_size
+
+    assert report_integrity_status(malformed) == "MISMATCH"
+    result = verify_report(malformed)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize(
+    "invalid_size", ["7.9", "1e3", "1_0", " +7", " 7 ", "٧"],
+)
+def test_legacy_invalid_size_string_cannot_have_verified_inventory(
+    tmp_path: Path, invalid_size: str,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, inventory_sha256
+
+    row = {
+        "path": "sample.csv",
+        "size": "007",
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert valid["summary"]["total_bytes"] == 7
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["size"] = invalid_size
+    malformed["summary"]["inventory_sha256"] = inventory_sha256(malformed["files"])
+    malformed["summary"]["total_bytes"] = 0
+
+    # The legacy loader and comparison metrics remain lenient; integrity does not.
+    path = tmp_path / "malformed-size-string.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(path)["files"][0]["size"] == invalid_size
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verification = verify_report(malformed)
+    assert verification["status"] == "FAILED"
+    assert verification["exit_code"] == 2
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["after"]["metrics"]["total_bytes"] == 0
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize("invalid_size", [True, False, 0.9, 7.9])
+def test_legacy_boolean_or_fractional_size_cannot_have_verified_inventory(
+    tmp_path: Path, invalid_size: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, inventory_sha256
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    whole_float = json.loads(json.dumps(valid))
+    whole_float["files"][0]["size"] = 1.0
+    whole_float["summary"] = build_summary(whole_float["files"], [], [])
+    assert report_integrity_status(whole_float) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["size"] = invalid_size
+    malformed["summary"]["inventory_sha256"] = inventory_sha256(malformed["files"])
+    malformed["summary"]["total_bytes"] = 0
+
+    report = tmp_path / "noninteger-numeric-size-legacy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["files"][0]["size"] == invalid_size
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+    assert compared["after"]["metrics"]["total_bytes"] == 0
+
+
+
+
+@pytest.mark.parametrize("invalid_size", [None, [], {}, {"bytes": 1}])
+def test_legacy_null_or_container_size_cannot_verify(
+    tmp_path: Path, invalid_size: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, inventory_sha256
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["size"] = invalid_size
+    malformed["summary"]["inventory_sha256"] = inventory_sha256(malformed["files"])
+    malformed["summary"]["total_bytes"] = 0
+
+    report = tmp_path / "invalid-container-size-legacy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["files"][0]["size"] == invalid_size
+
+    assert report_integrity_status(malformed) == "MISMATCH"
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+    assert compared["after"]["metrics"]["total_bytes"] == 0
+
+
+
+@pytest.mark.parametrize("invalid_hash", [None, "", 0, True, [], {}, {"hash": "a"}])
+def test_legacy_invalid_hash_type_cannot_verify(
+    tmp_path: Path, invalid_hash: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, inventory_sha256
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    minimal = {"files": [{"path": "sample.csv", "sha256": invalid_hash}]}
+    assert report_integrity_status(minimal) == "UNKNOWN"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["sha256"] = invalid_hash
+    malformed["summary"]["inventory_sha256"] = inventory_sha256(malformed["files"])
+    report = tmp_path / "invalid-hash-type-legacy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["files"][0]["sha256"] == invalid_hash
+
+    assert report_integrity_status(malformed) == "MISMATCH"
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize(
+    "invalid_hash", ["a" * 63, "a" * 65, "g" * 64, "A" * 64, "not-a-digest"],
+)
+def test_legacy_non_sha256_digest_cannot_verify(
+    tmp_path: Path, invalid_hash: str,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, inventory_sha256
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status({"files": [{"path": "sample.csv", "sha256": invalid_hash}]}) == "UNKNOWN"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["sha256"] = invalid_hash
+    malformed["summary"]["inventory_sha256"] = inventory_sha256(malformed["files"])
+
+    report = tmp_path / "legacy-bad-digest.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["files"][0]["sha256"] == invalid_hash
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize(
+    ("field", "count_key", "boolean"),
+    [
+        ("file_count", None, True),
+        ("total_bytes", None, True),
+        ("error_count", None, False),
+        ("open_copy_count", None, False),
+        ("duplicate_group_count", None, False),
+        ("risk_counts", "SAFE", True),
+        ("priority_counts", "LOW", True),
+    ],
+)
+def test_legacy_boolean_summary_counts_cannot_verify(
+    tmp_path: Path, field: str, count_key: str | None, boolean: bool,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    if count_key is None:
+        assert malformed["summary"][field] == boolean
+        malformed["summary"][field] = boolean
+    else:
+        assert malformed["summary"][field][count_key] == boolean
+        malformed["summary"][field][count_key] = boolean
+
+    report = tmp_path / "boolean-legacy-summary.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["summary"] == malformed["summary"]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize(
+    ("field", "count_key", "value"),
+    [
+        ("file_count", None, 1.0),
+        ("total_bytes", None, 1.0),
+        ("error_count", None, 0.0),
+        ("open_copy_count", None, 0.0),
+        ("duplicate_group_count", None, 0.0),
+        ("risk_counts", "SAFE", 1.0),
+        ("priority_counts", "LOW", 1.0),
+    ],
+)
+def test_legacy_fractional_type_summary_counts_cannot_verify(
+    tmp_path: Path, field: str, count_key: str | None, value: float,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    if count_key is None:
+        assert malformed["summary"][field] == value
+        malformed["summary"][field] = value
+    else:
+        assert malformed["summary"][field][count_key] == value
+        malformed["summary"][field][count_key] = value
+
+    path = tmp_path / "legacy-float-count.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(path)["summary"] == malformed["summary"]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+
+def test_legacy_explicit_null_report_checksum_is_mismatch(tmp_path: Path) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    legacy = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert "report_sha256" not in legacy
+    assert report_integrity_status(legacy) == "VERIFIED"
+    assert verify_report(legacy)["status"] == "VERIFIED"
+
+    malformed = {**legacy, "report_sha256": None}
+    report = tmp_path / "null-report-checksum-legacy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["report_sha256"] is None
+
+    assert report_integrity_status(malformed) == "MISMATCH"
+    result = verify_report(malformed)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    comparison = compare_payloads(legacy, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize("bad_error", [None, "PermissionError", 7, [], True])
+def test_legacy_non_object_error_row_cannot_verify(
+    tmp_path: Path, bad_error: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    good_error = {"path": "blocked.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row],
+        "errors": [good_error],
+        "summary": build_summary([row], [good_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"] = [bad_error]
+    assert report_integrity_status({"files": [row], "errors": [bad_error]}) == "UNKNOWN"
+    assert malformed["summary"]["error_count"] == len(malformed["errors"])
+
+    report = tmp_path / "legacy-invalid-error-row.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["errors"] == [bad_error]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    verified = verify_report(malformed)
+    assert verified["status"] == "FAILED"
+    assert verified["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize(
+    ("include_path", "bad_path"),
+    [(False, None), (True, None), (True, ""), (True, 0), (True, []), (True, {})],
+)
+def test_legacy_invalid_error_path_cannot_verify(
+    tmp_path: Path, include_path: bool, bad_path: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    good_error = {"path": "blocked.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row],
+        "errors": [good_error],
+        "summary": build_summary([row], [good_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    bad_error = {"error": "PermissionError"}
+    if include_path:
+        bad_error["path"] = bad_path
+    malformed = {**valid, "errors": [bad_error]}
+    assert report_integrity_status({"files": [row], "errors": [bad_error]}) == "UNKNOWN"
+    assert malformed["summary"]["error_count"] == 1
+
+    report = tmp_path / "legacy-invalid-error-path.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["errors"] == [bad_error]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize(
+    ("include_error", "bad_error"),
+    [(False, None), (True, None), (True, ""), (True, 0), (True, []), (True, {})],
+)
+def test_legacy_invalid_error_type_cannot_verify(
+    tmp_path: Path, include_error: bool, bad_error: object,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    good_error = {"path": "blocked.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row],
+        "errors": [good_error],
+        "summary": build_summary([row], [good_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed_error = {"path": "blocked.csv"}
+    if include_error:
+        malformed_error["error"] = bad_error
+    malformed = {**valid, "errors": [malformed_error]}
+    assert report_integrity_status({"files": [row], "errors": [malformed_error]}) == "UNKNOWN"
+
+    report = tmp_path / "legacy-invalid-error-type.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["errors"] == [malformed_error]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize(
+    "unsafe_path",
+    [
+        "../outside.csv",
+        "nested/../outside.csv",
+        "/absolute/outside.csv",
+        "nested" + chr(92) + ".." + chr(92) + "outside.csv",
+        "blocked" + chr(0) + ".csv",
+        "C:/sensitive.csv",
+        "C:" + chr(92) + "sensitive.csv",
+        "C:relative.csv",
+        "z:relative.csv",
+    ],
+)
+def test_legacy_unsafe_error_path_cannot_verify(
+    tmp_path: Path, unsafe_path: str,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    good_error = {"path": "nested" + chr(92) + "blocked.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row],
+        "errors": [good_error],
+        "summary": build_summary([row], [good_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    root_error = {**valid, "errors": [{"path": ".", "error": "PermissionError"}]}
+    assert report_integrity_status(root_error) == "VERIFIED"
+
+    malformed = {**valid, "errors": [{"path": unsafe_path, "error": "PermissionError"}]}
+    report = tmp_path / "legacy-unsafe-error-path.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(report)["errors"] == malformed["errors"]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize(
+    "unsafe_path",
+    [
+        "../outside.csv",
+        "nested/../outside.csv",
+        "/absolute/outside.csv",
+        "nested" + chr(92) + ".." + chr(92) + "outside.csv",
+        "C:/outside.csv",
+        "C:" + chr(92) + "outside.csv",
+        "C:relative.csv",
+        chr(92) + chr(92) + "server" + chr(92) + "share" + chr(92) + "data.csv",
+        "outside" + chr(0) + ".csv",
+        ".",
+    ],
+)
+def test_legacy_unsafe_file_path_cannot_verify(
+    tmp_path: Path, unsafe_path: str,
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, inventory_sha256
+
+    row = {
+        "path": "nested" + chr(92) + "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status({"files": [row], "errors": []}) == "UNKNOWN"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["path"] = unsafe_path
+    malformed["summary"]["inventory_sha256"] = inventory_sha256(malformed["files"])
+    assert report_integrity_status({"files": malformed["files"], "errors": []}) == "MISMATCH"
+
+    path = tmp_path / "legacy-unsafe-file-path.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    assert load_scan_report(path)["files"][0]["path"] == unsafe_path
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+def test_escaped_unpaired_surrogate_rejected_at_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "report"
+    scan(source, output)
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert report_integrity_status(original) == "VERIFIED"
+
+    bad = json.loads(json.dumps(original))
+    bad["files"][0]["reason"] = chr(0xD800)
+    report = tmp_path / "surrogate-report.json"
+    report.write_text(json.dumps(bad, ensure_ascii=True), encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid Unicode in reason"):
+        load_scan_report(report)
+
+    assert report_integrity_status(bad) == "MISMATCH"
+    checked = verify_report(bad)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    comparison = compare_payloads(original, bad)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(report), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "INVALID"
+
+    legacy = {
+        "files": [{"path": chr(0xD800), "size": 1, "sha256": "a" * 64}],
+        "summary": {"inventory_sha256": "a" * 64},
+    }
+    assert report_integrity_status(legacy) == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    ("key", "marker"),
+    [
+        ("schema_version", '"schema_version": "1"'),
+        ("name", '"name": "LabVault Scout"'),
+        ("path", '"path": "data.csv"'),
+    ],
+)
+def test_verify_rejects_duplicate_scan_report_json_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    key: str,
+    marker: str,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "report"
+    scan(source, output)
+    report = output / "scan.json"
+
+    original = report.read_text(encoding="utf-8")
+    assert marker in original
+    ambiguous = original.replace(marker, f"{marker}, {marker}", 1)
+    # Default JSON decoding collapses the duplicate without changing the checksum-bearing payload.
+    assert json.loads(ambiguous) == json.loads(original)
+    report.write_text(ambiguous, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read scan report") as exc_info:
+        load_scan_report(report)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert f"Duplicate scan report JSON key: {key}" in str(exc_info.value.__cause__)
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(report), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    result = json.loads(captured.out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read scan report" in result["error"]
+
+
+def test_load_scan_report_wraps_json_parser_recursion_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    report = tmp_path / "deeply-nested-report.json"
+    report.write_text("[" * 4000 + "0" + "]" * 4000, encoding="utf-8")
+    original_loads = json.loads
+
+    def raise_recursion_error(
+        text: str, *, object_pairs_hook: object = None,
+        parse_constant: object = None, parse_float: object = None,
+        parse_int: object = None,
+    ) -> object:
+        assert text.startswith("[" * 4000)
+        assert callable(object_pairs_hook)
+        assert callable(parse_constant)
+        assert callable(parse_float)
+        assert callable(parse_int)
+        raise RecursionError("JSON nesting exceeds parser recursion limit")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(json, "loads", raise_recursion_error)
+
+        with pytest.raises(ValueError, match="Cannot read scan report") as exc_info:
+            load_scan_report(report)
+        assert isinstance(exc_info.value.__cause__, RecursionError)
+
+        patched.setattr(sys, "argv", ["labvault-scout", "verify", str(report)])
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err.startswith("Error:")
+        assert "Cannot read scan report" in captured.err
+        assert "Traceback" not in captured.err
+
+        patched.setattr(sys, "argv", ["labvault-scout", "verify", str(report), "--json"])
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    result = original_loads(captured.out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read scan report" in result["error"]
+
+
+@pytest.mark.parametrize(
+    ("number", "expected_cause"),
+    [
+        ("NaN", "Non-standard scan report JSON constant: NaN"),
+        ("Infinity", "Non-standard scan report JSON constant: Infinity"),
+        ("-Infinity", "Non-standard scan report JSON constant: -Infinity"),
+        ("1e999", "Scan report JSON number exceeds floating-point range"),
+        ("-1e999", "Scan report JSON number exceeds floating-point range"),
+    ],
+)
+def test_invalid_nonfinite_scan_number_is_rejected_by_verify_and_compare(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    number: str,
+    expected_cause: str,
+) -> None:
+    bad = tmp_path / "invalid-numeric-report.json"
+    bad.write_text(
+        '{"files": [{"path": "data.csv", "size": ' + number + '}], "errors": []}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Cannot read scan report") as exc_info:
+        load_scan_report(bad)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert expected_cause in str(exc_info.value.__cause__)
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    result = json.loads(captured.out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read scan report" in result["error"]
+
+    good = tmp_path / "good-legacy-report.json"
+    good.write_text('{"files": [{"path": "data.csv", "size": 1}], "errors": []}', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "compare", str(bad), str(good)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Cannot read scan report" in captured.err
+    assert "Traceback" not in captured.err
+
+
+@pytest.mark.parametrize("number", ["1e-999", "-1e-999", "1E-999"])
+def test_scan_report_rejects_nonzero_float_underflow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    number: str,
+) -> None:
+    bad = tmp_path / "underflow-report.json"
+    bad.write_text(
+        '{"files": [{"path": "data.csv", "size": ' + number + '}], "errors": []}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Cannot read scan report") as exc_info:
+        load_scan_report(bad)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "Scan report JSON number underflows floating-point range" in str(
+        exc_info.value.__cause__
+    )
+
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "verify", str(bad), "--json"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    result = json.loads(captured.out)
+    assert result["status"] == "INVALID"
+    assert result["exit_code"] == 2
+    assert "Cannot read scan report" in result["error"]
+
+    good = tmp_path / "good-legacy-report.json"
+    good.write_text('{"files": [], "errors": []}', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["labvault-scout", "compare", str(bad), str(good)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("Error:")
+    assert "Cannot read scan report" in captured.err
+    assert "Traceback" not in captured.err
+
+
+@pytest.mark.parametrize("number", ["0e-999", "-0e-999", "0.000e-999"])
+def test_scan_report_exact_float_zero_is_not_underflow(
+    tmp_path: Path, number: str
+) -> None:
+    report = tmp_path / "zero-legacy-report.json"
+    report.write_text(
+        '{"files": [{"path": "data.csv", "size": ' + number + '}], "errors": []}',
+        encoding="utf-8",
+    )
+
+    parsed = load_scan_report(report)
+
+    assert parsed["files"][0]["size"] == 0.0
+
+
+def test_legacy_unencodable_error_path_cannot_verify() -> None:
+    """Malformed Unicode in legacy error paths must not receive VERIFIED."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid_error = {"path": "readable.csv", "error": "PermissionError"}
+    valid = {
+        "files": [],
+        "errors": [valid_error],
+        "summary": build_summary([], [valid_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed_error = {"path": "invalid-" + chr(0xDCFF) + ".csv", "error": "PermissionError"}
+    malformed = {
+        "files": [],
+        "errors": [malformed_error],
+        "summary": build_summary([], [malformed_error], []),
+    }
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("invalid_text", [chr(0xD800), chr(0xDCFF)])
+def test_legacy_unencodable_error_text_cannot_verify(invalid_text: str) -> None:
+    """Legacy reports with unencodable error messages cannot be verified."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    good_error = {"path": "readable.csv", "error": "PermissionError"}
+    valid = {
+        "files": [],
+        "errors": [good_error],
+        "summary": build_summary([], [good_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed_error = {"path": "readable.csv", "error": "invalid-" + invalid_text}
+    malformed = {
+        "files": [],
+        "errors": [malformed_error],
+        "summary": build_summary([], [malformed_error], []),
+    }
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize("field", ["format", "reason"])
+@pytest.mark.parametrize("invalid_text", [chr(0xD800), chr(0xDCFF)])
+def test_legacy_unencodable_file_metadata_cannot_verify(
+    field: str, invalid_text: str,
+) -> None:
+    """Legacy inventory hashes do not authenticate file metadata text."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+        "format": "CSV",
+        "reason": "recognized",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = invalid_text
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+@pytest.mark.parametrize(
+    "alias_path",
+    ["nested//data.csv", "nested/./data.csv"],
+)
+def test_legacy_redundant_path_segments_cannot_hide_collisions(
+    alias_path: str,
+) -> None:
+    """Legacy aliases of the same POSIX path cannot verify as distinct files."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary, duplicate_groups
+
+    first = {
+        "path": alias_path,
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    second = {**first, "path": "nested/data.csv", "sha256": "b" * 64}
+    canonical_first = {**first, "path": "nested/data.csv"}
+    valid = {
+        "files": [canonical_first],
+        "errors": [],
+        "summary": build_summary([canonical_first], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    rows = [first, second]
+    malformed = {
+        "files": rows,
+        "errors": [],
+        "summary": build_summary(rows, [], duplicate_groups(rows)),
+    }
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    with pytest.raises(ValueError, match="Path collision after legacy normalization"):
+        compare_payloads(valid, malformed)
+
+
+@pytest.mark.parametrize("field", ["name", "version"])
+@pytest.mark.parametrize("invalid_text", [chr(0xD800), chr(0xDCFF)])
+def test_legacy_unencodable_tool_metadata_cannot_verify(
+    field: str, invalid_text: str,
+) -> None:
+    """Reject malformed legacy tool metadata absent from inventory hashes."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "tool": {"name": "LabVault Scout", "version": "0.2.0"},
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["tool"][field] = invalid_text
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("field", ["hash_algorithm", "path_style", "rules_sha256", "source_access"])
+@pytest.mark.parametrize("invalid_text", [chr(0xD800), chr(0xDCFF)])
+def test_legacy_unencodable_provenance_metadata_cannot_verify(
+    field: str, invalid_text: str,
+) -> None:
+    """Legacy inventory hashes omit provenance metadata text."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "provenance": {
+            "hash_algorithm": "sha256",
+            "path_style": "relative-posix",
+            "rules_sha256": "a" * 64,
+            "rules_count": 1,
+            "source_access": "read-only",
+        },
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["provenance"][field] = invalid_text
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "nested_metadata",
+    [
+        {"notes": [chr(0xD800)]},
+        {"notes": {chr(0xDCFF): "invalid key"}},
+    ],
+)
+def test_legacy_nested_unencodable_provenance_cannot_verify(
+    nested_metadata: dict,
+) -> None:
+    """Nested provenance text must be encodable before legacy verification."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "provenance": {"notes": {"text": "valid"}},
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["provenance"].update(nested_metadata)
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "nested_metadata",
+    [
+        {"notes": [chr(0xD800)]},
+        {chr(0xDCFF): "invalid key"},
+    ],
+)
+def test_legacy_nested_unencodable_file_metadata_cannot_verify(
+    nested_metadata: dict,
+) -> None:
+    """Nested legacy file metadata must be UTF-8 encodable to verify."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+        "reason": "valid",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["reason"] = nested_metadata
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "nested_metadata",
+    [
+        {"notes": [chr(0xD800)]},
+        {"notes": {chr(0xDCFF): "invalid key"}},
+    ],
+)
+def test_legacy_nested_unencodable_tool_metadata_cannot_verify(
+    nested_metadata: dict,
+) -> None:
+    """Nested legacy tool metadata cannot receive a verified integrity status."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "tool": {"name": "LabVault Scout", "version": "0.2.0"},
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    malformed = json.loads(json.dumps(valid))
+    malformed["tool"].update(nested_metadata)
+
+    assert report_integrity_status(valid) == "VERIFIED"
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+    comparison = compare_payloads(valid, malformed)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        {"nested": ["valid", chr(0xD800)]},
+        {"nested": {chr(0xDCFF): "invalid key"}},
+    ],
+)
+def test_legacy_unencodable_nested_error_metadata_cannot_verify(
+    tmp_path: Path, details: dict,
+) -> None:
+    """Legacy error extensions must be UTF-8 encodable before verification."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    good_error = {
+        "path": "blocked.csv",
+        "error": "PermissionError",
+        "details": {"nested": ["readable"]},
+    }
+    valid = {
+        "files": [],
+        "errors": [good_error],
+        "summary": build_summary([], [good_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"][0]["details"] = details
+    report = tmp_path / "legacy-unencodable-error-details.json"
+    report.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["errors"][0]["details"] == details
+
+    assert report_integrity_status(loaded) == "MISMATCH"
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    comparison = compare_payloads(valid, loaded)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+@pytest.mark.parametrize("location", ["top_level", "summary"])
+@pytest.mark.parametrize(
+    "bad_metadata",
+    [
+        {"notes": [chr(0xD800)]},
+        {"notes": {chr(0xDCFF): "invalid key"}},
+    ],
+)
+def test_legacy_unencodable_unhashed_report_metadata_cannot_verify(
+    tmp_path: Path, location: str, bad_metadata: dict,
+) -> None:
+    """Legacy report extensions must be UTF-8 encodable before verification."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    if location == "top_level":
+        malformed.update(bad_metadata)
+    else:
+        malformed["summary"].update(bad_metadata)
+    report = tmp_path / "legacy-unencodable-report-metadata.json"
+    report.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+    loaded = load_scan_report(report)
+
+    assert report_integrity_status(loaded) == "MISMATCH"
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    comparison = compare_payloads(valid, loaded)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("field", ["tool", "provenance"])
+@pytest.mark.parametrize("invalid_value", [None, [], "", 17, True])
+def test_legacy_present_non_object_tool_or_provenance_cannot_verify(
+    tmp_path: Path, field: str, invalid_value: object,
+) -> None:
+    """Optional legacy metadata may be absent, but must be objects when present."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    valid = {
+        "tool": {"name": "LabVault Scout", "version": "0.2.0"},
+        "provenance": {"hash_algorithm": "sha256"},
+        "files": [],
+        "errors": [],
+        "summary": build_summary([], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    absent = {key: value for key, value in valid.items() if key not in ("tool", "provenance")}
+    assert report_integrity_status(absent) == "VERIFIED"
+
+    malformed = {**valid, field: invalid_value}
+    path = tmp_path / "legacy-invalid-metadata-type.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded[field] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("field", ["risk", "priority"])
+@pytest.mark.parametrize("invalid_value", [None, True, 7, [], {"unexpected": "value"}])
+def test_legacy_non_string_assessment_label_cannot_verify(
+    tmp_path: Path, field: str, invalid_value: object,
+) -> None:
+    """Legacy risk and priority labels must remain strings when present."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, scan_metrics, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = invalid_value
+    metrics = scan_metrics(malformed)
+    malformed["summary"]["risk_counts"] = metrics["risk_counts"]
+    malformed["summary"]["priority_counts"] = metrics["priority_counts"]
+
+    report = tmp_path / "legacy-invalid-assessment-label.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["files"][0][field] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("invalid_value", [None, True, 7, [], {"unexpected": "value"}])
+def test_legacy_non_string_open_copy_cannot_verify(
+    tmp_path: Path, invalid_value: object,
+) -> None:
+    """Unhashed legacy open_copy must remain a string, even with matching counts."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    without_optional = json.loads(json.dumps(valid))
+    without_optional["files"][0].pop("open_copy")
+    assert report_integrity_status(without_optional) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["open_copy"] = invalid_value
+    # Legacy inventory hashes omit open_copy; matching the truthiness-based
+    # summary must never turn a non-string value into verified evidence.
+    malformed["summary"]["open_copy_count"] = int(bool(invalid_value))
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+
+    report = tmp_path / "legacy-non-string-open-copy.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["files"][0]["open_copy"] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+
+@pytest.mark.parametrize("field", ["confidence", "recommended_action", "reason"])
+@pytest.mark.parametrize("invalid_value", [None, True, 7, [], {"unexpected": "value"}])
+def test_legacy_non_string_descriptive_assessment_cannot_verify(
+    tmp_path: Path, field: str, invalid_value: object,
+) -> None:
+    """Unhashed legacy descriptive assessment fields must remain strings."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+        "confidence": "HIGH",
+        "recommended_action": "Keep a second copy",
+        "reason": "Recognized format",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    # Older reports may omit these optional fields.
+    absent = json.loads(json.dumps(valid))
+    for optional in ("confidence", "recommended_action", "reason"):
+        absent["files"][0].pop(optional)
+    assert report_integrity_status(absent) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = invalid_value
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+
+    path = tmp_path / "legacy-non-string-description.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded["files"][0][field] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("invalid_value", [None, True, 7, [], {"unexpected": "value"}])
+def test_legacy_non_string_priority_reason_cannot_verify(
+    tmp_path: Path, invalid_value: object,
+) -> None:
+    """Legacy priority_reason must remain text even when the inventory matches."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+        "priority_reason": "Preservation review",
+    }
+    valid = {
+        "files": [row],
+        "errors": [],
+        "summary": build_summary([row], [], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    absent = json.loads(json.dumps(valid))
+    absent["files"][0].pop("priority_reason")
+    assert report_integrity_status(absent) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["priority_reason"] = invalid_value
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+
+    path = tmp_path / "legacy-invalid-priority-reason.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded["files"][0]["priority_reason"] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+@pytest.mark.parametrize("field", ["format", "signature", "signature_status", "container_type"])
+@pytest.mark.parametrize("invalid_value", [None, True, 7, [], {"unexpected": "value"}])
+def test_legacy_non_string_format_identification_cannot_verify(
+    tmp_path: Path, field: str, invalid_value: object,
+) -> None:
+    """Unhashed legacy format-identification fields must remain strings."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+        "format": "CSV",
+        "signature": "text",
+        "signature_status": "MATCH",
+        "container_type": "none",
+    }
+    valid = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    absent = json.loads(json.dumps(valid))
+    for optional in ("format", "signature", "signature_status", "container_type"):
+        absent["files"][0].pop(optional)
+    assert report_integrity_status(absent) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = invalid_value
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+    path = tmp_path / "legacy-invalid-format-identification.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded["files"][0][field] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("field", ["relationship_strength", "relationship_evidence", "evidence"])
+@pytest.mark.parametrize("invalid_value", [None, True, 7, [], {"unexpected": "value"}])
+def test_legacy_non_string_relationship_metadata_cannot_verify(
+    tmp_path: Path, field: str, invalid_value: object,
+) -> None:
+    """Legacy relationship and evidence metadata must remain text when present."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+        "relationship_strength": "STRONG",
+        "relationship_evidence": "Recognized relation",
+        "evidence": "Signature matches",
+    }
+    valid = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    absent = json.loads(json.dumps(valid))
+    for optional in ("relationship_strength", "relationship_evidence", "evidence"):
+        absent["files"][0].pop(optional)
+    assert report_integrity_status(absent) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = invalid_value
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+    path = tmp_path / "legacy-invalid-relationship-evidence.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded["files"][0][field] == invalid_value
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "invalid_score",
+    [None, True, False, -1, 101, 7.5, "7.5", " 7", "1_0", "٧", [], {}],
+)
+def test_legacy_invalid_priority_score_cannot_verify(
+    tmp_path: Path, invalid_score: object,
+) -> None:
+    """Malformed legacy priority scores must not inherit inventory verification."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv", "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+        "priority_score": 7,
+    }
+    valid = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["priority_score"] = invalid_score
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+    path = tmp_path / "legacy-invalid-priority-score.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded["files"][0]["priority_score"] == invalid_score
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize("valid_score", [0, 100, "7", "007", 7.0])
+def test_legacy_compatible_priority_score_encodings_verify(valid_score: object) -> None:
+    """Historical whole-number scores and absent optional scores remain accepted."""
+    from labvault_scout.compare import report_integrity_status
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv", "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+        "priority_score": valid_score,
+    }
+    payload = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(payload) == "VERIFIED"
+    del row["priority_score"]
+    assert report_integrity_status(payload) == "VERIFIED"
+
+
+@pytest.mark.parametrize("field", ["risk", "priority", "confidence"])
+@pytest.mark.parametrize("invalid_label", ["", "safe", "CRITICAL", "LOW "])
+def test_legacy_out_of_enum_assessment_labels_cannot_verify(
+    tmp_path: Path, field: str, invalid_label: str,
+) -> None:
+    """Unhashed legacy assessment labels must follow the supported enums."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, scan_metrics, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv", "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "confidence": "HIGH",
+        "open_copy": "",
+    }
+    valid = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(valid) == "VERIFIED"
+    absent_confidence = json.loads(json.dumps(valid))
+    del absent_confidence["files"][0]["confidence"]
+    assert report_integrity_status(absent_confidence) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = invalid_label
+    metrics = scan_metrics(malformed)
+    malformed["summary"]["risk_counts"] = metrics["risk_counts"]
+    malformed["summary"]["priority_counts"] = metrics["priority_counts"]
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+
+    path = tmp_path / "legacy-invalid-assessment-enum.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded["files"][0][field] == invalid_label
+    assert report_integrity_status(loaded) == "MISMATCH"
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+@pytest.mark.parametrize("location", ["tool", "provenance", "summary", "file", "error", "top"])
+@pytest.mark.parametrize(
+    "nonfinite", [float("nan"), float("inf"), -float("inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_legacy_nonfinite_unhashed_metadata_cannot_verify(
+    location: str, nonfinite: float,
+) -> None:
+    """Direct verification must reject non-JSON numbers in legacy extensions."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv", "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+    }
+    error = {"path": "blocked.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row], "errors": [error],
+        "summary": build_summary([row], [error], []),
+        "tool": {"name": "LabVault Scout"},
+        "provenance": {"source_access": "read-only"},
+        "legacy_extension": {"value": 0},
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    targets = {
+        "tool": malformed["tool"],
+        "provenance": malformed["provenance"],
+        "summary": malformed["summary"],
+        "file": malformed["files"][0],
+        "error": malformed["errors"][0],
+        "top": malformed,
+    }
+    targets[location]["legacy_extension"] = {"value": nonfinite}
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+    assert report_integrity_status(malformed) == "MISMATCH"
+
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, malformed)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    [
+        "./blocked.csv",
+        "nested//blocked.csv",
+        "nested/./blocked.csv",
+        "nested/blocked.csv/",
+        "nested" + chr(92) * 2 + "blocked.csv",
+    ],
+)
+def test_legacy_noncanonical_error_path_cannot_verify(
+    tmp_path: Path, invalid_path: str,
+) -> None:
+    """Unhashed legacy error paths must not contain redundant path components."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "sample.csv", "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+    }
+    good_error = {"path": "nested" + chr(92) + "blocked.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row], "errors": [good_error],
+        "summary": build_summary([row], [good_error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+    root_error = {**valid, "errors": [{"path": ".", "error": "PermissionError"}]}
+    assert report_integrity_status(root_error) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"][0]["path"] = invalid_path
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+    path = tmp_path / "legacy-noncanonical-error-path.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(path)
+    assert loaded["errors"][0]["path"] == invalid_path
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    [
+        "./nested/data.csv",
+        "nested//data.csv",
+        "nested/./data.csv",
+        "nested/data.csv/",
+        "nested" + chr(92) * 2 + "data.csv",
+    ],
+)
+def test_legacy_single_noncanonical_file_path_cannot_verify(
+    tmp_path: Path, invalid_path: str,
+) -> None:
+    """Legacy file paths with redundant components must not be verified."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": "nested" + chr(92) + "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    valid = {"files": [row], "errors": [], "summary": build_summary([row], [], [])}
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0]["path"] = invalid_path
+    malformed["summary"] = build_summary(malformed["files"], [], [])
+    report = tmp_path / "legacy-noncanonical-file-path.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["files"][0]["path"] == invalid_path
+    assert report_integrity_status(loaded) == "MISMATCH"
+
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    ("file_path", "error_path"),
+    [
+        ("nested/data.csv", "nested/data.csv"),
+        ("nested" + chr(92) + "data.csv", "nested/data.csv"),
+        ("nested/data.csv", "nested" + chr(92) + "data.csv"),
+    ],
+)
+def test_legacy_file_error_path_overlap_cannot_verify(
+    tmp_path: Path, file_path: str, error_path: str,
+) -> None:
+    """A successful file cannot also be a scan error, including path aliases."""
+    from labvault_scout.compare import (
+        compare_payloads, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    row = {
+        "path": file_path, "size": 1, "sha256": "a" * 64,
+        "risk": "SAFE", "priority": "LOW", "open_copy": "",
+    }
+    error = {"path": "other.csv", "error": "PermissionError"}
+    valid = {
+        "files": [row], "errors": [error],
+        "summary": build_summary([row], [error], []),
+    }
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"][0]["path"] = error_path
+    assert malformed["summary"]["inventory_sha256"] == valid["summary"]["inventory_sha256"]
+    assert malformed["summary"]["error_count"] == valid["summary"]["error_count"]
+    report = tmp_path / "legacy-overlapping-file-error.json"
+    report.write_text(json.dumps(malformed), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["errors"][0]["path"] == error_path
+    assert report_integrity_status(loaded) == "MISMATCH"
+    checked = verify_report(loaded)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+    compared = compare_payloads(valid, loaded)
+    assert compared["comparison_status"] == "PARTIAL"
+    assert compared["after"]["integrity_status"] == "MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "errors",
+    [
+        [{"path": "blocked", "error": "PermissionError"}, {"path": "blocked", "error": "OSError"}],
+        [{"path": "blocked", "error": "PermissionError"}, {"path": "blocked", "error": "PermissionError"}],
+        [{"path": ".", "error": "PermissionError"}, {"path": ".", "error": "OSError"}],
+    ],
+)
+def test_legacy_repeated_error_paths_remain_compatible(
+    tmp_path: Path, errors: list[dict],
+) -> None:
+    """Repeated error paths are legal; scan errors still make comparisons partial."""
+    from labvault_scout.compare import (
+        compare_payloads, load_scan_report, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import build_summary
+
+    payload = {"files": [], "errors": errors, "summary": build_summary([], errors, [])}
+    report = tmp_path / "legacy-repeated-errors.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+    loaded = load_scan_report(report)
+    assert loaded["errors"] == errors
+    assert loaded["summary"]["error_count"] == 2
+    assert report_integrity_status(loaded) == "VERIFIED"
+    assert verify_report(loaded)["status"] == "VERIFIED"
+    comparison = compare_payloads(loaded, loaded)
+    assert comparison["comparison_status"] == "PARTIAL"
+    assert comparison["before"]["error_count"] == 2
+
+
+def test_schema1_repeated_traversal_error_paths_remain_compatible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeated traversal callbacks may report one directory more than once."""
+    from labvault_scout import cli
+    from labvault_scout.compare import (
+        compare_payloads, load_scan_report, report_integrity_status, verify_report,
+    )
+
+    root = tmp_path / "source"
+    root.mkdir()
+    output = tmp_path / "report"
+
+    def repeated_walk_errors(root: Path, excluded=None, on_error=None):
+        assert on_error is not None
+        on_error(root / "blocked", PermissionError("first failure"))
+        on_error(root / "blocked", OSError("second failure"))
+        return iter(())
+
+    monkeypatch.setattr(cli, "iter_files", repeated_walk_errors)
+    assert cli.scan(root, output) == 0
+    loaded = load_scan_report(output / "scan.json")
+    assert loaded["schema_version"] == "1"
+    assert loaded["errors"] == [
+        {"path": "blocked", "error": "PermissionError"},
+        {"path": "blocked", "error": "OSError"},
+    ]
+    assert loaded["summary"]["error_count"] == 2
+    assert report_integrity_status(loaded) == "VERIFIED"
+    assert verify_report(loaded)["status"] == "VERIFIED"
+    assert compare_payloads(loaded, loaded)["comparison_status"] == "PARTIAL"
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    [
+        "/absolute.csv",
+        "../parent.csv",
+        "nested/../escape.csv",
+        "./blocked.csv",
+        "nested//blocked.csv",
+        "nested/./blocked.csv",
+        "nested/blocked.csv/",
+        "blocked.csv\x00suffix",
+    ],
+)
+def test_schema1_noncanonical_error_path_rejected_with_recomputed_checksum(
+    tmp_path: Path, invalid_path: str,
+) -> None:
+    """Invalid error paths fail even when a Schema 1 checksum is recomputed."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"] = [{"path": invalid_path, "error": "PermissionError"}]
+    malformed["summary"]["error_count"] = 1
+    malformed["report_sha256"] = report_payload_sha256(malformed)
+
+    assert report_integrity_status(malformed) == "MISMATCH"
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+
+    report_path = tmp_path / "schema1-invalid-error-path.json"
+    report_path.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(ValueError, match="Report path"):
+        load_scan_report(report_path)
+
+@pytest.mark.parametrize("location", ["file", "error"])
+@pytest.mark.parametrize("codepoint", [0xD800, 0xDCFF])
+def test_schema1_unpaired_surrogate_path_rejected_at_load(
+    tmp_path: Path, location: str, codepoint: int,
+) -> None:
+    """Malformed Unicode in Schema 1 paths must fail at the load boundary."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.csv").write_text("value\n1\n", encoding="utf-8")
+    output = tmp_path / "report"
+    assert scan(source, output) == 1
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    bad_path = "invalid-" + chr(codepoint) + ".csv"
+    if location == "file":
+        malformed["files"][0]["path"] = bad_path
+    else:
+        malformed["errors"] = [{"path": bad_path, "error": "PermissionError"}]
+        malformed["summary"]["error_count"] = 1
+
+    report_path = tmp_path / "invalid-schema1-unicode-path.json"
+    report_path.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+    with pytest.raises(ValueError, match="Report path contains invalid Unicode"):
+        load_scan_report(report_path)
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+
+@pytest.mark.parametrize("codepoint", [0xD800, 0xDCFF])
+def test_schema1_unpaired_surrogate_error_text_rejected_at_load(
+    tmp_path: Path, codepoint: int,
+) -> None:
+    """Unencodable error messages must fail before a report is accepted."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["errors"] = [{"path": ".", "error": "Read" + chr(codepoint) + "Error"}]
+    malformed["summary"]["error_count"] = 1
+    report_path = tmp_path / "invalid-schema1-unicode-error-text.json"
+    report_path.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Schema 1 report contains invalid Unicode in error text"):
+        load_scan_report(report_path)
+    assert report_integrity_status(malformed) == "MISMATCH"
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "format", "signature", "signature_status", "container_type",
+        "priority_reason", "recommended_action", "open_copy",
+        "relationship_strength", "relationship_evidence", "evidence", "reason",
+    ],
+)
+@pytest.mark.parametrize("codepoint", [0xD800, 0xDCFF])
+def test_schema1_unpaired_surrogate_file_metadata_rejected_at_load(
+    tmp_path: Path, field: str, codepoint: int,
+) -> None:
+    """File assessment text must be UTF-8 encodable at the load boundary."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.csv").write_text("value\\n1\\n", encoding="utf-8")
+    output = tmp_path / "report"
+    assert scan(source, output) == 1
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["files"][0][field] = "invalid" + chr(codepoint) + "text"
+    report_path = tmp_path / "invalid-schema1-unicode-file-metadata.json"
+    report_path.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=f"invalid Unicode in {field}"):
+        load_scan_report(report_path)
+    assert report_integrity_status(malformed) == "MISMATCH"
+    assert verify_report(malformed)["status"] == "FAILED"
+
+
+@pytest.mark.parametrize("codepoint", [0xD800, 0xDCFF])
+def test_schema1_unpaired_surrogate_tool_version_rejected_at_load(
+    tmp_path: Path, codepoint: int,
+) -> None:
+    """Schema 1 tool version text must be valid UTF-8 at the load boundary."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["tool"]["version"] = "0.3.2+" + chr(codepoint)
+    report_path = tmp_path / "invalid-schema1-tool-version.json"
+    report_path.write_text(json.dumps(malformed, ensure_ascii=True), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid Unicode in tool"):
+        load_scan_report(report_path)
+    assert report_integrity_status(malformed) == "MISMATCH"
+    checked = verify_report(malformed)
+    assert checked["status"] == "FAILED"
+    assert checked["exit_code"] == 2
+
+
+def test_schema1_valid_unicode_tool_version_remains_compatible(tmp_path: Path) -> None:
+    """Valid non-ASCII version text is permitted by the Schema 1 contract."""
+    from labvault_scout.compare import report_integrity_status
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    payload = load_scan_report(output / "scan.json")
+    payload["tool"]["version"] = "0.3.2+révision"
+    payload["report_sha256"] = report_payload_sha256(payload)
+
+    report_path = tmp_path / "valid-unicode-schema1-tool-version.json"
+    report_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    assert load_scan_report(report_path)["tool"]["version"] == "0.3.2+révision"
+    assert report_integrity_status(payload) == "VERIFIED"
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value", "message"),
+    [
+        ("hash_algorithm", "sha1", "unsupported hash/path semantics"),
+        ("path_style", "absolute", "unsupported hash/path semantics"),
+        ("source_access", "read-write", "invalid source-access semantics"),
+        ("rules_sha256", "A" * 64, "invalid rules_sha256"),
+        ("rules_count", True, "invalid rules_count"),
+        ("rules_count", -1, "invalid rules_count"),
+        ("rules_count", 1.5, "invalid rules_count"),
+    ],
+)
+def test_schema1_invalid_provenance_rejected_with_recomputed_checksum(
+    tmp_path: Path, field: str, invalid_value: object, message: str,
+) -> None:
+    """Recomputing the checksum must not bypass Schema 1 provenance constraints."""
+    from labvault_scout.compare import report_integrity_status, verify_report
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "source"
+    source.mkdir()
+    output = tmp_path / "report"
+    assert scan(source, output) == 0
+    valid = load_scan_report(output / "scan.json")
+    assert report_integrity_status(valid) == "VERIFIED"
+
+    malformed = json.loads(json.dumps(valid))
+    malformed["provenance"][field] = invalid_value
+    malformed["report_sha256"] = report_payload_sha256(malformed)
+    path = tmp_path / "invalid-schema1-provenance.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        load_scan_report(path)
+    assert report_integrity_status(malformed) == "MISMATCH"
+    result = verify_report(malformed)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2

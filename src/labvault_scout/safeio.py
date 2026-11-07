@@ -24,14 +24,24 @@ def atomic_text_writer(
     )
     temp_path = Path(temp_name)
     try:
-        with os.fdopen(fd, "w", encoding=encoding, newline=newline) as handle:
+        try:
+            handle = os.fdopen(fd, "w", encoding=encoding, newline=newline)
+        except BaseException as original_error:
+            try:
+                os.close(fd)
+            except OSError as close_error:
+                raise original_error from close_error
+            raise
+        with handle:
             yield handle
         os.replace(temp_path, path)
-    except BaseException:
+    except BaseException as original_error:
         try:
             temp_path.unlink()
         except FileNotFoundError:
             pass
+        except OSError as cleanup_error:
+            raise original_error from cleanup_error
         raise
 
 

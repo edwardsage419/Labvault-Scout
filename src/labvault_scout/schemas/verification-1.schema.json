@@ -91,6 +91,15 @@
                 },
                 "exit_code": {
                   "const": 0
+                },
+                "schema_supported": {
+                  "const": true
+                },
+                "integrity_status": {
+                  "const": "VERIFIED"
+                },
+                "inventory_sha256": {
+                  "minLength": 64
                 }
               },
               "required": [
@@ -105,6 +114,15 @@
                 },
                 "exit_code": {
                   "const": 1
+                },
+                "schema_supported": {
+                  "const": true
+                },
+                "integrity_status": {
+                  "const": "UNKNOWN"
+                },
+                "inventory_sha256": {
+                  "const": ""
                 }
               },
               "required": [
@@ -119,6 +137,12 @@
                 },
                 "exit_code": {
                   "const": 2
+                },
+                "schema_supported": {
+                  "const": true
+                },
+                "integrity_status": {
+                  "const": "MISMATCH"
                 }
               },
               "required": [
@@ -133,6 +157,9 @@
                 },
                 "exit_code": {
                   "const": 2
+                },
+                "schema_supported": {
+                  "const": false
                 }
               },
               "required": [

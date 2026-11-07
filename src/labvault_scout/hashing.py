@@ -1,22 +1,97 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import stat as stat_module
+from os import stat_result
 from pathlib import Path
 
 
-def sha256_with_head(path: Path, head_size: int = 512, chunk_size: int = 1024 * 1024) -> tuple[str, bytes]:
-    """Hash a file and capture its bounded header in one sequential read."""
-    digest = hashlib.sha256()
-    head = bytearray()
-    with path.open("rb") as handle:
-        while chunk := handle.read(chunk_size):
-            if len(head) < head_size:
-                need = head_size - len(head)
-                head.extend(chunk[:need])
-            digest.update(chunk)
+class FileChangedDuringScan(OSError):
+    """Raised when a path no longer opens the file identity previously inspected."""
+
+
+def _file_identity_changed(expected: stat_result, actual: stat_result) -> bool:
+    fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns")
+    # On POSIX, ctime detects same-size writes even when mtime is restored.
+    # Windows path and descriptor stats can disagree on creation time.
+    if os.name != "nt":
+        fields += ("st_ctime_ns",)
+    return any(getattr(expected, field, None) != getattr(actual, field, None) for field in fields)
+
+
+def sha256_with_head(
+    path: Path,
+    head_size: int = 512,
+    chunk_size: int = 1024 * 1024,
+    *,
+    expected_stat: stat_result | None = None,
+) -> tuple[str, bytes]:
+    """Hash a stable regular file and capture its bounded header in one read."""
+    if isinstance(head_size, bool) or not isinstance(head_size, int) or head_size < 0:
+        raise ValueError("head_size must be a non-negative integer")
+    if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer")
+    checked_stat = path.lstat()
+    if expected_stat is not None and _file_identity_changed(expected_stat, checked_stat):
+        raise FileChangedDuringScan("File identity changed before read")
+    if not stat_module.S_ISREG(checked_stat.st_mode):
+        raise FileChangedDuringScan("File identity changed before read")
+
+    # A path can become a FIFO after lstat; opening it must not block.
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    fd = os.open(path, flags)
+    try:
+        opened_stat = os.fstat(fd)
+        if _file_identity_changed(checked_stat, opened_stat):
+            raise FileChangedDuringScan("File identity changed before read")
+        handle = os.fdopen(fd, "rb")
+        fd = -1
+        with handle:
+            digest = hashlib.sha256()
+            head = bytearray()
+            bytes_read = 0
+            while chunk := handle.read(chunk_size):
+                bytes_read += len(chunk)
+                if bytes_read > opened_stat.st_size:
+                    raise FileChangedDuringScan("File grew during read: byte count exceeds initial size")
+                if len(head) < head_size:
+                    need = head_size - len(head)
+                    head.extend(chunk[:need])
+                digest.update(chunk)
+            final_stat = os.fstat(handle.fileno())
+            if _file_identity_changed(opened_stat, final_stat):
+                raise FileChangedDuringScan("File changed during read")
+            try:
+                final_path_stat = path.lstat()
+            except FileNotFoundError as exc:
+                raise FileChangedDuringScan("File identity changed during read") from exc
+            if _file_identity_changed(opened_stat, final_path_stat):
+                raise FileChangedDuringScan("File identity changed during read")
+            if bytes_read != opened_stat.st_size:
+                raise FileChangedDuringScan("Incomplete file read: byte count mismatch")
+    except BaseException as original_error:
+        if fd != -1:
+            try:
+                os.close(fd)
+            except OSError as close_error:
+                raise original_error from close_error
+        raise
     return digest.hexdigest(), bytes(head)
 
 
-def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
-    digest, _ = sha256_with_head(path, head_size=0, chunk_size=chunk_size)
+def sha256_file(
+    path: Path,
+    chunk_size: int = 1024 * 1024,
+    *,
+    expected_stat: stat_result | None = None,
+) -> str:
+    digest, _ = sha256_with_head(
+        path, head_size=0, chunk_size=chunk_size, expected_stat=expected_stat
+    )
     return digest

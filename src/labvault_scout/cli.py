@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
+import re
+import stat as stat_module
 import sys
 from pathlib import Path
 from os import stat_result
 
 from . import __version__
+from . import hashing as hashing_module
 from .bundle import verify_bundle
 from .compare import compare_reports, comparison_exit_code, load_scan_report, verify_report, write_comparison
 from .dicom_validation import validate_dicom_file_meta
@@ -33,6 +37,42 @@ def _file_changed_during_scan(before: stat_result, after: stat_result) -> bool:
     return any(getattr(before, field, None) != getattr(after, field, None) for field in fields)
 
 
+def _open_verified_regular_file(path: Path, expected_stat: stat_result):
+    """Open a regular file for inspection without following a changed path."""
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        try:
+            current_stat = path.lstat()
+        except OSError:
+            raise hashing_module.FileChangedDuringScan("File identity changed before inspection") from exc
+        if (
+            not stat_module.S_ISREG(current_stat.st_mode)
+            or hashing_module._file_identity_changed(expected_stat, current_stat)
+        ):
+            raise hashing_module.FileChangedDuringScan("File identity changed before inspection") from exc
+        raise
+    try:
+        opened_stat = os.fstat(fd)
+        if (
+            not stat_module.S_ISREG(opened_stat.st_mode)
+            or hashing_module._file_identity_changed(expected_stat, opened_stat)
+        ):
+            raise hashing_module.FileChangedDuringScan("File identity changed before inspection")
+        handle = os.fdopen(fd, "rb")
+        fd = -1
+        return handle
+    finally:
+        if fd != -1:
+            os.close(fd)
+
+
 def scan(root: Path, output: Path) -> int:
     root = root.expanduser().resolve()
     rules = load_rules()
@@ -48,42 +88,69 @@ def scan(root: Path, output: Path) -> int:
     else:
         excluded_output = output
 
-    def record_issue(path: Path, error: str) -> None:
+    def safe_report_path(path: Path) -> str:
         try:
-            error_path = path.relative_to(root).as_posix()
+            report_path = path.relative_to(root).as_posix()
         except ValueError:
-            error_path = path.name
-        errors.append({"path": error_path, "error": error})
+            report_path = path.name
+        try:
+            report_path.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError(
+                "Source path cannot be represented safely in scan schema 1: invalid Unicode"
+            ) from exc
+        if re.match(r"^[A-Za-z]:", report_path):
+            raise ValueError(
+                f"Source path cannot be represented safely in scan schema 1: {report_path}"
+            )
+        return report_path
+
+    def record_issue(path: Path, error: str) -> None:
+        errors.append({"path": safe_report_path(path), "error": error})
 
     def record_error(path: Path, exc: OSError) -> None:
         record_issue(path, type(exc).__name__)
 
     for path in iter_files(root, excluded=excluded_output, on_error=record_error):
+        safe_report_path(path)
         try:
+            entry_stat = path.lstat()
+            if not stat_module.S_ISREG(entry_stat.st_mode):
+                record_issue(path, "FileChangedDuringScan")
+                continue
             stat = path.stat()
             rule = classify(path, rules)
-            digest, header = sha256_with_head(path)
+            digest, header = hashing_module.sha256_with_head(
+                path, expected_stat=entry_stat
+            )
             post_stat = path.stat()
             if _file_changed_during_scan(stat, post_stat):
                 record_issue(path, "FileChangedDuringScan")
                 continue
             signature = signature_from_head(header)
             if not signature and path.suffix.lower() in {".h5", ".hdf5", ".mat"}:
-                signature = inspect_signature(path)
+                with _open_verified_regular_file(path, entry_stat) as stream:
+                    signature = inspect_signature(path, stream=stream)
             if signature == "ZIP":
-                container_type = inspect_zip_container(path)
+                with _open_verified_regular_file(path, entry_stat) as stream:
+                    container_type = inspect_zip_container(path, stream=stream)
             elif signature == "OLE":
                 container_type = ole_container_from_header(header, stat.st_size)
             elif signature == "HDF5":
-                container_type = hdf5_container_from_header(header) or inspect_hdf5_container(path)
+                container_type = hdf5_container_from_header(header)
+                if not container_type:
+                    with _open_verified_regular_file(path, entry_stat) as stream:
+                        container_type = inspect_hdf5_container(path, stream=stream)
             elif signature == "GZIP" and path.name.lower().endswith(".nii.gz"):
-                container_type = inspect_gzip_nifti(path)
+                with _open_verified_regular_file(path, entry_stat) as stream:
+                    container_type = inspect_gzip_nifti(path, stream=stream)
             elif signature == "NETCDF":
                 container_type = netcdf_container_from_header(header)
             elif signature == "TIFF":
                 container_type = validate_tiff_first_ifd_offset(header, tiff_container_from_header(header))
             elif signature == "FITS":
-                container_type = validate_fits_mandatory_value_indicators(header, inspect_fits_container(path))
+                with _open_verified_regular_file(path, entry_stat) as stream:
+                    container_type = validate_fits_mandatory_value_indicators(header, inspect_fits_container(path, stream=stream))
             elif signature == "MAT5":
                 container_type = matlab5_container_from_header(header)
             elif signature == "DICOM":
@@ -103,8 +170,9 @@ def scan(root: Path, output: Path) -> int:
             else:
                 container_type = ""
             signature_status = extension_signature_status(path, signature, container_type)
+            confirmed_digest, _ = sha256_with_head(path)
             final_stat = path.stat()
-            if _file_changed_during_scan(stat, final_stat):
+            if digest != confirmed_digest or _file_changed_during_scan(stat, final_stat):
                 record_issue(path, "FileChangedDuringScan")
                 continue
             rows.append({

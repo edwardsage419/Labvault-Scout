@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from labvault_scout.bundle import load_bundle_manifest, manifest_payload_sha256
+from labvault_scout.bundle import BUNDLE_FILES, load_bundle_manifest, manifest_payload_sha256
 
 
 def _write_manifest(output_dir: Path, payload: object) -> None:
@@ -47,4 +47,292 @@ def test_bundle_manifest_rejects_non_object_file_entries(tmp_path: Path, entry: 
     _write_manifest(tmp_path, payload)
 
     with pytest.raises(ValueError, match="Bundle manifest contains a non-object file entry"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "duplicate_key_value",
+    [
+        '"algorithm": "sha256"',
+        '"version": "0.3.1"',
+        '"path": "scan.json"',
+    ],
+)
+def test_bundle_manifest_rejects_duplicate_json_object_keys(
+    tmp_path: Path, duplicate_key_value: str
+) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    payload = _base_manifest(entries)
+    encoded = json.dumps(payload)
+    assert duplicate_key_value in encoded
+    duplicated = encoded.replace(
+        duplicate_key_value,
+        duplicate_key_value + ", " + duplicate_key_value,
+        1,
+    )
+    (tmp_path / "bundle_manifest.json").write_text(duplicated, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Cannot read bundle manifest") as exc_info:
+        load_bundle_manifest(tmp_path)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "Duplicate bundle manifest JSON key" in str(exc_info.value.__cause__)
+
+
+def test_bundle_manifest_rejects_duplicate_paths(tmp_path: Path) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries.append(dict(entries[0]))
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Duplicate bundle manifest path"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_rejects_absolute_path(tmp_path: Path) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["path"] = "/scan.json"
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Unsafe bundle manifest path"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_rejects_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "manifest-target.json"
+    target.write_text("{}", encoding="utf-8")
+    manifest = tmp_path / "bundle_manifest.json"
+    try:
+        manifest.symlink_to(target)
+    except OSError:
+        pytest.skip("symlink creation is unavailable in this environment")
+
+    with pytest.raises(ValueError, match="Bundle manifest must not be a symlink"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("bad_path", ["./scan.json", "nested//scan.json"])
+def test_bundle_manifest_rejects_noncanonical_paths(tmp_path: Path, bad_path: str) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["path"] = bad_path
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Unsafe bundle manifest path"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_rejects_self_reference(tmp_path: Path) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["path"] = "bundle_manifest.json"
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest member"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("bad_path", [None, "", 1, "scan\x00.json"])
+def test_bundle_manifest_rejects_invalid_path_values(tmp_path: Path, bad_path: object) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["path"] = bad_path
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest path must be a non-empty string"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_rejects_dot_member(tmp_path: Path) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["path"] = "."
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest member"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("number_token", "value"),
+    [("0.0", 0.0), ("-0.0", -0.0), ("1e0", 1.0)],
+)
+def test_bundle_manifest_rejects_integral_float_tokens(
+    tmp_path: Path, number_token: str, value: float
+) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["size"] = value
+    payload = _base_manifest(entries)
+    encoded = json.dumps(payload)
+    original = f'"size": {json.dumps(value)}'
+    assert original in encoded
+    encoded = encoded.replace(original, f'"size": {number_token}', 1)
+    (tmp_path / "bundle_manifest.json").write_text(encoded, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest size"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_accepts_json_integer_negative_zero(tmp_path: Path) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    payload = _base_manifest(entries)
+    encoded = json.dumps(payload)
+    assert '"size": 0' in encoded
+    encoded = encoded.replace('"size": 0', '"size": -0', 1)
+    (tmp_path / "bundle_manifest.json").write_text(encoded, encoding="utf-8")
+
+    assert load_bundle_manifest(tmp_path) == payload
+
+
+@pytest.mark.parametrize("bad_size", [None, "0", -1, True, 1.5])
+def test_bundle_manifest_rejects_invalid_sizes(tmp_path: Path, bad_size: object) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["size"] = bad_size
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest size"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "bad_sha256",
+    [None, 1, "", "0" * 63, "A" * 64, "g" * 64],
+)
+def test_bundle_manifest_rejects_invalid_sha256(tmp_path: Path, bad_sha256: object) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["sha256"] = bad_sha256
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest SHA-256"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("missing_field", ["path", "size", "sha256"])
+def test_bundle_manifest_rejects_missing_file_entry_fields(
+    tmp_path: Path,
+    missing_field: str,
+) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0].pop(missing_field)
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest file entry has invalid fields"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_rejects_extra_file_entry_fields(tmp_path: Path) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    entries[0]["extra"] = "unexpected"
+    payload = _base_manifest(entries)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest file entry has invalid fields"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ["schema_version", "tool", "algorithm", "files", "manifest_sha256"],
+)
+def test_bundle_manifest_rejects_missing_top_level_fields(
+    tmp_path: Path,
+    missing_field: str,
+) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    payload = _base_manifest(entries)
+    payload.pop(missing_field)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest is missing fields"):
+        load_bundle_manifest(tmp_path)
+
+
+def test_bundle_manifest_rejects_extra_top_level_fields(tmp_path: Path) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    payload = _base_manifest(entries)
+    payload["extra"] = "unexpected"
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Bundle manifest has invalid top-level fields"):
+        load_bundle_manifest(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "bad_tool",
+    [
+        None,
+        [],
+        "LabVault Scout",
+        {},
+        {"name": "LabVault Scout"},
+        {"name": "LabVault Scout", "version": "0.3.1", "extra": "unexpected"},
+        {"name": None, "version": "0.3.1"},
+        {"name": "Other", "version": "0.3.1"},
+        {"name": "LabVault Scout", "version": None},
+        {"name": "LabVault Scout", "version": ""},
+        {"name": "LabVault Scout", "version": 1},
+    ],
+)
+def test_bundle_manifest_rejects_invalid_tool_metadata(
+    tmp_path: Path,
+    bad_tool: object,
+) -> None:
+    entries = [
+        {"path": member, "size": 0, "sha256": "0" * 64}
+        for member in BUNDLE_FILES
+    ]
+    payload = _base_manifest(entries)
+    payload["tool"] = bad_tool
+    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+    _write_manifest(tmp_path, payload)
+
+    with pytest.raises(ValueError, match="Invalid bundle manifest tool metadata"):
         load_bundle_manifest(tmp_path)

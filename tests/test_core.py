@@ -1869,6 +1869,182 @@ def test_comparison_carries_inventory_fingerprints(tmp_path: Path):
     assert result["before"]["inventory_sha256"] == result["after"]["inventory_sha256"]
 
 
+def test_comparison_schema_complete_requires_supported_error_free_sources():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clause = schema["allOf"][0]
+    assert clause["if"] == {
+        "properties": {"comparison_status": {"const": "COMPLETE"}},
+        "required": ["comparison_status"],
+    }
+    for side in ("before", "after"):
+        properties = clause["then"]["properties"][side]["properties"]
+        assert properties == {
+            "error_count": {"const": 0},
+            "schema_supported": {"const": True},
+            "integrity_status": {"enum": ["VERIFIED", "UNKNOWN"]},
+        }
+
+    valid = {"files": [], "errors": []}
+    complete = compare_payloads(valid, valid)
+    assert complete["comparison_status"] == "COMPLETE"
+    assert complete["before"]["integrity_status"] == "UNKNOWN"
+
+    for invalid in (
+        {"files": [], "errors": [{"path": "blocked", "error": "PermissionError"}]},
+        {"schema_version": "99", "files": [], "errors": []},
+        {"files": [], "errors": [], "summary": {"inventory_sha256": "0" * 64}},
+    ):
+        partial = compare_payloads(valid, invalid)
+        assert partial["comparison_status"] == "PARTIAL"
+
+
+
+def test_comparison_schema_partial_requires_source_issue():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("comparison_status")
+        == {"const": "PARTIAL"}
+    )
+    assert clause == {
+        "if": {
+            "properties": {"comparison_status": {"const": "PARTIAL"}},
+            "required": ["comparison_status"],
+        },
+        "then": {
+            "anyOf": [
+                {"properties": {"before": {"properties": {"error_count": {"minimum": 1}}}}},
+                {"properties": {"after": {"properties": {"error_count": {"minimum": 1}}}}},
+                {"properties": {"before": {"properties": {"schema_supported": {"const": False}}}}},
+                {"properties": {"after": {"properties": {"schema_supported": {"const": False}}}}},
+                {"properties": {"before": {"properties": {"integrity_status": {"const": "MISMATCH"}}}}},
+                {"properties": {"after": {"properties": {"integrity_status": {"const": "MISMATCH"}}}}},
+            ],
+        },
+    }
+
+    clean = {"files": [], "errors": []}
+    assert compare_payloads(clean, clean)["comparison_status"] == "COMPLETE"
+    for source in (
+        {"files": [], "errors": [{"path": "blocked", "error": "PermissionError"}]},
+        {"schema_version": "99", "files": [], "errors": []},
+        {"files": [], "errors": [], "summary": {"inventory_sha256": "0" * 64}},
+    ):
+        assert compare_payloads(clean, source)["comparison_status"] == "PARTIAL"
+
+
+def test_comparison_schema_zero_change_count_matches_empty_changes():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    zero_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("change_count") == {"const": 0}
+    )
+    count_fields = (
+        "added_count",
+        "removed_count",
+        "moved_count",
+        "content_changed_count",
+        "assessment_changed_count",
+        "priority_escalated_count",
+        "priority_deescalated_count",
+    )
+    assert zero_clause == {
+        "if": {
+            "properties": {
+                "summary": {
+                    "properties": {"change_count": {"const": 0}},
+                    "required": ["change_count"],
+                },
+            },
+            "required": ["summary"],
+        },
+        "then": {
+            "properties": {
+                "changes": {"maxItems": 0},
+                "summary": {"properties": {name: {"const": 0} for name in count_fields}},
+            },
+        },
+        "else": {"properties": {"changes": {"minItems": 1}}},
+    }
+
+    empty = {"files": [], "errors": []}
+    unchanged = compare_payloads(empty, empty)
+    assert unchanged["summary"]["change_count"] == 0
+    assert unchanged["changes"] == []
+    assert all(unchanged["summary"][name] == 0 for name in count_fields)
+
+    stable = {"files": [{"path": "same.csv", "sha256": "a" * 64}], "errors": []}
+    stable_comparison = compare_payloads(stable, stable)
+    assert stable_comparison["summary"]["change_count"] == 0
+    assert stable_comparison["summary"]["unchanged_count"] == 1
+    assert all(stable_comparison["summary"][name] == 0 for name in count_fields)
+
+    added = compare_payloads(
+        empty,
+        {"files": [{"path": "data.csv", "sha256": "a" * 64}], "errors": []},
+    )
+    assert added["summary"]["change_count"] == 1
+    assert len(added["changes"]) == 1
+
+
+
+def test_comparison_schema_nonzero_changes_require_category_count():
+    from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("comparison"))
+    clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("change_count") == {"minimum": 1}
+    )
+    categories = (
+        "added_count",
+        "removed_count",
+        "moved_count",
+        "content_changed_count",
+        "assessment_changed_count",
+    )
+    assert clause == {
+        "if": {
+            "properties": {
+                "summary": {
+                    "properties": {"change_count": {"minimum": 1}},
+                    "required": ["change_count"],
+                },
+            },
+            "required": ["summary"],
+        },
+        "then": {
+            "properties": {
+                "summary": {
+                    "anyOf": [
+                        {"properties": {name: {"minimum": 1}}}
+                        for name in categories
+                    ],
+                },
+            },
+        },
+    }
+
+    empty = {"files": [], "errors": []}
+    one_file = {"files": [{"path": "data.csv", "sha256": "a" * 64}], "errors": []}
+    for before, after in ((empty, one_file), (one_file, empty)):
+        summary = compare_payloads(before, after)["summary"]
+        assert summary["change_count"] == 1
+        assert any(summary[name] > 0 for name in categories)
+
+
 def test_comparison_schema_assessment_changes_have_real_differences():
     from labvault_scout.schema_registry import load_schema_text
 
@@ -2291,29 +2467,73 @@ def test_scan_json_records_non_sensitive_provenance(tmp_path: Path):
     assert str(source) not in json.dumps(provenance)
 
 
-def test_compare_reports_rule_context_status():
+def test_comparison_schema_rule_status_requires_appropriate_fingerprint_presence():
     from labvault_scout.compare import compare_payloads
+    from labvault_scout.schema_registry import load_schema_text
 
-    base = {
-        "schema_version": "1",
-        "provenance": {"rules_sha256": "a" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
-        "files": [{"path": "data.csv", "sha256": "same"}],
-        "errors": [],
+    clauses = json.loads(load_schema_text("comparison"))["allOf"]
+    known = next(
+        clause for clause in clauses
+        if clause["if"]["properties"].get("rules_status") == {"enum": ["SAME", "CHANGED"]}
+    )
+    unknown = next(
+        clause for clause in clauses
+        if clause["if"]["properties"].get("rules_status") == {"const": "UNKNOWN"}
+    )
+    assert known["if"]["properties"]["rules_status"] == {"enum": ["SAME", "CHANGED"]}
+    assert known["if"]["required"] == ["rules_status"]
+    for side in ("before", "after"):
+        assert known["then"]["properties"][side]["properties"]["rules_sha256"] == {
+            "minLength": 64
+        }
+
+    assert unknown["if"] == {
+        "properties": {"rules_status": {"const": "UNKNOWN"}},
+        "required": ["rules_status"],
     }
-    same = {
-        "schema_version": "1",
-        "provenance": {"rules_sha256": "a" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
-        "files": [{"path": "data.csv", "sha256": "same"}],
-        "errors": [],
-    }
-    changed = {
-        "schema_version": "1",
-        "provenance": {"rules_sha256": "b" * 64, "hash_algorithm": "sha256", "path_style": "relative-posix"},
-        "files": [{"path": "data.csv", "sha256": "same"}],
-        "errors": [],
-    }
+    assert unknown["then"]["anyOf"] == [
+        {"properties": {"before": {"properties": {"rules_sha256": {"const": ""}}}}},
+        {"properties": {"after": {"properties": {"rules_sha256": {"const": ""}}}}},
+    ]
+
+    for before_hash, after_hash, expected_status in (
+        ("", "", "UNKNOWN"),
+        ("a" * 64, "", "UNKNOWN"),
+        ("", "b" * 64, "UNKNOWN"),
+        ("a" * 64, "a" * 64, "SAME"),
+        ("a" * 64, "b" * 64, "CHANGED"),
+    ):
+        before = {"files": [], "errors": [], "provenance": {"rules_sha256": before_hash}}
+        after = {"files": [], "errors": [], "provenance": {"rules_sha256": after_hash}}
+        result = compare_payloads(before, after)
+        assert result["rules_status"] == expected_status
+        assert result["before"]["rules_sha256"] == before_hash
+        assert result["after"]["rules_sha256"] == after_hash
+
+
+def test_compare_reports_rule_context_status(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads, report_integrity_status
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "rules_context_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\\n1\\n", encoding="utf-8")
+    output = tmp_path / "rules_context_report"
+    scan(source, output)
+
+    base = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    base["provenance"]["rules_sha256"] = "a" * 64
+    base["report_sha256"] = report_payload_sha256(base)
+    same = json.loads(json.dumps(base))
+    changed = json.loads(json.dumps(base))
+    changed["provenance"]["rules_sha256"] = "b" * 64
+    changed["report_sha256"] = report_payload_sha256(changed)
+
+    assert report_integrity_status(base) == "VERIFIED"
+    assert report_integrity_status(changed) == "VERIFIED"
 
     same_result = compare_payloads(base, same)
+    assert same_result["comparison_status"] == "COMPLETE"
     assert same_result["rules_status"] == "SAME"
     assert not any("Rule-set fingerprint changed" in warning for warning in same_result["warnings"])
 
@@ -2321,7 +2541,6 @@ def test_compare_reports_rule_context_status():
     assert changed_result["comparison_status"] == "COMPLETE"
     assert changed_result["rules_status"] == "CHANGED"
     assert any("Rule-set fingerprint changed" in warning for warning in changed_result["warnings"])
-
 
 def test_compare_legacy_rule_context_is_unknown():
     from labvault_scout.compare import compare_payloads
@@ -2365,6 +2584,128 @@ def test_compare_marks_tampered_inventory_partial(tmp_path: Path):
     assert result["comparison_status"] == "PARTIAL"
     assert any("fingerprint validation" in warning for warning in result["warnings"])
     assert comparison_exit_code(result) == 2
+
+
+
+def test_schema1_checksum_is_required_for_direct_integrity_checks(tmp_path: Path):
+    from labvault_scout.compare import compare_payloads, report_integrity_status, verify_report
+
+    source = tmp_path / "checksum_required_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "checksum_required_report"
+    scan(source, output)
+
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert report_integrity_status(original) == "VERIFIED"
+
+    for omit in (True, False):
+        malformed = json.loads(json.dumps(original))
+        if omit:
+            del malformed["report_sha256"]
+        else:
+            malformed["report_sha256"] = None
+        assert report_integrity_status(malformed) == "MISMATCH"
+        verified = verify_report(malformed)
+        assert verified["status"] == "FAILED"
+        assert verified["exit_code"] == 2
+        comparison = compare_payloads(original, malformed)
+        assert comparison["comparison_status"] == "PARTIAL"
+        assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+    legacy = json.loads(json.dumps(original))
+    del legacy["schema_version"]
+    del legacy["report_sha256"]
+    assert report_integrity_status(legacy) == "VERIFIED"
+
+
+
+def test_schema1_direct_integrity_rejects_invalid_structure_with_valid_checksum(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import (
+        compare_payloads, load_scan_report, report_integrity_status, verify_report,
+    )
+    from labvault_scout.report import report_payload_sha256
+
+    source = tmp_path / "schema1_structure_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\\n1\\n", encoding="utf-8")
+    output = tmp_path / "schema1_structure_report"
+    scan(source, output)
+
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert report_integrity_status(original) == "VERIFIED"
+
+    cases = []
+    bad_tool = json.loads(json.dumps(original))
+    bad_tool["tool"]["name"] = "Other Tool"
+    cases.append(bad_tool)
+
+    bad_provenance = json.loads(json.dumps(original))
+    bad_provenance["provenance"]["source_access"] = "read-write"
+    cases.append(bad_provenance)
+
+    bad_score = json.loads(json.dumps(original))
+    bad_score["files"][0]["priority_score"] = 101
+    cases.append(bad_score)
+
+    extra_field = json.loads(json.dumps(original))
+    extra_field["files"][0]["unexpected"] = "invalid"
+    cases.append(extra_field)
+
+    missing_summary = json.loads(json.dumps(original))
+    missing_summary["summary"] = {}
+    cases.append(missing_summary)
+
+    for index, malformed in enumerate(cases):
+        malformed["report_sha256"] = report_payload_sha256(malformed)
+        assert report_integrity_status(malformed) == "MISMATCH"
+        checked = verify_report(malformed)
+        assert checked["status"] == "FAILED"
+        assert checked["exit_code"] == 2
+        comparison = compare_payloads(original, malformed)
+        assert comparison["comparison_status"] == "PARTIAL"
+        assert comparison["after"]["integrity_status"] == "MISMATCH"
+
+        path = tmp_path / f"bad_schema1_structure_{index}.json"
+        path.write_text(json.dumps(malformed), encoding="utf-8")
+        with pytest.raises(ValueError):
+            load_scan_report(path)
+
+
+
+def test_schema1_direct_integrity_rejects_duplicate_file_paths(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report, report_integrity_status
+    from labvault_scout.report import (
+        build_summary, duplicate_groups, report_payload_sha256,
+    )
+
+    source = tmp_path / "duplicate_path_source"
+    source.mkdir()
+    (source / "first.csv").write_text("identical", encoding="utf-8")
+    (source / "second.csv").write_text("identical", encoding="utf-8")
+    output = tmp_path / "duplicate_path_report"
+    scan(source, output)
+
+    original = json.loads((output / "scan.json").read_text(encoding="utf-8"))
+    assert len(original["files"]) == 2
+    assert report_integrity_status(original) == "VERIFIED"
+
+    duplicate = json.loads(json.dumps(original))
+    duplicate["files"][1]["path"] = duplicate["files"][0]["path"]
+    duplicate["summary"] = build_summary(
+        duplicate["files"], duplicate["errors"], duplicate_groups(duplicate["files"])
+    )
+    duplicate["report_sha256"] = report_payload_sha256(duplicate)
+    assert duplicate["summary"]["file_count"] == 2
+    assert duplicate["summary"]["duplicate_group_count"] == 1
+    assert report_integrity_status(duplicate) == "MISMATCH"
+
+    path = tmp_path / "duplicate_path_scan.json"
+    path.write_text(json.dumps(duplicate), encoding="utf-8")
+    with pytest.raises(ValueError, match="Duplicate path"):
+        load_scan_report(path)
 
 
 def test_legacy_report_integrity_is_unknown_not_failure():
@@ -2679,7 +3020,9 @@ def test_legacy_loader_remains_lenient_for_minimal_rows(tmp_path: Path):
 
 def test_loader_rejects_non_string_or_empty_explicit_schema_version(tmp_path: Path):
     import pytest
-    from labvault_scout.compare import load_scan_report, verify_report
+    from labvault_scout.compare import (
+        load_scan_report, report_integrity_status, verify_report,
+    )
 
     source = tmp_path / "schema_type_source"
     source.mkdir()
@@ -2688,7 +3031,7 @@ def test_loader_rejects_non_string_or_empty_explicit_schema_version(tmp_path: Pa
     scan(source, output)
     payload = json.loads((output / "scan.json").read_text(encoding="utf-8"))
 
-    for value in (1, True, ""):
+    for value in (None, 1, True, ""):
         mutated = json.loads(json.dumps(payload))
         mutated["schema_version"] = value
         report = tmp_path / ("bad-schema-version-" + str(type(value).__name__) + "-" + str(value) + ".json")
@@ -2696,12 +3039,12 @@ def test_loader_rejects_non_string_or_empty_explicit_schema_version(tmp_path: Pa
         with pytest.raises(ValueError, match="Invalid scan schema_version"):
             load_scan_report(report)
 
-    direct = json.loads(json.dumps(payload))
-    direct["schema_version"] = 1
-    result = verify_report(direct)
-    assert result["status"] == "UNSUPPORTED"
-    assert result["schema_version"] == "invalid"
-    assert result["schema_supported"] is False
+        assert report_integrity_status(mutated) == "MISMATCH"
+        result = verify_report(mutated)
+        assert result["status"] == "UNSUPPORTED"
+        assert result["exit_code"] == 2
+        assert result["schema_version"] == "invalid"
+        assert result["schema_supported"] is False
 
 
 def test_unknown_future_schema_uses_minimum_validation_only(tmp_path: Path):
@@ -2999,6 +3342,57 @@ def test_verification_schema_status_exit_code_pairs_match_runtime():
     }
 
 
+def test_verification_schema_status_integrity_constraints_match_runtime():
+    from labvault_scout.schema_registry import load_schema_text
+
+    choices = json.loads(load_schema_text("verification"))["oneOf"][0]["allOf"][0]["oneOf"]
+    properties_by_status = {
+        option["properties"]["status"]["const"]: option["properties"]
+        for option in choices
+    }
+
+    for status, supported, integrity in (
+        ("VERIFIED", True, "VERIFIED"),
+        ("UNKNOWN", True, "UNKNOWN"),
+        ("FAILED", True, "MISMATCH"),
+        ("UNSUPPORTED", False, None),
+    ):
+        properties = properties_by_status[status]
+        assert properties["schema_supported"] == {"const": supported}
+        if integrity is None:
+            # Unsupported schemas can have any of the declared integrity states.
+            assert "integrity_status" not in properties
+        else:
+            assert properties["integrity_status"] == {"const": integrity}
+
+
+
+def test_verification_schema_inventory_fingerprint_presence_matches_runtime(tmp_path: Path):
+    from labvault_scout.compare import load_scan_report, verify_report
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("verification"))["oneOf"][0]
+    options = {
+        option["properties"]["status"]["const"]: option["properties"]
+        for option in schema["allOf"][0]["oneOf"]
+    }
+    assert options["VERIFIED"]["inventory_sha256"] == {"minLength": 64}
+    assert options["UNKNOWN"]["inventory_sha256"] == {"const": ""}
+
+    source = tmp_path / "verification_fingerprint_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x,1", encoding="utf-8")
+    output = tmp_path / "verification_fingerprint_report"
+    scan(source, output)
+    verified = verify_report(load_scan_report(output / "scan.json"))
+    assert verified["status"] == "VERIFIED"
+    assert len(verified["inventory_sha256"]) == 64
+
+    unknown = verify_report({"files": [], "errors": []})
+    assert unknown["status"] == "UNKNOWN"
+    assert unknown["inventory_sha256"] == ""
+
+
 def test_verification_schema_hash_fields_match_runtime_normalization():
     from labvault_scout.schema_registry import load_schema_text
 
@@ -3033,6 +3427,419 @@ def test_cli_schema_outputs_packaged_schema(monkeypatch, capsys):
     main()
     payload = json.loads(capsys.readouterr().out)
     assert payload["title"] == "LabVault Scout scan report schema 1"
+
+
+
+def test_scan_schema_error_count_matches_error_presence():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    error_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("error_count") == {"const": 0}
+    )
+    assert error_clause == {
+        "if": {
+            "properties": {
+                "summary": {
+                    "properties": {"error_count": {"const": 0}},
+                    "required": ["error_count"],
+                },
+            },
+            "required": ["summary"],
+        },
+        "then": {"properties": {"errors": {"maxItems": 0}}},
+        "else": {"properties": {"errors": {"minItems": 1}}},
+    }
+
+    for errors, expected in (
+        ([], 0),
+        ([{"path": "blocked.csv", "error": "PermissionError"}], 1),
+    ):
+        summary = build_summary([], errors, [])
+        assert summary["error_count"] == expected
+        assert (summary["error_count"] == 0) == (len(errors) == 0)
+
+
+
+def test_scan_schema_file_count_matches_file_presence():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    file_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    assert file_clause == {
+        "if": {
+            "properties": {
+                "summary": {
+                    "properties": {"file_count": {"const": 0}},
+                    "required": ["file_count"],
+                },
+            },
+            "required": ["summary"],
+        },
+        "then": {
+            "properties": {
+                "files": {"maxItems": 0},
+                "summary": {
+                    "properties": {
+                        "risk_counts": {"maxProperties": 0},
+                        "priority_counts": {"maxProperties": 0},
+                        "total_bytes": {"const": 0},
+                        "open_copy_count": {"const": 0},
+                        "duplicate_group_count": {"const": 0},
+                    },
+                },
+            },
+        },
+        "else": {
+            "properties": {
+                "files": {"minItems": 1},
+                "summary": {
+                    "properties": {
+                        "risk_counts": {"minProperties": 1},
+                        "priority_counts": {"minProperties": 1},
+                    },
+                },
+            },
+        },
+    }
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    for rows, expected in (([], 0), ([row], 1)):
+        summary = build_summary(rows, [], [])
+        assert summary["file_count"] == expected
+        assert (summary["file_count"] == 0) == (len(rows) == 0)
+
+
+
+
+def test_scan_schema_empty_file_list_has_empty_category_counts():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    zero_files_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    count_properties = zero_files_clause["then"]["properties"]["summary"]["properties"]
+    assert count_properties == {
+        "risk_counts": {"maxProperties": 0},
+        "priority_counts": {"maxProperties": 0},
+        "total_bytes": {"const": 0},
+        "open_copy_count": {"const": 0},
+        "duplicate_group_count": {"const": 0},
+    }
+
+    empty = build_summary([], [], [])
+    assert empty["file_count"] == 0
+    assert empty["risk_counts"] == {}
+    assert empty["priority_counts"] == {}
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    populated = build_summary([row], [], [])
+    assert populated["file_count"] == 1
+    assert populated["risk_counts"] == {"SAFE": 1}
+    assert populated["priority_counts"] == {"LOW": 1}
+
+
+
+def test_scan_schema_empty_scan_total_bytes_is_zero():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    empty_scan = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    assert empty_scan["then"]["properties"]["summary"]["properties"]["total_bytes"] == {
+        "const": 0,
+    }
+
+    empty = build_summary([], [], [])
+    assert empty["file_count"] == 0
+    assert empty["total_bytes"] == 0
+
+    row = {
+        "path": "empty.csv",
+        "size": 0,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    zero_byte_file = build_summary([row], [], [])
+    assert zero_byte_file["file_count"] == 1
+    assert zero_byte_file["total_bytes"] == 0
+
+    row["size"] = 12
+    nonempty_file = build_summary([row], [], [])
+    assert nonempty_file["file_count"] == 1
+    assert nonempty_file["total_bytes"] == 12
+
+
+
+def test_scan_schema_empty_scan_has_no_open_copies():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    zero_files_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    assert zero_files_clause["then"]["properties"]["summary"]["properties"]["open_copy_count"] == {
+        "const": 0,
+    }
+
+    empty = build_summary([], [], [])
+    assert empty["file_count"] == 0
+    assert empty["open_copy_count"] == 0
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    without_copy = build_summary([row], [], [])
+    assert without_copy["file_count"] == 1
+    assert without_copy["open_copy_count"] == 0
+
+    row["open_copy"] = "data.txt"
+    with_copy = build_summary([row], [], [])
+    assert with_copy["file_count"] == 1
+    assert with_copy["open_copy_count"] == 1
+
+
+
+def test_scan_schema_empty_scan_has_no_duplicate_groups():
+    from labvault_scout.report import build_summary, duplicate_groups
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    zero_files_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    assert zero_files_clause["then"]["properties"]["summary"]["properties"]["duplicate_group_count"] == {
+        "const": 0,
+    }
+
+    empty = build_summary([], [], duplicate_groups([]))
+    assert empty["file_count"] == 0
+    assert empty["duplicate_group_count"] == 0
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    one_file = build_summary([row], [], duplicate_groups([row]))
+    assert one_file["file_count"] == 1
+    assert one_file["duplicate_group_count"] == 0
+
+    rows = [row, {**row, "path": "copy.csv"}]
+    two_copies = build_summary(rows, [], duplicate_groups(rows))
+    assert two_copies["file_count"] == 2
+    assert two_copies["duplicate_group_count"] == 1
+
+
+
+def test_scan_schema_single_file_has_no_duplicate_groups():
+    from labvault_scout.report import build_summary, duplicate_groups
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    one_file_clauses = [
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 1}
+    ]
+    assert one_file_clauses == [{
+        "if": {
+            "properties": {
+                "summary": {
+                    "properties": {"file_count": {"const": 1}},
+                    "required": ["file_count"],
+                },
+            },
+            "required": ["summary"],
+        },
+        "then": {
+            "properties": {
+                "summary": {
+                    "properties": {"duplicate_group_count": {"const": 0}},
+                },
+            },
+        },
+    }]
+
+    row = {
+        "path": "data.csv",
+        "size": 1,
+        "sha256": "a" * 64,
+        "risk": "SAFE",
+        "priority": "LOW",
+        "open_copy": "",
+    }
+    single = build_summary([row], [], duplicate_groups([row]))
+    assert single["file_count"] == 1
+    assert single["duplicate_group_count"] == 0
+
+    copies = [row, {**row, "path": "copy.csv"}]
+    duplicated = build_summary(copies, [], duplicate_groups(copies))
+    assert duplicated["file_count"] == 2
+    assert duplicated["duplicate_group_count"] == 1
+
+
+def test_scan_schema_summary_count_keys_match_file_enums():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    file_properties = schema["properties"]["files"]["items"]["properties"]
+    summary_properties = schema["properties"]["summary"]["properties"]
+
+    for file_field, summary_field, unexpected in (
+        ("risk", "risk_counts", "INVALID_RISK"),
+        ("priority", "priority_counts", "URGENT"),
+    ):
+        allowed = file_properties[file_field]["enum"]
+        count_schema = summary_properties[summary_field]
+        assert count_schema["propertyNames"] == {"enum": allowed}
+        assert count_schema["additionalProperties"] == {"type": "integer", "minimum": 1}
+        assert unexpected not in count_schema["propertyNames"]["enum"]
+
+    rows = [
+        {
+            "path": f"file_{index}.csv",
+            "size": 1,
+            "sha256": "a" * 64,
+            "risk": risk,
+            "priority": priority,
+            "open_copy": "",
+        }
+        for index, (risk, priority) in enumerate((
+            ("SAFE", "LOW"),
+            ("WATCH", "MEDIUM"),
+            ("RESCUE", "HIGH"),
+            ("UNKNOWN", "MEDIUM"),
+        ))
+    ]
+    summary = build_summary(rows, [], [])
+    assert set(summary["risk_counts"]) == set(file_properties["risk"]["enum"])
+    assert set(summary["priority_counts"]) == set(file_properties["priority"]["enum"])
+
+
+
+def test_scan_schema_only_records_positive_category_counts():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    summary_props = schema["properties"]["summary"]["properties"]
+    for key in ("risk_counts", "priority_counts"):
+        assert summary_props[key]["additionalProperties"] == {
+            "type": "integer",
+            "minimum": 1,
+        }
+
+    rows = [
+        {
+            "path": name,
+            "size": 1,
+            "sha256": "a" * 64,
+            "risk": risk,
+            "priority": priority,
+            "open_copy": "",
+        }
+        for name, risk, priority in (
+            ("first.csv", "SAFE", "LOW"),
+            ("second.csv", "SAFE", "LOW"),
+            ("third.csv", "WATCH", "MEDIUM"),
+        )
+    ]
+    summary = build_summary(rows, [], [])
+    assert summary["risk_counts"] == {"SAFE": 2, "WATCH": 1}
+    assert summary["priority_counts"] == {"LOW": 2, "MEDIUM": 1}
+    assert all(count > 0 for counts in (
+        summary["risk_counts"], summary["priority_counts"]
+    ) for count in counts.values())
+
+
+
+def test_scan_schema_nonempty_scan_requires_category_counts():
+    from labvault_scout.report import build_summary
+    from labvault_scout.schema_registry import load_schema_text
+
+    schema = json.loads(load_schema_text("scan"))
+    zero_files_clause = next(
+        clause for clause in schema["allOf"]
+        if clause.get("if", {}).get("properties", {}).get("summary", {})
+        .get("properties", {}).get("file_count") == {"const": 0}
+    )
+    nonempty = zero_files_clause["else"]["properties"]["summary"]["properties"]
+    assert nonempty == {
+        "risk_counts": {"minProperties": 1},
+        "priority_counts": {"minProperties": 1},
+    }
+
+    empty = build_summary([], [], [])
+    assert empty["file_count"] == 0
+    assert empty["risk_counts"] == {}
+    assert empty["priority_counts"] == {}
+
+    rows = [
+        {
+            "path": f"data_{index}.csv",
+            "size": 1,
+            "sha256": "a" * 64,
+            "risk": risk,
+            "priority": priority,
+            "open_copy": "",
+        }
+        for index, (risk, priority) in enumerate((
+            ("SAFE", "LOW"),
+            ("WATCH", "MEDIUM"),
+        ))
+    ]
+    for selected in (rows[:1], rows):
+        summary = build_summary(selected, [], [])
+        assert summary["file_count"] == len(selected)
+        assert summary["risk_counts"]
+        assert summary["priority_counts"]
 
 
 def test_scan_schema_enforces_relative_posix_paths():
@@ -4266,6 +5073,52 @@ def test_schema1_runtime_validation_rejects_invalid_summary_types(tmp_path: Path
         load_scan_report(path)
 
 
+
+def test_schema1_runtime_summary_category_counts_match_schema(tmp_path: Path):
+    import pytest
+    from labvault_scout.compare import load_scan_report, report_integrity_status
+    from labvault_scout.report import report_payload_sha256
+    from labvault_scout.schema_registry import load_schema_text
+
+    source = tmp_path / "category_source"
+    source.mkdir()
+    (source / "data.csv").write_text("x\n1\n", encoding="utf-8")
+    output = tmp_path / "category_report"
+    scan(source, output)
+
+    report = output / "scan.json"
+    original = json.loads(report.read_text(encoding="utf-8"))
+    assert report_integrity_status(load_scan_report(report)) == "VERIFIED"
+
+    schema = json.loads(load_schema_text("scan"))
+    summary_props = schema["properties"]["summary"]["properties"]
+    cases = []
+    for field, bad_category in (
+        ("risk_counts", "INVALID_RISK"),
+        ("priority_counts", "INVALID_PRIORITY"),
+    ):
+        valid_keys = summary_props[field]["propertyNames"]["enum"]
+        assert original["summary"][field]
+        assert set(original["summary"][field]).issubset(valid_keys)
+        assert summary_props[field]["additionalProperties"]["minimum"] == 1
+
+        wrong_key = json.loads(json.dumps(original))
+        wrong_key["summary"][field] = {bad_category: 1}
+        cases.append(wrong_key)
+
+        zero_count = json.loads(json.dumps(original))
+        real_category = next(iter(zero_count["summary"][field]))
+        zero_count["summary"][field][real_category] = 0
+        cases.append(zero_count)
+
+    for index, payload in enumerate(cases):
+        payload["report_sha256"] = report_payload_sha256(payload)
+        path = tmp_path / f"bad_category_summary_{index}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(ValueError, match="invalid summary"):
+            load_scan_report(path)
+
+
 def test_schema1_runtime_validation_handles_non_string_enum_without_typeerror(tmp_path: Path):
     import pytest
     from labvault_scout.compare import load_scan_report
@@ -4898,7 +5751,7 @@ def test_scan_reports_file_changed_during_container_inspection(tmp_path: Path, m
     target.write_bytes(b"PK\x03\x04synthetic")
     output = tmp_path / "changing_container_report"
 
-    def changing_inspect(path: Path):
+    def changing_inspect(path: Path, *, stream=None):
         path.write_bytes(path.read_bytes() + b"changed")
         return "ZIP archive"
 

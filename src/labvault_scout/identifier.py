@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import gzip
+from contextlib import nullcontext
 import zipfile
+import zlib
 from pathlib import Path
 from typing import BinaryIO
 
@@ -139,10 +141,11 @@ def fits_container_from_header(header: bytes, size: int) -> str:
     return "FITS primary HDU (SIMPLE=T)"
 
 
-def inspect_fits_container(path: Path) -> str:
+def inspect_fits_container(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Validate FITS header termination within a bounded number of header blocks."""
-    size = path.stat().st_size
-    with path.open("rb") as handle:
+    size = path.stat().st_size if stream is None else stream.seek(0, 2)
+    with (path.open("rb") if stream is None else nullcontext(stream)) as handle:
+        handle.seek(0)
         first_block = handle.read(FITS_BLOCK_SIZE)
         status = fits_container_from_header(first_block, size)
         if status != "FITS primary HDU (SIMPLE=T)":
@@ -235,10 +238,11 @@ def _find_hdf5_signature_offset(handle: BinaryIO, size: int) -> int | None:
     return None
 
 
-def inspect_signature(path: Path) -> str:
+def inspect_signature(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Return a coarse container/signature label without executing file content."""
-    size = path.stat().st_size
-    with path.open("rb") as handle:
+    size = path.stat().st_size if stream is None else stream.seek(0, 2)
+    with (path.open("rb") if stream is None else nullcontext(stream)) as handle:
+        handle.seek(0)
         head = handle.read(8)
         signature = signature_from_head(head)
         if signature:
@@ -261,18 +265,15 @@ def hdf5_container_from_header(header: bytes) -> str:
         return "Invalid HDF5 container"
 
 
-def inspect_hdf5_container(path: Path) -> str:
+def inspect_hdf5_container(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Validate HDF5 superblock evidence without parsing datasets."""
-    try:
-        size = path.stat().st_size
-        with path.open("rb") as handle:
-            offset = _find_hdf5_signature_offset(handle, size)
-            if offset is None:
-                return ""
-            handle.seek(offset)
-            return hdf5_container_from_header(handle.read(16))
-    except OSError:
-        return "Unreadable HDF5 container"
+    size = path.stat().st_size if stream is None else stream.seek(0, 2)
+    with (path.open("rb") if stream is None else nullcontext(stream)) as handle:
+        offset = _find_hdf5_signature_offset(handle, size)
+        if offset is None:
+            return ""
+        handle.seek(offset)
+        return hdf5_container_from_header(handle.read(16))
 
 
 def spss_container_from_header(header: bytes, size: int) -> str:
@@ -392,25 +393,364 @@ def nifti1_container_from_header(header: bytes) -> str:
     return "Invalid NIfTI-1 magic"
 
 
-def inspect_gzip_nifti(path: Path) -> str:
+def inspect_gzip_nifti(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Inspect only the decompressed NIfTI-1 header inside a gzip stream."""
-    if inspect_signature(path) != "GZIP":
+    if inspect_signature(path, stream=stream) != "GZIP":
         return ""
     try:
-        with gzip.open(path, "rb") as handle:
+        if stream is not None:
+            stream.seek(0)
+        with (gzip.open(path, "rb") if stream is None else gzip.GzipFile(fileobj=stream, mode="rb")) as handle:
             header = handle.read(348)
         return nifti1_container_from_header(header)
-    except (OSError, EOFError):
+    except (gzip.BadGzipFile, EOFError, zlib.error):
         return "Invalid GZIP container"
 
 
-def inspect_zip_container(path: Path) -> str:
+ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES = 10_000
+ZIP_MAX_CENTRAL_DIRECTORY_BYTES = 2 * 1024 * 1024
+ZIP_EOCD_SEARCH_BYTES = 22 + 65_535
+
+
+def _zip_directory_preflight(path: Path, *, stream: BinaryIO | None = None) -> str:
+    """Bound ZIP directory parsing and check its actual record count."""
+    with (path.open("rb") if stream is None else nullcontext(stream)) as handle:
+        handle.seek(0, 2)
+        size = handle.tell()
+        tail_start = max(0, size - ZIP_EOCD_SEARCH_BYTES)
+        handle.seek(tail_start)
+        tail = handle.read(ZIP_EOCD_SEARCH_BYTES)
+
+        end = tail.rfind(b"PK\x05\x06")
+        if end < 0:
+            return ""  # Let ZipFile classify a missing directory.
+
+        # A marker inside the EOCD comment can conceal the real directory.
+        previous_end = tail.rfind(b"PK\x05\x06", 0, end)
+        while previous_end >= 0:
+            if (
+                len(tail) - previous_end >= 22
+                and previous_end + 22
+                + int.from_bytes(
+                    tail[previous_end + 20:previous_end + 22], "little"
+                ) == len(tail)
+            ):
+                return "Ambiguous ZIP end record signatures"
+            previous_end = tail.rfind(b"PK\x05\x06", 0, previous_end)
+        if len(tail) - end < 22:
+            return ""  # Let ZipFile classify a malformed directory.
+
+        comment_length = int.from_bytes(tail[end + 20:end + 22], "little")
+        if end + 22 + comment_length != len(tail):
+            return "Ambiguous ZIP end record comment length"
+
+        disk_entries = int.from_bytes(tail[end + 8:end + 10], "little")
+        entries = int.from_bytes(tail[end + 10:end + 12], "little")
+        directory_bytes = int.from_bytes(tail[end + 12:end + 16], "little")
+        zip64_locator = end >= 20 and tail[end - 20:end - 16] == b"PK\x06\x07"
+        if (
+            zip64_locator
+            or entries == 0xFFFF
+            or directory_bytes == 0xFFFFFFFF
+            or entries > ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES
+            or directory_bytes > ZIP_MAX_CENTRAL_DIRECTORY_BYTES
+        ):
+            return "ZIP directory exceeds bounded inspection limits"
+        disk_number = int.from_bytes(tail[end + 4:end + 6], "little")
+        directory_disk_number = int.from_bytes(tail[end + 6:end + 8], "little")
+        if disk_number or directory_disk_number:
+            return "Unsupported ZIP multi-disk metadata"
+        if disk_entries != entries:
+            return "Ambiguous ZIP directory entry count"
+
+        directory_start = tail_start + end - directory_bytes
+        if directory_start < 0:
+            return ""  # Let ZipFile reject malformed offsets.
+        declared_offset = int.from_bytes(tail[end + 16:end + 20], "little")
+        if declared_offset != directory_start:
+            return "Ambiguous ZIP directory offset"
+        handle.seek(directory_start)
+        directory = handle.read(directory_bytes)
+
+    if len(directory) != directory_bytes:
+        return ""  # Let ZipFile reject a truncated directory.
+
+    offset = count = 0
+    local_members: list[tuple[int, bytes, int, int, int, int, int]] = []
+    while offset < len(directory):
+        if len(directory) - offset < 46:
+            # A short suffix after all declared members is a truncated
+            # directory record, including an underreported final comment.
+            if count == entries:
+                return "Invalid ZIP directory record length"
+            return ""  # Preserve the existing truncated-member fallback.
+        if directory[offset:offset + 4] != b"PK\x01\x02":
+            # A malformed comment in a preceding member can shift the next
+            # record boundary. Reject it before invoking ZipFile.
+            return "Invalid ZIP directory record length" if count else ""
+        name_bytes = int.from_bytes(directory[offset + 28:offset + 30], "little")
+        extra_bytes = int.from_bytes(directory[offset + 30:offset + 32], "little")
+        comment_bytes = int.from_bytes(directory[offset + 32:offset + 34], "little")
+        record_bytes = 46 + name_bytes + extra_bytes + comment_bytes
+        if record_bytes > len(directory) - offset:
+            return "Invalid ZIP directory record length"
+        local_offset = int.from_bytes(directory[offset + 42:offset + 46], "little")
+        name = directory[offset + 46:offset + 46 + name_bytes]
+        flags = int.from_bytes(directory[offset + 8:offset + 10], "little")
+        if flags & 0x800:
+            try:
+                name.decode("utf-8")
+            except UnicodeDecodeError:
+                return "Invalid ZIP container"
+        method = int.from_bytes(directory[offset + 10:offset + 12], "little")
+        crc = int.from_bytes(directory[offset + 16:offset + 20], "little")
+        compressed_size = int.from_bytes(directory[offset + 20:offset + 24], "little")
+        uncompressed_size = int.from_bytes(directory[offset + 24:offset + 28], "little")
+        disk_start = int.from_bytes(directory[offset + 34:offset + 36], "little")
+        needs_zip64 = (
+            uncompressed_size == 0xFFFFFFFF
+            or compressed_size == 0xFFFFFFFF
+            or local_offset == 0xFFFFFFFF
+            or disk_start == 0xFFFF
+        )
+        extra_pos = offset + 46 + name_bytes
+        extra_end = extra_pos + extra_bytes
+        found_zip64 = False
+        while extra_pos < extra_end:
+            if extra_end - extra_pos < 4:
+                return "Invalid ZIP directory extra"
+            tag = int.from_bytes(directory[extra_pos:extra_pos + 2], "little")
+            length = int.from_bytes(directory[extra_pos + 2:extra_pos + 4], "little")
+            extra_pos += 4
+            if length > extra_end - extra_pos:
+                return "Invalid ZIP directory extra"
+            if tag == 0x0001:
+                if found_zip64:
+                    return "Invalid ZIP directory ZIP64 extra"
+                found_zip64 = True
+                required = 8 * (uncompressed_size == 0xFFFFFFFF)
+                required += 8 * (compressed_size == 0xFFFFFFFF)
+                required += 8 * (local_offset == 0xFFFFFFFF)
+                required += 4 * (disk_start == 0xFFFF)
+                if length != required:
+                    return "Invalid ZIP directory ZIP64 extra"
+                cursor = extra_pos
+                if uncompressed_size == 0xFFFFFFFF:
+                    uncompressed_size = int.from_bytes(directory[cursor:cursor + 8], "little")
+                    cursor += 8
+                if compressed_size == 0xFFFFFFFF:
+                    compressed_size = int.from_bytes(directory[cursor:cursor + 8], "little")
+                    cursor += 8
+                if local_offset == 0xFFFFFFFF:
+                    local_offset = int.from_bytes(directory[cursor:cursor + 8], "little")
+                    cursor += 8
+                if disk_start == 0xFFFF:
+                    disk_start = int.from_bytes(directory[cursor:cursor + 4], "little")
+            extra_pos += length
+        if needs_zip64 and not found_zip64:
+            return "Invalid ZIP directory ZIP64 extra"
+        if disk_start:
+            return "Unsupported ZIP multi-disk metadata"
+        local_members.append((
+            local_offset, name, method, flags, crc, compressed_size, uncompressed_size
+        ))
+        offset += record_bytes
+        count += 1
+        if count > ZIP_MAX_CENTRAL_DIRECTORY_ENTRIES:
+            return "ZIP directory exceeds bounded inspection limits"
+
+    if count != entries:
+        return "Ambiguous ZIP directory entry count"
+
+    # A central-directory name is insufficient evidence if its local header is absent.
+    ordered_members = sorted(local_members, key=lambda member: member[0])
+    with (path.open("rb") if stream is None else nullcontext(stream)) as handle:
+        for index, (
+            local_offset, name, method, flags, crc, compressed_size, uncompressed_size
+        ) in enumerate(ordered_members):
+            if local_offset + 30 > directory_start:
+                return "Invalid ZIP local header offset"
+            handle.seek(local_offset)
+            local_header = handle.read(30)
+            if len(local_header) != 30 or local_header[:4] != b"PK\x03\x04":
+                return "Invalid ZIP local file header"
+            if int.from_bytes(local_header[6:8], "little") != flags:
+                return "Ambiguous ZIP local general-purpose flags"
+            if int.from_bytes(local_header[8:10], "little") != method:
+                return "Ambiguous ZIP local compression method"
+            if not (flags & 0x0008) and int.from_bytes(local_header[14:18], "little") != crc:
+                return "Ambiguous ZIP local CRC"
+            # ZIP64 local sizes may use 32-bit sentinels with 64-bit extra fields.
+            local_name_size = int.from_bytes(local_header[26:28], "little")
+            local_extra_size = int.from_bytes(local_header[28:30], "little")
+            if local_offset + 30 + local_name_size + local_extra_size > directory_start:
+                return "Invalid ZIP local header length"
+            if local_name_size != len(name) or handle.read(local_name_size) != name:
+                return "Ambiguous ZIP local member name"
+            local_compressed = int.from_bytes(local_header[18:22], "little")
+            local_uncompressed = int.from_bytes(local_header[22:26], "little")
+            needs_zip64 = 0xFFFFFFFF in (local_compressed, local_uncompressed)
+            # Validate all local extra field lengths, even without ZIP64
+            # sentinels. Seek over payloads to keep inspection bounded.
+            pos = 0
+            found_zip64 = False
+            while pos < local_extra_size:
+                if local_extra_size - pos < 4:
+                    return (
+                        "Invalid ZIP local ZIP64 extra" if needs_zip64
+                        else "Invalid ZIP local extra"
+                    )
+                extra_header = handle.read(4)
+                if len(extra_header) != 4:
+                    return "Invalid ZIP local extra"
+                tag = int.from_bytes(extra_header[:2], "little")
+                length = int.from_bytes(extra_header[2:], "little")
+                pos += 4
+                if length > local_extra_size - pos:
+                    return (
+                        "Invalid ZIP local ZIP64 extra" if needs_zip64
+                        else "Invalid ZIP local extra"
+                    )
+                if tag == 0x0001:
+                    if found_zip64:
+                        return "Invalid ZIP local ZIP64 extra"
+                    found_zip64 = True
+                    if needs_zip64:
+                        # A ZIP64 local extra contains both 64-bit sizes,
+                        # including when only one local field is a sentinel.
+                        if length != 16:
+                            return "Invalid ZIP local ZIP64 extra"
+                        payload = handle.read(16)
+                        if len(payload) != 16:
+                            return "Invalid ZIP local ZIP64 extra"
+                        zip64_uncompressed = int.from_bytes(payload[:8], "little")
+                        zip64_compressed = int.from_bytes(payload[8:], "little")
+                        if local_uncompressed == 0xFFFFFFFF:
+                            local_uncompressed = zip64_uncompressed
+                        elif local_uncompressed != zip64_uncompressed:
+                            return "Ambiguous ZIP local uncompressed size"
+                        if local_compressed == 0xFFFFFFFF:
+                            local_compressed = zip64_compressed
+                        elif local_compressed != zip64_compressed:
+                            return "Ambiguous ZIP local compressed size"
+                    elif length == 16:
+                        # Some writers retain the full ZIP64 sizes even when
+                        # the local 32-bit fields no longer use sentinels.
+                        payload = handle.read(16)
+                        if len(payload) != 16:
+                            return "Invalid ZIP local ZIP64 extra"
+                        # With a data descriptor, zero is a legitimate
+                        # streaming placeholder. Nonzero ZIP64 sizes must
+                        # still agree with the central directory.
+                        if flags & 0x0008:
+                            if int.from_bytes(payload[:8], "little") not in (0, uncompressed_size):
+                                return "Ambiguous ZIP local uncompressed size"
+                            if int.from_bytes(payload[8:], "little") not in (0, compressed_size):
+                                return "Ambiguous ZIP local compressed size"
+                        else:
+                            if int.from_bytes(payload[:8], "little") != local_uncompressed:
+                                return "Ambiguous ZIP local uncompressed size"
+                            if int.from_bytes(payload[8:], "little") != local_compressed:
+                                return "Ambiguous ZIP local compressed size"
+                    elif length != 0:
+                        return "Invalid ZIP local ZIP64 extra"
+                else:
+                    handle.seek(length, 1)
+                pos += length
+            if needs_zip64 and not found_zip64:
+                return "Invalid ZIP local ZIP64 extra"
+            if flags & 0x0008:
+                # Streaming headers may use zero placeholders. Nonzero
+                # CRC and sizes must agree with the central directory.
+                if int.from_bytes(local_header[14:18], "little") not in (0, crc):
+                    return "Ambiguous ZIP local CRC"
+                if local_uncompressed not in (0, uncompressed_size):
+                    return "Ambiguous ZIP local uncompressed size"
+                if local_compressed not in (0, compressed_size):
+                    return "Ambiguous ZIP local compressed size"
+            if not (flags & 0x0008):
+                if local_compressed != compressed_size:
+                    return "Ambiguous ZIP local compressed size"
+                if local_uncompressed != uncompressed_size:
+                    return "Ambiguous ZIP local uncompressed size"
+            data_start = local_offset + 30 + local_name_size + local_extra_size
+            next_boundary = (
+                ordered_members[index + 1][0]
+                if index + 1 < len(ordered_members)
+                else directory_start
+            )
+            if data_start + compressed_size > next_boundary:
+                return "Invalid ZIP compressed data boundary"
+            if flags & 0x0008:
+                descriptor_start = data_start + compressed_size
+                available = next_boundary - descriptor_start
+                if available < 12:
+                    return "Invalid ZIP data descriptor boundary"
+                handle.seek(descriptor_start)
+                descriptor = handle.read(min(available, 24))
+                expected_crc = crc.to_bytes(4, "little")
+                expected_64 = (
+                    expected_crc
+                    + compressed_size.to_bytes(8, "little")
+                    + uncompressed_size.to_bytes(8, "little")
+                )
+                # ZIP64 sizes cannot be encoded in a 32-bit descriptor.
+                expected_sizes = [expected_64]
+                if max(compressed_size, uncompressed_size) <= 0xFFFFFFFF:
+                    expected_32 = (
+                        expected_crc
+                        + compressed_size.to_bytes(4, "little")
+                        + uncompressed_size.to_bytes(4, "little")
+                    )
+                    expected_sizes.insert(0, expected_32)
+                # Each descriptor must account for the bytes up to its
+                # boundary. The final member may be followed by a complete
+                # ZIP archive extra data record before the central directory.
+                descriptor_matches = False
+                for prefix in (b"", b"PK\x07\x08"):
+                    for expected in expected_sizes:
+                        candidate = prefix + expected
+                        if not descriptor.startswith(candidate):
+                            continue
+                        remainder = available - len(candidate)
+                        if remainder == 0:
+                            descriptor_matches = True
+                            break
+                        if index + 1 < len(ordered_members) or remainder < 8:
+                            continue
+                        handle.seek(descriptor_start + len(candidate))
+                        archive_extra = handle.read(8)
+                        if (
+                            archive_extra[:4] == b"PK\x06\x08"
+                            and int.from_bytes(archive_extra[4:8], "little")
+                            == remainder - 8
+                        ):
+                            descriptor_matches = True
+                            break
+                    if descriptor_matches:
+                        break
+                if not descriptor_matches:
+                    return "Ambiguous ZIP data descriptor metadata"
+            # Preserve more specific boundary and descriptor diagnostics first.
+            # An unencrypted STORED member must have identical sizes.
+            if method == 0 and not (flags & 0x0001) and compressed_size != uncompressed_size:
+                return "Ambiguous ZIP stored member sizes"
+    return ""
+
+
+def inspect_zip_container(path: Path, *, stream: BinaryIO | None = None) -> str:
     """Identify selected ZIP based formats from member names without extraction."""
-    if inspect_signature(path) != "ZIP":
+    if inspect_signature(path, stream=stream) != "ZIP":
         return ""
+    directory_status = _zip_directory_preflight(path, stream=stream)
+    if directory_status:
+        return directory_status
     try:
-        with zipfile.ZipFile(path) as archive:
-            names = set(archive.namelist())
+        with zipfile.ZipFile(path if stream is None else stream) as archive:
+            member_names = archive.namelist()
+            names = set(member_names)
+            if len(names) != len(member_names):
+                return "Ambiguous ZIP member names"
             if "[Content_Types].xml" in names:
                 if any(name.startswith("xl/") for name in names):
                     return "OOXML Excel"
@@ -422,7 +762,7 @@ def inspect_zip_container(path: Path) -> str:
                 try:
                     with archive.open("mimetype") as member:
                         media_type = member.read(256).decode("ascii", errors="strict").strip()
-                except (KeyError, UnicodeDecodeError, RuntimeError, OSError):
+                except (KeyError, UnicodeDecodeError, RuntimeError):
                     media_type = ""
                 odf_types = {
                     "application/vnd.oasis.opendocument.spreadsheet": "OpenDocument Spreadsheet",
@@ -438,7 +778,7 @@ def inspect_zip_container(path: Path) -> str:
             if "META-INF/MANIFEST.MF" in names:
                 return "JAR compatible ZIP"
             return "ZIP archive"
-    except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError):
+    except (zipfile.BadZipFile, UnicodeDecodeError, RuntimeError, NotImplementedError):
         return "Invalid ZIP container"
 
 

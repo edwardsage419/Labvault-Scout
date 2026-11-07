@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import os
 import re
+import stat as stat_module
 from pathlib import Path, PurePosixPath
 
 from . import __version__
-from .hashing import sha256_file
+from .hashing import FileChangedDuringScan, sha256_file
 from .safeio import atomic_write_text
 
 BUNDLE_SCHEMA_VERSION = "1"
 BUNDLE_MANIFEST_NAME = "bundle_manifest.json"
+MAX_BUNDLE_MANIFEST_BYTES = 1024 * 1024
+MAX_BUNDLE_JSON_INTEGER_DIGITS = 100
 BUNDLE_FILES = (
     "scan.json",
     "files.csv",
@@ -41,11 +46,50 @@ def build_bundle_manifest(output_dir: Path) -> dict:
         path = output_dir / name
         if path.is_symlink() or not path.is_file():
             raise ValueError(f"Report artifact is not a regular file: {name}")
-        stat = path.stat()
+        try:
+            stat = path.lstat()
+        except FileNotFoundError as exc:
+            raise ValueError(
+                f"Report artifact changed while building bundle manifest: {name}"
+            ) from exc
+        if not stat_module.S_ISREG(stat.st_mode):
+            raise ValueError(f"Report artifact is not a regular file: {name}")
+        try:
+            digest = sha256_file(path)
+        except (FileNotFoundError, FileChangedDuringScan) as exc:
+            raise ValueError(
+                f"Report artifact changed while building bundle manifest: {name}"
+            ) from exc
+        try:
+            post_stat = path.lstat()
+        except FileNotFoundError as exc:
+            raise ValueError(
+                f"Report artifact changed while building bundle manifest: {name}"
+            ) from exc
+        fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if any(getattr(stat, field, None) != getattr(post_stat, field, None) for field in fields):
+            raise ValueError(f"Report artifact changed while building bundle manifest: {name}")
+        try:
+            confirmed_digest = sha256_file(path)
+        except (FileNotFoundError, FileChangedDuringScan) as exc:
+            raise ValueError(
+                f"Report artifact changed while building bundle manifest: {name}"
+            ) from exc
+        try:
+            final_stat = path.lstat()
+        except FileNotFoundError as exc:
+            raise ValueError(
+                f"Report artifact changed while building bundle manifest: {name}"
+            ) from exc
+        if digest != confirmed_digest or any(
+            getattr(post_stat, field, None) != getattr(final_stat, field, None)
+            for field in fields
+        ):
+            raise ValueError(f"Report artifact changed while building bundle manifest: {name}")
         entries.append({
             "path": name,
             "size": stat.st_size,
-            "sha256": sha256_file(path),
+            "sha256": digest,
         })
 
     payload = {
@@ -79,13 +123,118 @@ def _canonical_manifest_path(value: object) -> str:
     return value
 
 
+def _read_manifest_text(path: Path) -> str:
+    """Read one stable regular manifest without following replacement links."""
+    before = path.lstat()
+    if not stat_module.S_ISREG(before.st_mode):
+        raise ValueError("Bundle manifest must be a regular file")
+    if before.st_size > MAX_BUNDLE_MANIFEST_BYTES:
+        raise ValueError("Bundle manifest exceeds maximum size")
+
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns")
+        # Windows file-descriptor and path stats can disagree on st_ctime_ns.
+        if os.name != "nt":
+            fields += ("st_ctime_ns",)
+        if not stat_module.S_ISREG(opened.st_mode) or any(
+            getattr(before, field) != getattr(opened, field)
+            for field in fields
+        ):
+            raise ValueError("Bundle manifest changed during read")
+        if opened.st_size > MAX_BUNDLE_MANIFEST_BYTES:
+            raise ValueError("Bundle manifest exceeds maximum size")
+
+        handle = os.fdopen(fd, "rb")
+        fd = -1
+        with handle:
+            raw = handle.read(MAX_BUNDLE_MANIFEST_BYTES + 1)
+            if len(raw) > MAX_BUNDLE_MANIFEST_BYTES:
+                raise ValueError("Bundle manifest exceeds maximum size")
+            final = os.fstat(handle.fileno())
+            try:
+                final_path = path.lstat()
+            except FileNotFoundError as exc:
+                raise ValueError("Bundle manifest changed during read") from exc
+        if any(
+            getattr(before, field) != getattr(actual, field)
+            for actual in (final, final_path)
+            for field in fields
+        ):
+            raise ValueError("Bundle manifest changed during read")
+        if len(raw) != opened.st_size:
+            raise ValueError("Bundle manifest incomplete read")
+        return raw.decode("utf-8")
+    except BaseException as original_error:
+        if fd != -1:
+            try:
+                os.close(fd)
+            except OSError as close_error:
+                raise original_error from close_error
+        raise
+
+
+def _reject_duplicate_manifest_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Reject ambiguous JSON object keys at every nesting level."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate bundle manifest JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_nonstandard_manifest_constant(value: str) -> None:
+    """Disallow NaN and infinities, which are not valid JSON numbers."""
+    raise ValueError(f"Non-standard bundle manifest JSON constant: {value}")
+
+
+def _parse_bounded_manifest_int(value: str) -> int:
+    """Bound JSON integer parsing across supported Python versions."""
+    if len(value) - value.startswith("-") > MAX_BUNDLE_JSON_INTEGER_DIGITS:
+        raise ValueError("Bundle manifest JSON integer exceeds digit limit")
+    return int(value)
+
+
+def _parse_finite_manifest_float(value: str) -> float:
+    """Reject JSON numbers that overflow or underflow to zero."""
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("Bundle manifest JSON number exceeds floating-point range")
+    significand = value.split("e", 1)[0].split("E", 1)[0]
+    if parsed == 0.0 and any(digit in "123456789" for digit in significand):
+        raise ValueError("Bundle manifest JSON number underflows floating-point range")
+    return parsed
+
+
 def load_bundle_manifest(output_dir: Path) -> dict:
     manifest_path = output_dir / BUNDLE_MANIFEST_NAME
-    if manifest_path.is_symlink():
+    try:
+        is_symlink = manifest_path.is_symlink()
+    except OSError as exc:
+        raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
+    if is_symlink:
         raise ValueError("Bundle manifest must not be a symlink")
     try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        manifest_text = _read_manifest_text(manifest_path)
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
+    try:
+        payload = json.loads(
+            manifest_text,
+            object_pairs_hook=_reject_duplicate_manifest_keys,
+            parse_constant=_reject_nonstandard_manifest_constant,
+            parse_float=_parse_finite_manifest_float,
+            parse_int=_parse_bounded_manifest_int,
+        )
+    except (ValueError, RecursionError) as exc:
         raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
 
     if not isinstance(payload, dict):
@@ -116,7 +265,11 @@ def load_bundle_manifest(output_dir: Path) -> dict:
     checksum = payload["manifest_sha256"]
     if not isinstance(checksum, str) or not SHA256_RE.fullmatch(checksum):
         raise ValueError("Invalid bundle manifest checksum")
-    if manifest_payload_sha256(payload) != checksum:
+    try:
+        actual_checksum = manifest_payload_sha256(payload)
+    except UnicodeError as exc:
+        raise ValueError("Bundle manifest contains invalid Unicode") from exc
+    if actual_checksum != checksum:
         raise ValueError("Bundle manifest checksum mismatch")
 
     seen = set()
@@ -153,16 +306,62 @@ def verify_bundle(output_dir: Path) -> dict:
     for entry in payload["files"]:
         member = entry["path"]
         path = output_dir.joinpath(*PurePosixPath(member).parts)
-        if path.is_symlink():
+        try:
+            is_symlink = path.is_symlink()
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
+        if is_symlink:
             problems.append({"path": member, "issue": "SYMLINK"})
             continue
-        if not path.exists():
+        try:
+            exists = path.exists()
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
+        if not exists:
             problems.append({"path": member, "issue": "MISSING"})
             continue
-        if not path.is_file():
+        try:
+            is_file = path.is_file()
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
+        if not is_file:
             problems.append({"path": member, "issue": "NOT_REGULAR_FILE"})
             continue
-        actual_size = path.stat().st_size
+        try:
+            checked_stat = path.lstat()
+        except FileNotFoundError:
+            problems.append({"path": member, "issue": "MISSING"})
+            continue
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
+        if not stat_module.S_ISREG(checked_stat.st_mode):
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": "FileChangedDuringScan",
+            })
+            continue
+        actual_size = checked_stat.st_size
         if actual_size != entry["size"]:
             problems.append({
                 "path": member,
@@ -171,13 +370,67 @@ def verify_bundle(output_dir: Path) -> dict:
                 "actual": actual_size,
             })
             continue
-        actual_hash = sha256_file(path)
+        try:
+            actual_hash = sha256_file(path, expected_stat=checked_stat)
+        except FileNotFoundError:
+            problems.append({"path": member, "issue": "MISSING"})
+            continue
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
         if actual_hash != entry["sha256"]:
             problems.append({
                 "path": member,
                 "issue": "SHA256_MISMATCH",
                 "expected": entry["sha256"],
                 "actual": actual_hash,
+            })
+            continue
+        try:
+            confirmed_hash = sha256_file(path, expected_stat=checked_stat)
+        except FileNotFoundError:
+            problems.append({"path": member, "issue": "MISSING"})
+            continue
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
+        if confirmed_hash != entry["sha256"]:
+            problems.append({
+                "path": member,
+                "issue": "SHA256_MISMATCH",
+                "expected": entry["sha256"],
+                "actual": confirmed_hash,
+            })
+            continue
+        try:
+            final_stat = path.lstat()
+        except FileNotFoundError:
+            problems.append({"path": member, "issue": "MISSING"})
+            continue
+        except OSError as exc:
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": type(exc).__name__,
+            })
+            continue
+        fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if any(
+            getattr(checked_stat, field, None) != getattr(final_stat, field, None)
+            for field in fields
+        ):
+            problems.append({
+                "path": member,
+                "issue": "IO_ERROR",
+                "error": "FileChangedDuringScan",
             })
 
     return {

@@ -721,5 +721,328 @@
       }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "comparison_status": {
+            "const": "COMPLETE"
+          }
+        },
+        "required": [
+          "comparison_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "before": {
+            "properties": {
+              "error_count": {
+                "const": 0
+              },
+              "schema_supported": {
+                "const": true
+              },
+              "integrity_status": {
+                "enum": [
+                  "VERIFIED",
+                  "UNKNOWN"
+                ]
+              }
+            }
+          },
+          "after": {
+            "properties": {
+              "error_count": {
+                "const": 0
+              },
+              "schema_supported": {
+                "const": true
+              },
+              "integrity_status": {
+                "enum": [
+                  "VERIFIED",
+                  "UNKNOWN"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "rules_status": {
+            "enum": [
+              "SAME",
+              "CHANGED"
+            ]
+          }
+        },
+        "required": [
+          "rules_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "before": {
+            "properties": {
+              "rules_sha256": {
+                "minLength": 64
+              }
+            }
+          },
+          "after": {
+            "properties": {
+              "rules_sha256": {
+                "minLength": 64
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "rules_status": {
+            "const": "UNKNOWN"
+          }
+        },
+        "required": [
+          "rules_status"
+        ]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "before": {
+                "properties": {
+                  "rules_sha256": {
+                    "const": ""
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "after": {
+                "properties": {
+                  "rules_sha256": {
+                    "const": ""
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "change_count": {
+                "const": 0
+              }
+            },
+            "required": [
+              "change_count"
+            ]
+          }
+        },
+        "required": [
+          "summary"
+        ]
+      },
+      "then": {
+        "properties": {
+          "changes": {
+            "maxItems": 0
+          },
+          "summary": {
+            "properties": {
+              "added_count": {
+                "const": 0
+              },
+              "removed_count": {
+                "const": 0
+              },
+              "moved_count": {
+                "const": 0
+              },
+              "content_changed_count": {
+                "const": 0
+              },
+              "assessment_changed_count": {
+                "const": 0
+              },
+              "priority_escalated_count": {
+                "const": 0
+              },
+              "priority_deescalated_count": {
+                "const": 0
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "changes": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "comparison_status": {
+            "const": "PARTIAL"
+          }
+        },
+        "required": [
+          "comparison_status"
+        ]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "before": {
+                "properties": {
+                  "error_count": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "after": {
+                "properties": {
+                  "error_count": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "before": {
+                "properties": {
+                  "schema_supported": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "after": {
+                "properties": {
+                  "schema_supported": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "before": {
+                "properties": {
+                  "integrity_status": {
+                    "const": "MISMATCH"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "after": {
+                "properties": {
+                  "integrity_status": {
+                    "const": "MISMATCH"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "change_count": {
+                "minimum": 1
+              }
+            },
+            "required": [
+              "change_count"
+            ]
+          }
+        },
+        "required": [
+          "summary"
+        ]
+      },
+      "then": {
+        "properties": {
+          "summary": {
+            "anyOf": [
+              {
+                "properties": {
+                  "added_count": {
+                    "minimum": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "removed_count": {
+                    "minimum": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "moved_count": {
+                    "minimum": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "content_changed_count": {
+                    "minimum": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "assessment_changed_count": {
+                    "minimum": 1
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
 }

@@ -9,6 +9,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -19,8 +21,10 @@ jobs:
         shell: bash
         run: python -m pip install dist/*.whl
       - run: python -m pip check
-      - run: python -m pip install pytest
+      - run: python -m pip install pytest jsonschema
       - run: pytest -q
+      - name: Actual v0.3.2 interoperability gate
+        run: python tools/release_gate_v032_interop.py
       - run: labvault-scout --help
       - name: CLI smoke scan
         shell: bash
