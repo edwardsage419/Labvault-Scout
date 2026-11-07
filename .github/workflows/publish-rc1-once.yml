@@ -1,0 +1,95 @@
+name: Publish LabVault Scout v0.4.0rc1 once
+
+on:
+  push:
+    branches:
+      - release/rc1-publish-20261107
+    paths:
+      - .github/workflows/publish-rc1-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: labvault-v040rc1-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'edwardsage419/Labvault-Scout' && github.ref == 'refs/heads/release/rc1-publish-20261107'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TARGET_SHA: 655a3b81834f13b83164951020d3c1e66db4491a
+      TAG_NAME: v0.4.0rc1
+      VERIFIED_RUN: '42334584791'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Gate on exact main SHA and six-job CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          test "$(git rev-parse HEAD^)" = "$TARGET_SHA"
+          git show "${TARGET_SHA}:pyproject.toml" | grep -Fxq 'version = "0.4.0rc1"'
+          git show "${TARGET_SHA}:src/labvault_scout/__init__.py" | grep -Fxq '__version__ = "0.4.0rc1"'
+          cmp <(git show "${TARGET_SHA}:RELEASE_NOTES_0_4_0_RC1.md") RELEASE_NOTES_0_4_0_RC1.md
+          test "$(gh api "repos/${GH_REPO}/actions/runs/${VERIFIED_RUN}" --jq .head_sha)" = "$TARGET_SHA"
+          test "$(gh api "repos/${GH_REPO}/actions/runs/${VERIFIED_RUN}" --jq .conclusion)" = success
+          test "$(gh api "repos/${GH_REPO}/actions/runs/${VERIFIED_RUN}/jobs?per_page=100" --jq .total_count)" = 6
+          test "$(gh api "repos/${GH_REPO}/actions/runs/${VERIFIED_RUN}/jobs?per_page=100" --jq '[.jobs[] | select(.status == "completed" and .conclusion == "success")] | length')" = 6
+          if gh release view "$TAG_NAME" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "Release exists already; refusing to overwrite"
+            exit 1
+          fi
+          if gh api "repos/${GH_REPO}/git/ref/tags/${TAG_NAME}" >/dev/null 2>&1; then
+            echo "Tag exists already; refusing to retarget"
+            exit 1
+          fi
+      - name: Prepare bilingual published release notes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          raw = Path('RELEASE_NOTES_0_4_0_RC1.md').read_text(encoding='utf-8')
+          english = raw.split('## English\n', 1)[1].split('### Evidence and limits\n', 1)[0].strip()
+          chinese = raw.split('## 中文\n', 1)[1].split('### 证据边界与发布门槛\n', 1)[0].strip()
+          header = (
+              '# LabVault Scout v0.4.0rc1 GitHub prerelease / GitHub 预发布版\n\n'
+              'Published from the frozen main commit `655a3b81834f13b83164951020d3c1e66db4491a`. '
+              'Windows, Ubuntu and macOS with Python 3.10/3.12 passed six CI jobs in '
+              '[run 42334584791](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42334584791). '
+              'The latest stable version remains v0.3.2.\n\n'
+              '此预发布版来自已冻结的 main 提交 `655a3b81834f13b83164951020d3c1e66db4491a`。'
+              'Windows、Ubuntu、macOS 上的 Python 3.10 与 3.12 六项 CI 已全部通过。'
+              '最新稳定版本仍是 v0.3.2。\n\n'
+          )
+          Path('rc1-published-notes.md').write_text(
+              header + '## English\n\n' + english + '\n\n## 中文\n\n' + chinese + '\n',
+              encoding='utf-8',
+          )
+          PY
+      - name: Create tag and GitHub prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG_NAME" \
+            --repo "$GH_REPO" \
+            --target "$TARGET_SHA" \
+            --title "LabVault Scout v0.4.0rc1" \
+            --notes-file rc1-published-notes.md \
+            --prerelease \
+            --latest=false
+      - name: Verify released tag and prerelease status
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GH_REPO}/git/ref/tags/${TAG_NAME}" --jq .object.sha)" = "$TARGET_SHA"
+          test "$(gh api "repos/${GH_REPO}/releases/tags/${TAG_NAME}" --jq .prerelease)" = true
+          test "$(gh api "repos/${GH_REPO}/releases/tags/${TAG_NAME}" --jq .draft)" = false
+          gh release view "$TAG_NAME" --repo "$GH_REPO" --json url --jq .url
