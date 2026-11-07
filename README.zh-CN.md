@@ -27,6 +27,16 @@ labvault-scout --version
 labvault-scout scan /path/to/research
 ```
 
+已发布 [v0.4.0rc1 预发布版](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0rc1)，可供试用验证。**当前稳定正式版仍为 v0.3.2。** 从发布页面下载 wheel 后，先核对 SHA256，再使用本地文件离线安装，无需访问软件包索引：
+
+```bash
+python -c "from pathlib import Path; import hashlib; p=Path('labvault_scout-0.4.0rc1-py3-none-any.whl'); assert hashlib.sha256(p.read_bytes()).hexdigest() == '750b0535bdf0ec6e49e90f8c25665a2845002cb5f24707b8898fe1957d3fda47'; print('SHA256 verified')"
+python -m pip install --no-index --no-deps ./labvault_scout-0.4.0rc1-py3-none-any.whl
+labvault-scout --version
+```
+
+预发布版会有意拒绝部分包含 `C:sample.csv` 等不安全驱动器前缀相对路径的旧报告。请保存原始报告和科研源文件，需要重新扫描时使用安全命名的独立副本。兼容性范围与迁移方法见 [RC1 发布说明](RELEASE_NOTES_0_4_0_RC1.md)。
+
 报告默认写入 `labvault-report/`，包括 `report.html`、`files.csv`、`scan.json`、精确重复文件清单 `duplicates.csv`，以及按保存优先级排序的 `migration_plan.csv`。
 
 ## 风险等级
