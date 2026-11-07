@@ -1,0 +1,109 @@
+name: Verify published RC1 wheel on six platforms
+
+on:
+  push:
+    branches:
+      - release/rc1-publish-20261107
+    paths:
+      - .github/workflows/verify-rc1-distributed-wheel.yml
+
+permissions:
+  contents: read
+
+jobs:
+  published-wheel:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: edwardsage419/Labvault-Scout
+      TAG: v0.4.0rc1
+      EXPECTED_SHA: 655a3b81834f13b83164951020d3c1e66db4491a
+      EXPECTED_WHEEL_SHA256: 750b0535bdf0ec6e49e90f8c25665a2845002cb5f24707b8898fe1957d3fda47
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Verify public prerelease identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GH_REPO}/git/ref/tags/${TAG}" --jq .object.sha)" = "$EXPECTED_SHA"
+          test "$(gh api "repos/${GH_REPO}/releases/tags/${TAG}" --jq .prerelease)" = true
+          test "$(gh api "repos/${GH_REPO}/releases/tags/${TAG}" --jq .draft)" = false
+          test "$(gh api "repos/${GH_REPO}/releases/tags/${TAG}" --jq '.assets | length')" = 2
+          test "$(gh api "repos/${GH_REPO}/releases/tags/${TAG}" --jq '.assets[] | select(.name == "labvault_scout-0.4.0rc1-py3-none-any.whl") | .digest')" = "sha256:${EXPECTED_WHEEL_SHA256}"
+      - name: Download actual published wheel and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p downloaded
+          gh release download "$TAG" --repo "$GH_REPO" --pattern '*.whl*' --dir downloaded
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import os
+          wheel = Path("downloaded/labvault_scout-0.4.0rc1-py3-none-any.whl")
+          checksum = Path(str(wheel) + ".sha256")
+          assert wheel.is_file() and checksum.is_file()
+          assert len(list(Path("downloaded").iterdir())) == 2
+          actual = hashlib.sha256(wheel.read_bytes()).hexdigest()
+          expected = os.environ["EXPECTED_WHEEL_SHA256"]
+          assert actual == expected, (actual, expected)
+          written = checksum.read_text(encoding="ascii").split()
+          assert written == [expected, wheel.name], written
+          print("Published wheel SHA256:", actual)
+          PY
+      - name: Offline install and real CLI smoke tests from published wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --no-index --no-deps downloaded/*.whl
+          python -m pip check
+          python - <<'PY'
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+          import importlib.metadata
+          import json
+          import subprocess
+          from labvault_scout import __version__
+          from labvault_scout.risk import load_rules
+          from labvault_scout.schema_registry import SCHEMA_FILES, load_schema_text
+          assert __version__ == "0.4.0rc1"
+          assert importlib.metadata.version("labvault-scout") == "0.4.0rc1"
+          rules = load_rules()
+          assert ".csv" in rules and ".fcs" in rules
+          assert set(SCHEMA_FILES) == {"scan", "comparison", "verification", "bundle"}
+          for kind in SCHEMA_FILES:
+              assert json.loads(load_schema_text(kind))["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+          def cli(*args):
+              run = subprocess.run(["labvault-scout", *map(str, args)], capture_output=True, text=True, encoding="utf-8", check=True)
+              return run.stdout
+          assert "0.4.0rc1" in cli("--version")
+          with TemporaryDirectory() as folder:
+              root = Path(folder)
+              source = root / "scientific"
+              source.mkdir()
+              sample = source / "sample.csv"
+              original = b"temperature,humidity\n18,52\n"
+              sample.write_bytes(original)
+              before = root / "before"
+              cli("scan", source, "-o", before)
+              verified = json.loads(cli("verify", before / "scan.json", "--json"))
+              assert verified["status"] == "VERIFIED"
+              bundle = json.loads(cli("verify-bundle", before, "--json"))
+              assert bundle["status"] == "VERIFIED"
+              (source / "added.txt").write_bytes(b"new file\n")
+              after = root / "after"
+              cli("scan", source, "-o", after)
+              comparison = root / "comparison"
+              cli("compare", before / "scan.json", after / "scan.json", "-o", comparison)
+              result = json.loads((comparison / "comparison.json").read_text(encoding="utf-8"))
+              assert "changes" in result and isinstance(result["changes"], list)
+              assert sample.read_bytes() == original
+          print("Published wheel distribution smoke PASS; verified rules and schemas:", len(rules), len(SCHEMA_FILES))
+          PY
