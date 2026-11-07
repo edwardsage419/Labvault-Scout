@@ -1,8 +1,10 @@
 # Changelog
 
-## 0.4.0rc1 (unreleased candidate)
+## 0.4.0rc1 (GitHub prerelease, published 2026-11-07)
 
-This is a development candidate. The latest published stable release remains v0.3.2. No release approval is implied.
+This candidate was published as a GitHub prerelease on 2026-11-07. The latest published stable release remains v0.3.2. Publication of the prerelease does not authorize the final v0.4.0 release.
+
+2026-11-07 已公开发布 GitHub 预发布版。最新稳定正式版仍为 v0.3.2；预发布版的发布不构成最终 v0.4.0 正式发布授权。
 
 ### Changed
 
@@ -20,7 +22,7 @@ This is a development candidate. The latest published stable release remains v0.
 
 * Historical schema-1 reports generated on POSIX with drive-prefixed relative names such as `C:sample.csv` can be rejected by the candidate. This preserves strict path validation. Keep historical reports intact; rescan a separately named copy when a new candidate report is needed. Other reports violating tightened validation may also be rejected.
 
-See [candidate release notes](RELEASE_NOTES_0_4_0_RC1.md) for precise evidence boundaries and migration guidance.
+See the [published v0.4.0rc1 prerelease](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0rc1) and [candidate release notes](RELEASE_NOTES_0_4_0_RC1.md) for exact evidence boundaries and migration guidance.
 
 ## 0.3.2 — 2026-10-05
 
