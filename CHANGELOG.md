@@ -2,23 +2,23 @@
 
 ## 0.4.0 (stable release pending)
 
-**PREPUBLICATION / 正式版尚未发布.** The stable v0.4.0 release is under review. The latest published stable release remains v0.3.2. The v0.4.0rc1 prerelease is available for validation.
+**PREPUBLICATION / 正式版尚未发布.** Publication was authorized on 2026-11-10, but the v0.4.0 tag and public GitHub Release have not yet been created. The latest published stable release remains v0.3.2; v0.4.0rc1 is available for validation.
 
-**正式版准备阶段。** v0.4.0 尚未公开发布；最新稳定正式版仍是 v0.3.2，v0.4.0rc1 预发布版可供验证。
+**正式发布已获授权，尚未执行公开发布。** v0.4.0 标签与正式 GitHub Release 尚未创建；最新稳定正式版为 v0.3.2，v0.4.0rc1 预发布版可供验证。
 
 ### Proposed stable contents / 拟发布内容
 
 * Retain the security and preservation-risk hardening validated in v0.4.0rc1: bounded ZIP/ZIP64 structural checks, file identity/race protection, stricter malformed scan/compare/bundle validation, and conservative scientific-format evidence.
-* Preserve the documented D-C01 path compatibility change for certain older POSIX schema-1 reports, including `C:sample.csv`; retain strict path verification and rescan safely renamed copies when necessary.
-* Align package version and runtime version at `0.4.0`. The stable preparation changes have not modified scanner production logic since the RC1 code freeze.
+* Preserve the documented D-C01 historical path compatibility change for some older POSIX schema-1 reports, including `C:sample.csv`; retain strict path verification.
+* Align package and runtime versions at `0.4.0`. Scanner production logic remains unchanged since the RC1 code freeze.
 
 ### Evidence and outstanding gates / 证据与剩余门槛
 
-* The [public v0.4.0rc1 wheel](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0rc1) passed publicly downloaded wheel checksum verification, offline installation, and CLI smoke tests across Windows, Ubuntu, and macOS × Python 3.10 and 3.12 ([run 42345772714](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42345772714)).
-* The `0.4.0` package/runtime version commit `0b5e6774ed2aeb2530f563960d385403021c8b4b` passed all six CI matrix jobs ([run 42357754325](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42357754325)).
-* Stable release still requires final versioned artifact checks, exact final HEAD review and six-job CI, and separate authorization for merging, tagging and publishing. Real independent end-user RC acceptance remains UNKNOWN.
+* The public v0.4.0rc1 wheel passed offline install and CLI checks on Windows, Ubuntu and macOS × Python 3.10/3.12 ([run 42345772714](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42345772714)).
+* Stable preparation PR [#14](https://github.com/edwardsage419/Labvault-Scout/pull/14) merged to `main` as `b84a857f912e8d621bf30720920a0ff00b512c05`; its [six-job CI 42803107077](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42803107077) passed, as did candidate wheel file-to-commit validation.
+* Final release-branch CI, formal tag, public assets and post-publication verification remain pending. Independent real-world end-user acceptance remains UNKNOWN.
 
-正式发布仍需完成精确最终提交的发行物验收、六平台 CI 与独立授权；外部真实用户的 RC 验收证据目前为 UNKNOWN。详见 [v0.4.0 正式版发布说明草稿](RELEASE_NOTES_0_4_0.md)。
+正式版准备 PR #14 已合并，合并提交的六平台 CI 与候选 wheel 来源核验通过。最终发布分支 CI、正式标签、公开发行物及下载后验证仍待完成，独立真实用户验收证据为 UNKNOWN。详见 [正式版发布说明](RELEASE_NOTES_0_4_0.md)。
 
 ## 0.4.0rc1 (GitHub prerelease, published 2026-11-07)
 
