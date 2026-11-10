@@ -16,25 +16,25 @@ LabVault Scout runs locally. It does not upload research data, require an accoun
 
 ## Quick start
 
-Python 3.10 or newer is required. v0.3.2 is the current stable release. Install the published stable tag explicitly:
+Python 3.10 or newer is required. After the v0.4.0 stable release is published, install its versioned tag:
 
 ```bash
-git clone --branch v0.3.2 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
+git clone --branch v0.4.0 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
 cd Labvault-Scout
 python -m pip install .
 labvault-scout --version
 labvault-scout scan /path/to/research
 ```
 
-The [v0.4.0rc1 prerelease](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0rc1) is available for evaluation. **v0.3.2 remains the latest stable release.** Download the wheel from that release page once, and verify its SHA-256 before installing locally without a package index:
+After publication, download the wheel and `wheel.sha256` from the [v0.4.0 GitHub Release](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0). Verify the wheel checksum against the downloaded checksum file before offline installation. The checksum file checks file consistency; it does not authenticate the publisher's identity.
 
 ```bash
-python -c "from pathlib import Path; import hashlib; p=Path('labvault_scout-0.4.0rc1-py3-none-any.whl'); assert hashlib.sha256(p.read_bytes()).hexdigest() == '750b0535bdf0ec6e49e90f8c25665a2845002cb5f24707b8898fe1957d3fda47'; print('SHA256 verified')"
-python -m pip install --no-index --no-deps ./labvault_scout-0.4.0rc1-py3-none-any.whl
+python -c "from pathlib import Path; import hashlib; p=Path('labvault_scout-0.4.0-py3-none-any.whl'); expected=Path('wheel.sha256').read_text().split()[0]; assert hashlib.sha256(p.read_bytes()).hexdigest()==expected; print('SHA256 verified')"
+python -m pip install --no-index --no-deps ./labvault_scout-0.4.0-py3-none-any.whl
 labvault-scout --version
 ```
 
-The prerelease intentionally rejects some older reports with unsafe drive-prefixed relative paths such as `C:sample.csv`. Preserve the original reports and source data; rescan safely named copies where needed. See the [RC1 compatibility and migration notes](RELEASE_NOTES_0_4_0_RC1.md).
+v0.4.0 retains strict path validation and may reject older reports containing drive-prefixed relative filenames such as `C:sample.csv`. Preserve historical reports and research files, and rescan safely named independent copies if needed. See the [RC1 compatibility notes](RELEASE_NOTES_0_4_0_RC1.md) and [stable release notes](RELEASE_NOTES_0_4_0.md).
 
 By default the scanner creates `labvault-report/` containing:
 
