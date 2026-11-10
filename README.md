@@ -16,7 +16,7 @@ LabVault Scout runs locally. It does not upload research data, require an accoun
 
 ## Quick start
 
-Python 3.10 or newer is required. After the v0.4.0 stable release is published, install its versioned tag:
+Python 3.10 or newer is required. **v0.4.0 is the current published stable release.** Install its versioned tag:
 
 ```bash
 git clone --branch v0.4.0 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
@@ -26,10 +26,10 @@ labvault-scout --version
 labvault-scout scan /path/to/research
 ```
 
-After publication, download the wheel and `wheel.sha256` from the [v0.4.0 GitHub Release](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0). Verify the wheel checksum against the downloaded checksum file before offline installation. The checksum file checks file consistency; it does not authenticate the publisher's identity.
+For offline installation, download the wheel and `wheel.sha256` from the [v0.4.0 GitHub Release](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0). Verify the wheel checksum against the downloaded checksum file before offline installation. The checksum file checks file consistency; it does not authenticate the publisher's identity.
 
 ```bash
-python -c "from pathlib import Path; import hashlib; p=Path('labvault_scout-0.4.0-py3-none-any.whl'); expected=Path('wheel.sha256').read_text().split()[0]; assert hashlib.sha256(p.read_bytes()).hexdigest()==expected; print('SHA256 verified')"
+python -c "from pathlib import Path; import hashlib; p=Path('labvault_scout-0.4.0-py3-none-any.whl'); expected=Path('wheel.sha256').read_text().split()[0]; assert expected=='4d66260f0b380fb33d48860b837111e03125e97cc751a58d601a3de52ccb5e63'; assert hashlib.sha256(p.read_bytes()).hexdigest()==expected; print('SHA256 verified')"
 python -m pip install --no-index --no-deps ./labvault_scout-0.4.0-py3-none-any.whl
 labvault-scout --version
 ```
