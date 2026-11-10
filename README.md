@@ -26,6 +26,16 @@ labvault-scout --version
 labvault-scout scan /path/to/research
 ```
 
+The [v0.4.0rc1 prerelease](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0rc1) is available for evaluation. **v0.3.2 remains the latest stable release.** Download the wheel from that release page once, and verify its SHA-256 before installing locally without a package index:
+
+```bash
+python -c "from pathlib import Path; import hashlib; p=Path('labvault_scout-0.4.0rc1-py3-none-any.whl'); assert hashlib.sha256(p.read_bytes()).hexdigest() == '750b0535bdf0ec6e49e90f8c25665a2845002cb5f24707b8898fe1957d3fda47'; print('SHA256 verified')"
+python -m pip install --no-index --no-deps ./labvault_scout-0.4.0rc1-py3-none-any.whl
+labvault-scout --version
+```
+
+The prerelease intentionally rejects some older reports with unsafe drive-prefixed relative paths such as `C:sample.csv`. Preserve the original reports and source data; rescan safely named copies where needed. See the [RC1 compatibility and migration notes](RELEASE_NOTES_0_4_0_RC1.md).
+
 By default the scanner creates `labvault-report/` containing:
 
 * `report.html` for human review

@@ -68,3 +68,22 @@ jobs:
               assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
 
           print(f"Loaded {len(rules)} packaged format rules and {len(SCHEMA_FILES)} schemas")
+      - name: Check candidate wheel SHA256
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          test "$(find . -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+          sha256sum ./*.whl > wheel.sha256
+          sha256sum --check wheel.sha256
+      - name: Retain candidate wheel for release review
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-wheel-${{ github.sha }}
+          path: |
+            dist/*.whl
+            dist/wheel.sha256
+          if-no-files-found: error
+          retention-days: 7
