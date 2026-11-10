@@ -32,14 +32,14 @@ Do not relax path validation. Preserve source data and historical reports. For a
 * The [public v0.4.0rc1 GitHub prerelease](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0rc1) contains `labvault_scout-0.4.0rc1-py3-none-any.whl` and its SHA256 checksum file. The verified wheel digest is `750b0535bdf0ec6e49e90f8c25665a2845002cb5f24707b8898fe1957d3fda47`.
 * The **publicly downloaded** RC1 wheel passed checksum checking, offline wheel installation, actual CLI scan, report verification, bundle verification, and packaged rules/schema loading on Windows, Ubuntu, and macOS with Python 3.10 and 3.12: [six-job run 42345772714](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42345772714).
 * Historical stable v0.3.2 interoperability was tested using real stable CLI outputs. The representative error-bearing report was generated through deterministic `PermissionError` injection; full live operating-system permission-denial behavior remains untested.
+* The `0.4.0` package/runtime version and installed-wheel checks passed on Windows, Ubuntu, and macOS with Python 3.10 and 3.12 at development commit `8f51217344a196e995b76ab07fe9e9ebf0a899d3` ([push CI 42358133478](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42358133478)); the draft PR independently passed the same six jobs ([PR CI 42787858787](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42787858787)). The final public stable wheel remains unpublished.
 
 ### Pending stable release gates
 
-1. Finalize the `0.4.0` package/runtime version together and validate the installed wheel on all six operating-system/Python combinations.
-2. Prepare stable-specific packaging and publication evidence from the precise final commit; verify the released wheel and SHA256 against that commit.
-3. Review the final `main` diff, version, CHANGELOG, bilingual READMEs, citation metadata, and this release record. Update `CITATION.cff` only at the formal stable publication stage.
-4. Confirm six successful CI jobs for the exact release commit; obtain specific owner authorization before merging, tagging, or publishing the stable release.
-5. Independent, real-world end-user RC acceptance evidence is currently **UNKNOWN**. Do not claim external acceptance, exhaustive format certification, or universal historical compatibility.
+1. Prepare stable-specific packaging and publication evidence from the precise final commit; verify the released wheel and SHA256 against that commit.
+2. Review the final `main` diff, version, CHANGELOG, bilingual READMEs, citation metadata, and this release record. Update `CITATION.cff` only at the formal stable publication stage.
+3. Confirm six successful CI jobs for the exact release commit; obtain specific owner authorization before merging, tagging, or publishing the stable release.
+4. Independent, real-world end-user RC acceptance evidence is currently **UNKNOWN**. Do not claim external acceptance, exhaustive format certification, or universal historical compatibility.
 
 ## 中文
 
@@ -68,14 +68,14 @@ LabVault Scout 保持完全开源、零使用成本、本地运行、离线优�
 * [公开 RC1 预发布版](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0rc1) 已提供 wheel 与 SHA256 校验文件。wheel 哈希已验证。
 * 直接下载公开 wheel，在 Windows、Ubuntu、macOS 与 Python 3.10、3.12 六种环境下，完成哈希校验、离线安装、真实 CLI 扫描、报告与 Bundle 验证、规则及 Schema 加载测试，对应 [CI 42345772714](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42345772714) 六项成功。
 * 已使用真实稳定版 v0.3.2 CLI 输出验证历史互操作。代表性错误报告采用确定性 `PermissionError` 注入，尚无真实操作系统权限拒绝行为的全面验证证据。
+* 开发提交 `8f51217344a196e995b76ab07fe9e9ebf0a899d3` 的 `0.4.0` 包版本、运行时版本和 wheel 安装验收，已在 Windows、Ubuntu、macOS 与 Python 3.10、3.12 六种组合中通过（[推送 CI 42358133478](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42358133478)）；草稿 PR 的六项 CI 也全部通过（[PR CI 42787858787](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42787858787)）。公开正式版 wheel 仍未发布。
 
 ### 尚需完成的正式版门槛
 
-1. 同步更新包与运行时版本至 `0.4.0`，验证六平台安装后版本一致。
-2. 为准确的最终提交准备正式版 wheel 与 SHA256，并验证发布的实际文件。
-3. 复核正式版最终差异、版本号、CHANGELOG、中英文 README、引用信息及本说明。只有真正进入稳定版发布时才更新 `CITATION.cff`。
-4. 核实最终提交自身的六项 CI 全绿；合并、标签及正式 GitHub Release 均需要明确的阶段授权。
-5. 独立真实用户的 RC 验收证据目前为 **UNKNOWN**。不能宣称已通过外部用户验收、全面格式认证或全部历史报告兼容。
+1. 为准确的最终提交准备正式版 wheel 与 SHA256，并验证发布的实际文件。
+2. 复核正式版最终差异、版本号、CHANGELOG、中英文 README、引用信息及本说明。只有真正进入稳定版发布时才更新 `CITATION.cff`。
+3. 核实最终提交自身的六项 CI 全绿；合并、标签及正式 GitHub Release 均需要明确的阶段授权。
+4. 独立真实用户的 RC 验收证据目前为 **UNKNOWN**。不能宣称已通过外部用户验收、全面格式认证或全部历史报告兼容.
 
 ---
 This document will be updated only to reflect verified facts and the actual stable release gate. / 本文件后续仅按经核实的事实及正式版门槛更新。
