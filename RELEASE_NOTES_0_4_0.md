@@ -1,9 +1,10 @@
 # LabVault Scout v0.4.0 stable release notes / 稳定版发布说明
 
-**Status / 状态: PUBLICATION AUTHORIZED, EXECUTION PENDING / 已授权正式发布，尚未执行公开发布。**
-v0.4.0 has **not been published**. The latest published stable release remains v0.3.2. On 2026-11-10, the owner authorized final metadata preparation, tagging and public release. This document records the release plan and verified evidence; it is not evidence that a tag or GitHub Release exists.
+**Status / 状态: STABLE RELEASE PUBLISHED 2026-11-10 / v0.4.0 稳定正式版已于 2026-11-10 发布。**
 
-**当前状态：正式发布已获授权，公开发布尚未执行。** v0.4.0 尚未公开发布，最新稳定版仍为 v0.3.2。所有者于 2026-11-10 授权最终元数据、正式标签及公开发布。本说明记录实际验证与待办事项，不代表正式标签或 GitHub Release 已存在。
+The public [v0.4.0 stable release](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0) was published on 2026-11-10. Its tag points to the fully tested commit `b5b306b75fd5f416f7d6d8510922b2d8aec15b4f`. This is the latest stable release. The historical v0.4.0rc1 prerelease remains available.
+
+[公开正式版 v0.4.0](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0) 已于 2026-11-10 发布，标签精确指向经过完整 CI 验证的提交 `b5b306b75fd5f416f7d6d8510922b2d8aec15b4f`。当前最新稳定版为 v0.4.0，历史预发布版 v0.4.0rc1 保留。
 
 ## English
 
@@ -36,12 +37,12 @@ Do not relax path validation. Preserve source data and historical reports. For a
 
 * Stable preparation PR [#14](https://github.com/edwardsage419/Labvault-Scout/pull/14) merged at `b84a857f912e8d621bf30720920a0ff00b512c05`; [post-merge six-job CI 42803107077](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42803107077) succeeded. The candidate wheel passed SHA256 and independent installed-file-to-commit checks. These are prepublication checks.
 
-### Pending stable release gates
+### Published artifact verification and limitations
 
-1. Finalize the release branch, confirm its exact-head six-job CI, and reconcile `CITATION.cff` `date-released` with the actual release date.
-2. Execute the authorized publication: merge finalized release metadata, create the immutable `v0.4.0` tag, and attach an exact-commit wheel and SHA256 file to the public GitHub Release.
-3. Independently download the public wheel and checksum, verify SHA256, perform offline installation and CLI tests, and archive the resulting public release evidence.
-4. Independent real-world end-user acceptance remains **UNKNOWN**. Do not claim exhaustive scientific-format certification or universal historical compatibility.
+* The final release-commit [six-job CI 42814281623](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42814281623) passed across Windows, Ubuntu and macOS with Python 3.10 and 3.12.
+* The [publication workflow 42815063010](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42815063010) built the wheel from that exact commit, verified offline installation and CLI checks, validated the uploaded draft assets, published v0.4.0, then downloaded and verified the public assets again.
+* Published `labvault_scout-0.4.0-py3-none-any.whl` SHA256: `4d66260f0b380fb33d48860b837111e03125e97cc751a58d601a3de52ccb5e63`. The accompanying `wheel.sha256` is a consistency check, not independent publisher authentication.
+* Independent real-world end-user acceptance remains **UNKNOWN**. The project does not claim universal historical report compatibility or certification of all scientific formats.
 
 ## 中文
 
@@ -74,12 +75,12 @@ LabVault Scout 保持完全开源、零使用成本、本地运行、离线优�
 
 * 正式版准备 PR [#14](https://github.com/edwardsage419/Labvault-Scout/pull/14) 已合并至 `main`，提交 `b84a857f912e8d621bf30720920a0ff00b512c05` 的 [六平台 CI 42803107077](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42803107077) 全绿。对应候选 wheel 已通过 SHA256 与安装文件源码对应性核验，属于公开发布前证据。
 
-### 尚需完成的正式版门槛
+### 公开发行物验证与证据边界
 
-1. 完成发布分支的最终审查与六平台 CI，并按实际发布日期复核 `CITATION.cff` 的 `date-released`。
-2. 执行已授权的发布操作：合并最终元数据、创建 `v0.4.0` 标签、将对应提交的 wheel 与 SHA256 文件上传到公开 GitHub Release。
-3. 从公开 Release 重新下载 wheel 和校验文件，核对 SHA256，进行离线安装及 CLI 检查，并归档实际发布证据。
-4. 独立真实用户验收证据仍为 **UNKNOWN**，不得宣称所有科研格式全面认证或所有历史报告完全兼容。
+* 正式版标签指向的提交已通过 [六平台 CI 42814281623](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42814281623)，涵盖 Windows、Ubuntu、macOS 与 Python 3.10、3.12。
+* [发布工作流 42815063010](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42815063010) 从精确提交构建 wheel，完成离线安装、CLI 测试、草稿发行物校验、正式发布及公开文件重新下载校验。
+* 公开 wheel `labvault_scout-0.4.0-py3-none-any.whl` 的 SHA256 为 `4d66260f0b380fb33d48860b837111e03125e97cc751a58d601a3de52ccb5e63`。随附 `wheel.sha256` 用于文件一致性检查，不单独证明发布者身份。
+* 独立真实用户验收证据仍为 **UNKNOWN**，不能据此宣称全部历史报告兼容或所有科研格式获得全面认证。
 
 ---
 This document will be updated only to reflect verified facts and the actual stable release gate. / 本文件后续仅按经核实的事实及正式版门槛更新。
