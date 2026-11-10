@@ -69,7 +69,7 @@ jobs:
 
           print(f"Loaded {len(rules)} packaged format rules and {len(SCHEMA_FILES)} schemas")
       - name: Check candidate wheel SHA256
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         shell: bash
         run: |
           set -euo pipefail
@@ -78,7 +78,7 @@ jobs:
           sha256sum ./*.whl > wheel.sha256
           sha256sum --check wheel.sha256
       - name: Retain candidate wheel for release review
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
         with:
           name: candidate-wheel-${{ github.sha }}
