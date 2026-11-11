@@ -2463,15 +2463,15 @@ def test_scan_report_fifo_does_not_block(
         path = link
 
     script = (
-        "from pathlib import Path\\n"
-        "from labvault_scout.compare import load_scan_report\\n"
-        "import sys\\n"
-        "try:\\n"
-        "    load_scan_report(Path(sys.argv[1]))\\n"
-        "except ValueError as exc:\\n"
-        "    assert 'Cannot read scan report' in str(exc)\\n"
-        "else:\\n"
-        "    raise AssertionError('FIFO input was accepted')\\n"
+        "from pathlib import Path\n"
+        "from labvault_scout.compare import load_scan_report\n"
+        "import sys\n"
+        "try:\n"
+        "    load_scan_report(Path(sys.argv[1]))\n"
+        "except ValueError as exc:\n"
+        "    assert 'Cannot read scan report' in str(exc)\n"
+        "else:\n"
+        "    raise AssertionError('FIFO input was accepted')\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", script, str(path)],
