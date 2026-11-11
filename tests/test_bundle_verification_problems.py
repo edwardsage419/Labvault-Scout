@@ -525,3 +525,46 @@ def test_verify_bundle_rejects_manifest_changed_during_artifact_verification(
         "issue": "IO_ERROR",
         "error": "ManifestChangedDuringVerification",
     } in result["problems"]
+
+
+def test_verify_bundle_rejects_same_content_manifest_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    manifest_path = output / "bundle_manifest.json"
+    replacement = output / "replacement-manifest.tmp"
+    replacement.write_bytes(manifest_path.read_bytes())
+    identity_fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+    before = manifest_path.lstat()
+    proposed = replacement.lstat()
+    if all(
+        getattr(before, field, None) == getattr(proposed, field, None)
+        for field in identity_fields
+    ):
+        pytest.skip("Filesystem does not expose replacement identity")
+
+    original_hash = bundle_module.sha256_file
+    calls = 0
+
+    def replace_after_last_hash(path: Path, **kwargs) -> str:
+        nonlocal calls
+        digest = original_hash(path, **kwargs)
+        if path.name in BUNDLE_FILES:
+            calls += 1
+            if calls == 2 * len(BUNDLE_FILES):
+                replacement.replace(manifest_path)
+        return digest
+
+    monkeypatch.setattr(bundle_module, "sha256_file", replace_after_last_hash)
+    result = verify_bundle(output)
+
+    assert calls == 2 * len(BUNDLE_FILES)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "bundle_manifest.json",
+        "issue": "IO_ERROR",
+        "error": "ManifestChangedDuringVerification",
+    } in result["problems"]
