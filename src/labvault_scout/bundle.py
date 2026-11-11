@@ -155,7 +155,9 @@ def _read_manifest_text(path: Path) -> str:
         handle = os.fdopen(fd, "rb")
         fd = -1
         with handle:
-            raw = handle.read(MAX_BUNDLE_MANIFEST_BYTES + 1)
+            # Read at most one byte beyond the inspected size to detect growth.
+            # Regular-looking pseudo-files may report a size of zero.
+            raw = handle.read(opened.st_size + 1)
             if len(raw) > MAX_BUNDLE_MANIFEST_BYTES:
                 raise ValueError("Bundle manifest exceeds maximum size")
             final = os.fstat(handle.fileno())

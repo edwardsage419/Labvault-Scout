@@ -449,3 +449,58 @@ def test_load_bundle_manifest_classifies_path_disappearance_after_read(
     assert manifest_checks == 3
     assert isinstance(caught.value.__cause__, FileNotFoundError)
     assert manifest.read_bytes() == b"{}"
+
+@pytest.mark.parametrize("empty_manifest", [False, True])
+def test_load_bundle_manifest_limits_read_to_inspected_size_plus_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, empty_manifest: bool,
+) -> None:
+    import labvault_scout.bundle as bundle
+
+    payload = {
+        "schema_version": "1",
+        "tool": {"name": "LabVault Scout", "version": "0.4.1"},
+        "algorithm": "sha256",
+        "files": [
+            {"path": name, "size": 0, "sha256": "0" * 64}
+            for name in bundle.BUNDLE_FILES
+        ],
+    }
+    payload["manifest_sha256"] = bundle.manifest_payload_sha256(payload)
+    data = b"" if empty_manifest else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    manifest = tmp_path / bundle.BUNDLE_MANIFEST_NAME
+    manifest.write_bytes(data)
+    original_fdopen = bundle.os.fdopen
+    requested_sizes: list[int] = []
+
+    class ObservedStream:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def fileno(self):
+            return self.stream.fileno()
+
+        def read(self, size=-1):
+            requested_sizes.append(size)
+            assert size == len(data) + 1, "Manifest read exceeded inspected size"
+            return self.stream.read(size)
+
+    def observe_fdopen(fd, *args, **kwargs):
+        return ObservedStream(original_fdopen(fd, *args, **kwargs))
+
+    with monkeypatch.context() as patch:
+        patch.setattr(bundle.os, "fdopen", observe_fdopen)
+        if empty_manifest:
+            with pytest.raises(ValueError, match="Cannot read bundle manifest"):
+                bundle.load_bundle_manifest(tmp_path)
+        else:
+            assert bundle.load_bundle_manifest(tmp_path) == payload
+
+    assert requested_sizes == [len(data) + 1]
+    assert manifest.read_bytes() == data
