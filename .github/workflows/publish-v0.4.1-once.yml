@@ -1,0 +1,206 @@
+name: Publish LabVault Scout v0.4.1 once
+on:
+  push:
+    branches:
+      - publication/v0.4.1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: labvault-scout-v0.4.1-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'edwardsage419/Labvault-Scout' && github.ref == 'refs/heads/publication/v0.4.1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: a3e56e672c74cafcdd577f06bde697eab52a11a0
+      CI_RUN_ID: '42966527817'
+      TAG_NAME: v0.4.1
+      RELEASE_DATE: '2026-11-11'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail closed on source, CI, date or existing release mismatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$TARGET_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID" --jq '.status')" = completed
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID" --jq '.conclusion')" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID" --jq '.head_sha')" = "$TARGET_SHA"
+          test "$(TZ=Asia/Taipei date +%Y-%m-%d)" = "$RELEASE_DATE"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" >/dev/null 2>&1; then
+            echo "Stable tag already exists; stop" >&2
+            exit 1
+          fi
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Stable release already exists; stop" >&2
+            exit 1
+          fi
+          git checkout --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          grep -Fxq 'version: 0.4.1' CITATION.cff
+          grep -Fxq 'date-released: 2026-11-11' CITATION.cff
+          grep -Fxq 'version = "0.4.1"' pyproject.toml
+          grep -Fxq '__version__ = "0.4.1"' src/labvault_scout/__init__.py
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build wheel from exact validated main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install build
+          python -m build --wheel
+          test "$(find dist -maxdepth 1 -name '*.whl' -type f | wc -l)" -eq 1
+          test -f dist/labvault_scout-0.4.1-py3-none-any.whl
+          (cd dist && sha256sum ./*.whl > wheel.sha256 && sha256sum --check wheel.sha256)
+
+      - name: Audit wheel RECORD and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64
+          import csv
+          import hashlib
+          import io
+          import zipfile
+          from pathlib import Path
+
+          wheel = Path("dist/labvault_scout-0.4.1-py3-none-any.whl")
+          with zipfile.ZipFile(wheel) as archive:
+              names = archive.namelist()
+              assert len(names) == len(set(names)), "duplicate wheel members"
+              assert all(not ((entry.external_attr >> 16) & 0o170000) == 0o120000 for entry in archive.infolist()), "symbolic link"
+              records = [name for name in names if name.endswith(".dist-info/RECORD")]
+              assert len(records) == 1
+              entries = list(csv.reader(io.StringIO(archive.read(records[0]).decode("utf-8"))))
+              assert {r[0] for r in entries} == set(names)
+              for filename, digest, size in entries:
+                  data = archive.read(filename)
+                  if filename == records[0]:
+                      assert digest == size == ""
+                      continue
+                  assert len(data) == int(size), filename
+                  expected = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
+                  assert digest == f"sha256={expected}", filename
+              metadata = [name for name in names if name.endswith(".dist-info/METADATA")]
+              assert len(metadata) == 1
+              meta = archive.read(metadata[0]).decode("utf-8")
+              assert "\nVersion: 0.4.1\n" in meta
+              assert "Requires-Python: >=3.10" in meta
+          print("Wheel RECORD, file identities and package metadata checked")
+          PY
+
+      - name: Offline installed-wheel scan and integrity checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/release-smoke"
+          "$RUNNER_TEMP/release-smoke/bin/python" -m pip install --no-index --no-deps dist/*.whl
+          "$RUNNER_TEMP/release-smoke/bin/labvault-scout" --version | grep -F '0.4.1'
+          mkdir -p smoke-input
+          printf 'a,b\n1,2\n' > smoke-input/sample.csv
+          "$RUNNER_TEMP/release-smoke/bin/labvault-scout" scan smoke-input -o smoke-report
+          "$RUNNER_TEMP/release-smoke/bin/labvault-scout" verify smoke-report/scan.json
+          "$RUNNER_TEMP/release-smoke/bin/labvault-scout" verify-bundle smoke-report
+          "$RUNNER_TEMP/release-smoke/bin/labvault-scout" schema bundle > schema-bundle.json
+          test -s schema-bundle.json
+          cp smoke-report/scan.json smoke-before.json
+          printf 'new\n' > smoke-input/second.txt
+          "$RUNNER_TEMP/release-smoke/bin/labvault-scout" scan smoke-input -o smoke-report-after
+          "$RUNNER_TEMP/release-smoke/bin/labvault-scout" compare smoke-before.json smoke-report-after/scan.json -o smoke-comparison
+          test -s smoke-comparison/comparison.json
+
+      - name: Prepare final bilingual notes
+        shell: bash
+        run: |
+          cat > release-publication-notes.md <<'NOTES'
+          # LabVault Scout v0.4.1
+
+          Stable patch release published 2026-11-11 (Asia/Taipei). LabVault Scout is free, open-source, local, offline-first, and source-read-only.
+
+          ## Patch
+          * Fix a bundle integrity condition where a manifest changed during report artifact verification could result in an incorrect VERIFIED result.
+          * Revalidate the manifest after core-file checks. Compare validated contents and observable file identity metadata.
+          * Report FAILED with issue ManifestChangedDuringVerification and exit code 2 when detectable changes occur.
+          * Regression coverage includes invalid checksum, internally valid changed manifest, and same-content file replacement.
+
+          ## Limitations
+          These checks detect changes with observable evidence. They do not guarantee detection of transient replacements that leave no observable changes. Previously documented strict path behavior may reject some older reports containing drive-prefixed relative paths such as C:sample.csv. Preserve historical reports and original research files. Independent real-world end-user acceptance remains UNKNOWN.
+
+          ## Verification
+          Published source commit: a3e56e672c74cafcdd577f06bde697eab52a11a0
+          Exact-commit Windows/Ubuntu/macOS x Python 3.10/3.12 CI: https://github.com/edwardsage419/Labvault-Scout/actions/runs/42966527817
+          The attached wheel and wheel.sha256 were built from that source and verified using offline installation, CLI smoke tests, checksums, and the wheel's RECORD.
+
+          ## 中文
+          v0.4.1 稳定补丁版于 2026 年 11 月 11 日（台北时间）发布。本工具完全开源、免费、本地运行、离线优先，且不会修改被扫描的科研源文件。
+
+          本次修复 Bundle 验证期间 manifest 变化可能被误判为 VERIFIED 的问题。验证结束前重新检查 manifest 内容与可观察文件身份；发现变化时返回 FAILED、退出码 2，并记录 ManifestChangedDuringVerification。回归测试覆盖错误校验值、有效校验值下的内容变化和相同内容文件替换。
+
+          该方法受限于可观察的文件系统证据，无法保证检出所有无痕的瞬时替换。对包含 C:sample.csv 等驱动器前缀相对路径的部分旧报告仍可能执行严格拒绝。请保留历史报告和科研源文件。独立真实用户验收证据仍为 UNKNOWN。
+
+          wheel.sha256 用于下载文件一致性检查，校验文件自身不证明发布者身份。
+          NOTES
+
+      - name: Create draft release and attach only verified wheel and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(TZ=Asia/Taipei date +%Y-%m-%d)" = "$RELEASE_DATE"
+          gh release create "$TAG_NAME" \
+            dist/labvault_scout-0.4.1-py3-none-any.whl \
+            dist/wheel.sha256 \
+            --draft --target "$TARGET_SHA" \
+            --title 'LabVault Scout v0.4.1' \
+            --notes-file release-publication-notes.md
+          test "$(gh release view "$TAG_NAME" --json isDraft --jq '.isDraft')" = true
+          test "$(gh release view "$TAG_NAME" --json assets --jq '.assets | length')" -eq 2
+
+      - name: Independently inspect draft release asset bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p verify-draft
+          gh release download "$TAG_NAME" --dir verify-draft --pattern '*.whl' --pattern 'wheel.sha256'
+          cmp dist/labvault_scout-0.4.1-py3-none-any.whl verify-draft/labvault_scout-0.4.1-py3-none-any.whl
+          cmp dist/wheel.sha256 verify-draft/wheel.sha256
+          (cd verify-draft && sha256sum --check wheel.sha256)
+          test "$(gh release view "$TAG_NAME" --json targetCommitish --jq '.targetCommitish')" = "$TARGET_SHA"
+
+      - name: Publish final stable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(TZ=Asia/Taipei date +%Y-%m-%d)" = "$RELEASE_DATE"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$TARGET_SHA"
+          gh release edit "$TAG_NAME" --draft=false --latest
+          test "$(gh release view "$TAG_NAME" --json isDraft --jq '.isDraft')" = false
+          test "$(gh release view "$TAG_NAME" --json isPrerelease --jq '.isPrerelease')" = false
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" --jq '.object.sha')" = "$TARGET_SHA"
+
+      - name: Re-download publicly accessible assets and verify SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p verify-public
+          for filename in labvault_scout-0.4.1-py3-none-any.whl wheel.sha256; do
+            curl --fail --location --silent --show-error --retry 5 --retry-delay 2 \
+              --output "verify-public/$filename" \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG_NAME/$filename"
+          done
+          cmp dist/labvault_scout-0.4.1-py3-none-any.whl verify-public/labvault_scout-0.4.1-py3-none-any.whl
+          cmp dist/wheel.sha256 verify-public/wheel.sha256
+          (cd verify-public && sha256sum --check wheel.sha256)
+          echo "v0.4.1 published and public asset integrity verified"
