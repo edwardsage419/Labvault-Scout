@@ -17,25 +17,25 @@ LabVault Scout 是一个完全本地、只读、开源的科研数据保存风�
 
 ## 快速开始
 
-需要 Python 3.10 或更高版本。**当前公开稳定版为 v0.4.0。** 可以从正式版本标签安装：
+需要 Python 3.10 或更高版本。**当前公开稳定版为 v0.4.1。** 可以从正式版本标签安装：
 
 ```bash
-git clone --branch v0.4.0 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
+git clone --branch v0.4.1 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
 cd Labvault-Scout
 python -m pip install .
 labvault-scout --version
 labvault-scout scan /path/to/research
 ```
 
-离线安装时，可从 [v0.4.0 GitHub Release](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0) 下载 wheel 和 `wheel.sha256`。先对照校验文件核对 SHA256，再离线安装。校验文件仅用于检查下载文件的一致性，不提供发布者身份认证。
+离线安装时，可从 [v0.4.1 GitHub Release](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.1) 下载 wheel 和 `wheel.sha256`。先对照校验文件核对 SHA256，再离线安装。校验文件仅用于检查下载文件的一致性，不提供发布者身份认证。
 
 ```bash
-python -c "from pathlib import Path; import hashlib; p=Path('labvault_scout-0.4.0-py3-none-any.whl'); expected=Path('wheel.sha256').read_text().split()[0]; assert expected=='4d66260f0b380fb33d48860b837111e03125e97cc751a58d601a3de52ccb5e63'; assert hashlib.sha256(p.read_bytes()).hexdigest()==expected; print('SHA256 verified')"
-python -m pip install --no-index --no-deps ./labvault_scout-0.4.0-py3-none-any.whl
+python -c "from pathlib import Path; import hashlib; p=Path('labvault_scout-0.4.1-py3-none-any.whl'); expected=Path('wheel.sha256').read_text().split()[0]; assert expected=='8a7fc1b4055672d25c4514b9412ffea3ef1e4ab24d322435c56f5a76b58828b0'; assert hashlib.sha256(p.read_bytes()).hexdigest()==expected; print('SHA256 verified')"
+python -m pip install --no-index --no-deps ./labvault_scout-0.4.1-py3-none-any.whl
 labvault-scout --version
 ```
 
-v0.4.0 继续严格验证路径，可能拒绝包含 `C:sample.csv` 等驱动器前缀相对路径的旧报告。请保留原始报告和科研源文件，需要重新扫描时使用安全命名的独立副本。兼容性范围见 [RC1 说明](RELEASE_NOTES_0_4_0_RC1.md) 与 [正式版说明](RELEASE_NOTES_0_4_0.md)。
+v0.4.1 继续严格验证路径，可能拒绝包含 `C:sample.csv` 等驱动器前缀相对路径的旧报告。请保留原始报告和科研源文件，需要重新扫描时使用安全命名的独立副本。兼容性范围见 [RC1 说明](RELEASE_NOTES_0_4_0_RC1.md) 与 [正式版说明](RELEASE_NOTES_0_4_1.md)。
 
 报告默认写入 `labvault-report/`，包括 `report.html`、`files.csv`、`scan.json`、精确重复文件清单 `duplicates.csv`，以及按保存优先级排序的 `migration_plan.csv`。
 

@@ -1,10 +1,10 @@
 # Changelog
 
-## 0.4.1 (patch release pending)
+## 0.4.1 — 2026-11-11
 
-**PREPUBLICATION / 补丁版尚未发布.** v0.4.1 is in review. The currently published stable version remains [v0.4.0](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0).
+**PUBLISHED / 已正式发布.** [LabVault Scout v0.4.1](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.1) is the latest published stable patch release, dated 2026-11-11. The original v0.4.0 release remains available.
 
-**正式补丁版准备中。** 当前最新公开稳定版仍为 v0.4.0，尚无 v0.4.1 标签或公开 wheel。
+**v0.4.1 已于 2026-11-11 公开发布为稳定补丁版。** 历史正式版 v0.4.0 仍然保留。
 
 ### Patch scope / 补丁范围
 
@@ -13,13 +13,15 @@
 * Add regression cases for invalid checksums, different internally valid contents, and same-content file replacement.
 * Preserve local offline-first, source-read-only behavior. No scientific format rules or schemas were changed by this fix.
 
-### Candidate evidence / 候选证据
+### Release verification / 正式发布验证
 
 * [PR #17](https://github.com/edwardsage419/Labvault-Scout/pull/17) merged at bb50b81075fb2818c42defbfffea431646125142. [Post-merge CI 42953137318](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42953137318) passed all six matrix jobs.
 * Version synchronization in commit 4f4d46a032ad875c54f78acaf643b40ffa629b5f passed [CI 42957754106](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42957754106), all six jobs.
-* The exact release commit, public wheel SHA256 and publication date remain pending. Detection remains limited to observable evidence, and independent end-user acceptance remains UNKNOWN.
+* The exact v0.4.1 tag points to `a3e56e672c74cafcdd577f06bde697eab52a11a0`, whose [six-job CI 42966527817](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42966527817) passed.
+* [One-time publication workflow 42966986928](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42966986928) passed exact-commit build, installed-wheel CLI checks, draft upload verification and public-download checksum revalidation.
+* Published wheel SHA256: `8a7fc1b4055672d25c4514b9412ffea3ef1e4ab24d322435c56f5a76b58828b0`. Detection remains limited to observable evidence, and independent end-user acceptance remains UNKNOWN.
 
-最终发行物哈希和实际发布日期仍待确定。该修复无法保证检测不留下可观察变化的瞬时替换。独立真实用户验收证据仍为 UNKNOWN。参见 [补丁版发布说明草稿](RELEASE_NOTES_0_4_1.md)。
+已按实际发布日期 2026-11-11 确认正式标签及公开 wheel，SHA256 为 `8a7fc1b4055672d25c4514b9412ffea3ef1e4ab24d322435c56f5a76b58828b0`。该修复无法保证检测不留下可观察变化的瞬时替换。独立真实用户验收证据仍为 UNKNOWN。参见 [正式补丁版说明](RELEASE_NOTES_0_4_1.md)。
 
 ## 0.4.0 — 2026-11-10
 
