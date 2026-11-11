@@ -301,6 +301,11 @@ def load_bundle_manifest(output_dir: Path) -> dict:
 
 def verify_bundle(output_dir: Path) -> dict:
     """Verify all core report artifacts against the packaged manifest."""
+    manifest_path = output_dir / BUNDLE_MANIFEST_NAME
+    try:
+        initial_manifest_stat = manifest_path.lstat()
+    except OSError as exc:
+        raise ValueError(f"Cannot read bundle manifest: {manifest_path}") from exc
     payload = load_bundle_manifest(output_dir)
     problems = []
     for entry in payload["files"]:
@@ -431,6 +436,30 @@ def verify_bundle(output_dir: Path) -> dict:
                 "path": member,
                 "issue": "IO_ERROR",
                 "error": "FileChangedDuringScan",
+            })
+
+    # The manifest may have been replaced while the core artifacts were checked.
+    # Revalidate it before reporting a verified bundle.
+    try:
+        final_manifest = load_bundle_manifest(output_dir)
+        final_manifest_stat = manifest_path.lstat()
+    except (OSError, ValueError):
+        problems.append({
+            "path": BUNDLE_MANIFEST_NAME,
+            "issue": "IO_ERROR",
+            "error": "ManifestChangedDuringVerification",
+        })
+    else:
+        identity_fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if final_manifest != payload or any(
+            getattr(initial_manifest_stat, field, None)
+            != getattr(final_manifest_stat, field, None)
+            for field in identity_fields
+        ):
+            problems.append({
+                "path": BUNDLE_MANIFEST_NAME,
+                "issue": "IO_ERROR",
+                "error": "ManifestChangedDuringVerification",
             })
 
     return {
