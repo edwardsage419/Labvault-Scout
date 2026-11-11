@@ -4,7 +4,9 @@ import csv
 import html
 import json
 import math
+import os
 import re
+import stat as stat_module
 from decimal import Decimal
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
@@ -260,11 +262,56 @@ def _parse_finite_scan_json_float(value: str) -> float:
     return parsed
 
 
+def _read_regular_scan_report(path: Path) -> str:
+    """Read a regular JSON report through a verified file descriptor."""
+    before = path.stat()
+    if not stat_module.S_ISREG(before.st_mode):
+        raise ValueError("Scan report must be a regular file")
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns")
+        if os.name != "nt":
+            fields += ("st_ctime_ns",)
+        if not stat_module.S_ISREG(opened.st_mode) or any(
+            getattr(before, field, None) != getattr(opened, field, None)
+            for field in fields
+        ):
+            raise ValueError("Scan report changed before read")
+        handle = os.fdopen(fd, "rb")
+        fd = -1
+        with handle:
+            raw = handle.read()
+            after = os.fstat(handle.fileno())
+            final_path = path.stat()
+        if any(
+            getattr(before, field, None) != getattr(actual, field, None)
+            for actual in (after, final_path)
+            for field in fields
+        ):
+            raise ValueError("Scan report changed during read")
+        if len(raw) != opened.st_size:
+            raise ValueError("Scan report incomplete read")
+        return raw.decode("utf-8")
+    except BaseException as original_error:
+        if fd != -1:
+            try:
+                os.close(fd)
+            except OSError as close_error:
+                raise original_error from close_error
+        raise
+
+
 def load_scan_report(path: Path) -> dict:
     """Load a LabVault Scout scan report with version-aware validation."""
     try:
         payload = json.loads(
-            path.read_text(encoding="utf-8"),
+            _read_regular_scan_report(path),
             object_pairs_hook=_reject_duplicate_scan_report_keys,
             parse_constant=_reject_nonstandard_scan_json_constant,
             parse_float=_parse_finite_scan_json_float,

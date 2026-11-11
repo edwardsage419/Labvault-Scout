@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -2439,3 +2441,52 @@ def test_schema1_invalid_provenance_rejected_with_recomputed_checksum(
     result = verify_report(malformed)
     assert result["status"] == "FAILED"
     assert result["exit_code"] == 2
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or not hasattr(os, "mkfifo"),
+    reason="Named pipes require POSIX mkfifo",
+)
+@pytest.mark.parametrize("via_symlink", [False, True])
+def test_scan_report_fifo_does_not_block(
+    tmp_path: Path, via_symlink: bool,
+) -> None:
+    fifo = tmp_path / "unreadable-scan.json"
+    os.mkfifo(fifo)
+    path = fifo
+    if via_symlink:
+        link = tmp_path / "linked-scan.json"
+        try:
+            link.symlink_to(fifo)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symbolic links are not available")
+        path = link
+
+    script = (
+        "from pathlib import Path\n"
+        "from labvault_scout.compare import load_scan_report\n"
+        "import sys\n"
+        "try:\n"
+        "    load_scan_report(Path(sys.argv[1]))\n"
+        "except ValueError as exc:\n"
+        "    assert 'Cannot read scan report' in str(exc)\n"
+        "else:\n"
+        "    raise AssertionError('FIFO input was accepted')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(path)],
+        capture_output=True, text=True, timeout=5, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_scan_report_regular_symlink_remains_supported(tmp_path: Path) -> None:
+    report = tmp_path / "real-scan.json"
+    report.write_text('{"files": []}', encoding="utf-8")
+    linked = tmp_path / "linked-scan.json"
+    try:
+        linked.symlink_to(report)
+    except (OSError, NotImplementedError):
+        pytest.skip("File symlinks are not available")
+
+    assert load_scan_report(linked)["files"] == []
