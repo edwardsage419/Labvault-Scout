@@ -1,10 +1,10 @@
 # LabVault Scout v0.4.1 patch release notes / 补丁版发布说明
 
-**Status: PREPUBLICATION DRAFT / 状态：正式发布前草稿。**
+**Status: STABLE PATCH RELEASE PUBLISHED 2026-11-11 / 状态：稳定补丁版已于 2026-11-11 正式发布。**
 
-v0.4.1 is not yet published. The latest public stable release is [v0.4.0](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0). The existing stable tag and released wheel remain unchanged.
+The public [v0.4.1 stable release](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.1) was published on 2026-11-11. The tag points to `a3e56e672c74cafcdd577f06bde697eab52a11a0`. Previous v0.4.0 assets remain available.
 
-v0.4.1 尚未公开发布。当前最新正式稳定版仍为 v0.4.0，既有标签与发行物均保持不变。
+[v0.4.1 稳定补丁版](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.1) 已于 2026-11-11 发布，正式标签指向 `a3e56e672c74cafcdd577f06bde697eab52a11a0`。历史 v0.4.0 标签与发行物保持不变。
 
 ## English
 
@@ -25,11 +25,11 @@ The project remains free, open source, local, offline-first, and source-read-onl
 * Fixed code and tests merged through [PR #17](https://github.com/edwardsage419/Labvault-Scout/pull/17) at bb50b81075fb2818c42defbfffea431646125142; its [post-merge CI](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42953137318) passed across Windows, Ubuntu and macOS, Python 3.10 and 3.12.
 * The v0.4.1 package/runtime version update at 4f4d46a032ad875c54f78acaf643b40ffa629b5f passed [CI 42957754106](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42957754106), all six jobs.
 
-### Limits and publication requirements
+### Limits and published artifact verification
 
 The checks cover changes detectable through validated contents and observable filesystem metadata. Transient replacements leaving no observable differences cannot be universally excluded. Independent real-world end-user acceptance remains UNKNOWN.
 
-Before public publication, review the exact final commit and CI, independently verify the final wheel and SHA256, update citation information to the actual publication date, obtain separate tag and public Release authorization, and verify the publicly downloaded assets.
+The exact tagged commit `a3e56e672c74cafcdd577f06bde697eab52a11a0` passed [six-job CI 42966527817](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42966527817). [Publication workflow 42966986928](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42966986928) validated wheel RECORD, offline CLI operations, draft release assets and publicly downloaded file bytes. Published wheel SHA256: `8a7fc1b4055672d25c4514b9412ffea3ef1e4ab24d322435c56f5a76b58828b0`. The adjacent wheel.sha256 file checks download consistency but does not independently authenticate publisher identity.
 
 ## 中文
 
@@ -50,8 +50,8 @@ Before public publication, review the exact final commit and CI, independently v
 * 修复及测试通过 [PR #17](https://github.com/edwardsage419/Labvault-Scout/pull/17) 合并，提交 bb50b81075fb2818c42defbfffea431646125142；[合并后 CI](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42953137318) 六项成功。
 * v0.4.1 版本号准备提交 4f4d46a032ad875c54f78acaf643b40ffa629b5f 的 [CI](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42957754106) 六项成功。
 
-### 限制和正式发布条件
+### 限制和公开发行物验证
 
 本修复针对可观察到的内容或文件身份变化，不能保证发现所有不留下可观察痕迹的瞬时替换。独立真实用户验收证据仍为 UNKNOWN。
 
-正式发布前需要确认最终提交及完整 CI、校验正式 wheel 和 SHA256、按实际发布日期更新引用信息、取得单独的正式标签及公开 Release 授权，并重新下载公开发行物完成验证。
+正式标签指向 `a3e56e672c74cafcdd577f06bde697eab52a11a0`，对应的 [六平台 CI 42966527817](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42966527817) 已全部通过。[发布工作流 42966986928](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42966986928) 已验证 wheel RECORD、离线 CLI、草稿附件和公开下载文件的完整性。正式 wheel SHA256 为 `8a7fc1b4055672d25c4514b9412ffea3ef1e4ab24d322435c56f5a76b58828b0`。随附 wheel.sha256 用于检查文件一致性，不能独立证明发布者身份。
