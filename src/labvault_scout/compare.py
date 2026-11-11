@@ -286,7 +286,9 @@ def _read_regular_scan_report(path: Path) -> str:
         handle = os.fdopen(fd, "rb")
         fd = -1
         with handle:
-            raw = handle.read()
+            # One byte beyond the inspected size detects growth without an
+            # unbounded read from a regular-looking special file.
+            raw = handle.read(opened.st_size + 1)
             after = os.fstat(handle.fileno())
             final_path = path.stat()
         if any(
