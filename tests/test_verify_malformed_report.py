@@ -2478,3 +2478,15 @@ def test_scan_report_fifo_does_not_block(
         capture_output=True, text=True, timeout=5, check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_scan_report_regular_symlink_remains_supported(tmp_path: Path) -> None:
+    report = tmp_path / "real-scan.json"
+    report.write_text('{"files": []}', encoding="utf-8")
+    linked = tmp_path / "linked-scan.json"
+    try:
+        linked.symlink_to(report)
+    except (OSError, NotImplementedError):
+        pytest.skip("File symlinks are not available")
+
+    assert load_scan_report(linked)["files"] == []

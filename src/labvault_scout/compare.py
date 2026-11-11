@@ -263,15 +263,14 @@ def _parse_finite_scan_json_float(value: str) -> float:
 
 
 def _read_regular_scan_report(path: Path) -> str:
-    """Read a stable regular JSON report without following file substitutions."""
-    before = path.lstat()
+    """Read a regular JSON report through a verified file descriptor."""
+    before = path.stat()
     if not stat_module.S_ISREG(before.st_mode):
         raise ValueError("Scan report must be a regular file")
     flags = (
         os.O_RDONLY
         | getattr(os, "O_BINARY", 0)
         | getattr(os, "O_NONBLOCK", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
     )
     fd = os.open(path, flags)
     try:
@@ -289,7 +288,7 @@ def _read_regular_scan_report(path: Path) -> str:
         with handle:
             raw = handle.read()
             after = os.fstat(handle.fileno())
-            final_path = path.lstat()
+            final_path = path.stat()
         if any(
             getattr(before, field, None) != getattr(actual, field, None)
             for actual in (after, final_path)
