@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.1 (patch release pending)
+
+**PREPUBLICATION / 补丁版尚未发布.** v0.4.1 is in review. The currently published stable version remains [v0.4.0](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0).
+
+**正式补丁版准备中。** 当前最新公开稳定版仍为 v0.4.0，尚无 v0.4.1 标签或公开 wheel。
+
+### Patch scope / 补丁范围
+
+* Address an observed integrity gap in Bundle verification: a manifest modified during file hashing could result in an incorrect VERIFIED status.
+* Revalidate manifest contents and observable file identity before verification completes; report FAILED with ManifestChangedDuringVerification when a change is detected.
+* Add regression cases for invalid checksums, different internally valid contents, and same-content file replacement.
+* Preserve local offline-first, source-read-only behavior. No scientific format rules or schemas were changed by this fix.
+
+### Candidate evidence / 候选证据
+
+* [PR #17](https://github.com/edwardsage419/Labvault-Scout/pull/17) merged at bb50b81075fb2818c42defbfffea431646125142. [Post-merge CI 42953137318](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42953137318) passed all six matrix jobs.
+* Version synchronization in commit 4f4d46a032ad875c54f78acaf643b40ffa629b5f passed [CI 42957754106](https://github.com/edwardsage419/Labvault-Scout/actions/runs/42957754106), all six jobs.
+* The exact release commit, public wheel SHA256 and publication date remain pending. Detection remains limited to observable evidence, and independent end-user acceptance remains UNKNOWN.
+
+最终发行物哈希和实际发布日期仍待确定。该修复无法保证检测不留下可观察变化的瞬时替换。独立真实用户验收证据仍为 UNKNOWN。参见 [补丁版发布说明草稿](RELEASE_NOTES_0_4_1.md)。
+
 ## 0.4.0 — 2026-11-10
 
 **PUBLISHED / 正式版已发布.** [LabVault Scout v0.4.0](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0) is the latest stable release. The frozen historical prerelease v0.4.0rc1 remains available.
