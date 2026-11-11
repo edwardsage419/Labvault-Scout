@@ -16,25 +16,25 @@ LabVault Scout runs locally. It does not upload research data, require an accoun
 
 ## Quick start
 
-Python 3.10 or newer is required. **v0.4.0 is the current published stable release.** Install its versioned tag:
+Python 3.10 or newer is required. **v0.4.1 is the current published stable release.** Install its versioned tag:
 
 ```bash
-git clone --branch v0.4.0 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
+git clone --branch v0.4.1 --depth 1 https://github.com/edwardsage419/Labvault-Scout.git
 cd Labvault-Scout
 python -m pip install .
 labvault-scout --version
 labvault-scout scan /path/to/research
 ```
 
-For offline installation, download the wheel and `wheel.sha256` from the [v0.4.0 GitHub Release](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.0). Verify the wheel checksum against the downloaded checksum file before offline installation. The checksum file checks file consistency; it does not authenticate the publisher's identity.
+For offline installation, download the wheel and `wheel.sha256` from the [v0.4.1 GitHub Release](https://github.com/edwardsage419/Labvault-Scout/releases/tag/v0.4.1). Verify the wheel checksum against the downloaded checksum file before offline installation. The checksum file checks file consistency; it does not authenticate the publisher's identity.
 
 ```bash
-python -c "from pathlib import Path; import hashlib; p=Path('labvault_scout-0.4.0-py3-none-any.whl'); expected=Path('wheel.sha256').read_text().split()[0]; assert expected=='4d66260f0b380fb33d48860b837111e03125e97cc751a58d601a3de52ccb5e63'; assert hashlib.sha256(p.read_bytes()).hexdigest()==expected; print('SHA256 verified')"
-python -m pip install --no-index --no-deps ./labvault_scout-0.4.0-py3-none-any.whl
+python -c "from pathlib import Path; import hashlib; p=Path('labvault_scout-0.4.1-py3-none-any.whl'); expected=Path('wheel.sha256').read_text().split()[0]; assert expected=='8a7fc1b4055672d25c4514b9412ffea3ef1e4ab24d322435c56f5a76b58828b0'; assert hashlib.sha256(p.read_bytes()).hexdigest()==expected; print('SHA256 verified')"
+python -m pip install --no-index --no-deps ./labvault_scout-0.4.1-py3-none-any.whl
 labvault-scout --version
 ```
 
-v0.4.0 retains strict path validation and may reject older reports containing drive-prefixed relative filenames such as `C:sample.csv`. Preserve historical reports and research files, and rescan safely named independent copies if needed. See the [RC1 compatibility notes](RELEASE_NOTES_0_4_0_RC1.md) and [stable release notes](RELEASE_NOTES_0_4_0.md).
+v0.4.1 retains strict path validation and may reject older reports containing drive-prefixed relative filenames such as `C:sample.csv`. Preserve historical reports and research files, and rescan safely named independent copies if needed. See the [RC1 compatibility notes](RELEASE_NOTES_0_4_0_RC1.md) and [stable release notes](RELEASE_NOTES_0_4_1.md).
 
 By default the scanner creates `labvault-report/` containing:
 
