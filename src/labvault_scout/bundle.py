@@ -433,6 +433,24 @@ def verify_bundle(output_dir: Path) -> dict:
                 "error": "FileChangedDuringScan",
             })
 
+    # The manifest may have been replaced while the core artifacts were checked.
+    # Revalidate it before reporting a verified bundle.
+    try:
+        final_manifest = load_bundle_manifest(output_dir)
+    except (OSError, ValueError):
+        problems.append({
+            "path": BUNDLE_MANIFEST_NAME,
+            "issue": "IO_ERROR",
+            "error": "ManifestChangedDuringVerification",
+        })
+    else:
+        if final_manifest != payload:
+            problems.append({
+                "path": BUNDLE_MANIFEST_NAME,
+                "issue": "IO_ERROR",
+                "error": "ManifestChangedDuringVerification",
+            })
+
     return {
         "status": "VERIFIED" if not problems else "FAILED",
         "exit_code": 0 if not problems else 2,

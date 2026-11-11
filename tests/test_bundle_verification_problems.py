@@ -1,9 +1,15 @@
+import json
 import os
 from pathlib import Path
 
 import pytest
 
-from labvault_scout.bundle import load_bundle_manifest, verify_bundle
+from labvault_scout.bundle import (
+    BUNDLE_FILES,
+    load_bundle_manifest,
+    manifest_payload_sha256,
+    verify_bundle,
+)
 from labvault_scout.cli import scan
 from labvault_scout.hashing import sha256_file
 
@@ -478,4 +484,44 @@ def test_verify_bundle_rejects_transient_same_content_swap_during_hash(
         "path": "report.html",
         "issue": "IO_ERROR",
         "error": "FileChangedDuringScan",
+    } in result["problems"]
+
+
+@pytest.mark.parametrize("valid_replacement", [False, True])
+def test_verify_bundle_rejects_manifest_changed_during_artifact_verification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, valid_replacement: bool
+) -> None:
+    import labvault_scout.bundle as bundle_module
+
+    output = _scanned_bundle(tmp_path)
+    original_hash = bundle_module.sha256_file
+    calls = 0
+
+    def change_manifest_after_last_hash(path: Path, **kwargs) -> str:
+        nonlocal calls
+        digest = original_hash(path, **kwargs)
+        if path.name in BUNDLE_FILES:
+            calls += 1
+            if calls == 2 * len(BUNDLE_FILES):
+                manifest_path = output / "bundle_manifest.json"
+                payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if valid_replacement:
+                    payload["tool"]["version"] = "tampered"
+                    payload["manifest_sha256"] = manifest_payload_sha256(payload)
+                else:
+                    payload["manifest_sha256"] = "0" * 64
+                manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+        return digest
+
+    monkeypatch.setattr(bundle_module, "sha256_file", change_manifest_after_last_hash)
+
+    result = verify_bundle(output)
+
+    assert calls == 2 * len(BUNDLE_FILES)
+    assert result["status"] == "FAILED"
+    assert result["exit_code"] == 2
+    assert {
+        "path": "bundle_manifest.json",
+        "issue": "IO_ERROR",
+        "error": "ManifestChangedDuringVerification",
     } in result["problems"]
